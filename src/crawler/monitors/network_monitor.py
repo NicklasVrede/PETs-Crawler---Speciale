@@ -1,15 +1,15 @@
 from datetime import datetime
 from typing import Dict, List
-from managers.ghostery_manager import GhosteryManager
 
 class NetworkMonitor:
     def __init__(self):
         self.requests = []
         self.current_page = None
-        self.ghostery = GhosteryManager()
 
     async def setup_monitoring(self, page):
         """Setup network monitoring for a page"""
+        print("Starting network monitor")
+        
         # Track page changes first
         async def handle_navigation(frame):
             if frame == page.main_frame:
@@ -56,12 +56,11 @@ class NetworkMonitor:
         await page.route("**", lambda route: handle_request(route, route.request))
 
     def get_statistics(self):
-        """Get statistics about captured requests"""
+        """Get basic request statistics"""
         stats = {
             'total_requests': len(self.requests),
             'request_types': {},
-            'total_cookies': 0,
-            'tracking': self.ghostery.get_statistics()
+            'total_cookies': 0
         }
         
         for req in self.requests:
