@@ -44,3 +44,6 @@ logs/
 # Local configuration
 .env
 config.local.yaml
+
+#Ignore instructions
+instructions.txt
