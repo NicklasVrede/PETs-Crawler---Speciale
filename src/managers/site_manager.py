@@ -48,4 +48,8 @@ class SiteManager:
         print(f"\nNetwork Statistics:")
         print(f"Total Requests: {stats['total_requests']}")
         print(f"Request Types: {stats['request_types']}")
-        print(f"Total Cookies in Headers: {stats['total_cookies']}") 
+        print(f"Total Cookies in Headers: {stats['total_cookies']}")
+
+    def get_site_data_file(self, domain):
+        """Get the full path to a site's JSON data file"""
+        return f"data/{self.storage_folder}/{domain}.json" 

@@ -26,7 +26,7 @@ class LinkExtractor:
     async def extract_links(self, page):
         """Extract all links from the current page"""
         # First, let's see what we're working with
-        print("\nDEBUG: Checking page content...")
+        #print("\nDEBUG: Checking page content...")
         
         # Get all links with href attributes
         links = await page.evaluate('''() => {
@@ -47,31 +47,33 @@ class LinkExtractor:
             return results;
         }''')
         
-        print(f"DEBUG: Raw links found: {len(links)}")
-        print("DEBUG: First 5 raw links:", links[:5])
+        #print(f"DEBUG: Raw links found: {len(links)}")
+        #print("DEBUG: First 5 raw links:", links[:5])
         
         # Debug domain comparison
         test_url = links[0] if links else None
         if test_url:
             parsed = urlparse(test_url)
             test_domain = parsed.netloc.lower().replace('www.', '')
-            print(f"DEBUG: Comparing domains:")
-            print(f"  Base domain: {self.base_domain}")
-            print(f"  Test domain: {test_domain}")
+            #print(f"DEBUG: Comparing domains:")
+            #print(f"  Base domain: {self.base_domain}")
+            #print(f"  Test domain: {test_domain}")
         
         # Filter and clean links
         internal_links = set()
         for url in links:
             try:
                 if self.is_same_domain(url):
-                    print(f"DEBUG: Found internal link: {url}")
+                    #print(f"DEBUG: Found internal link: {url}")
                     internal_links.add(url)
                 else:
-                    print(f"DEBUG: External link: {url}")
+                    #print(f"DEBUG: External link: {url}")
+                    pass
             except Exception as e:
-                print(f"DEBUG: Error processing URL {url}: {e}")
+                #print(f"DEBUG: Error processing URL {url}: {e}")
+                pass
         
-        print(f"DEBUG: Found {len(internal_links)} internal links")
+        #print(f"DEBUG: Found {len(internal_links)} internal links")
         return internal_links
 
     async def get_subpages(self, page, max_pages=20):

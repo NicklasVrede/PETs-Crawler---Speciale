@@ -44,11 +44,9 @@ def identify_site_sources():
                 'total_analyzed': 0,
                 'source_categories': {},
                 'source_owners': {},
-                'identified_sources': [],
-                'fingerprinting_stats': {
-                    'total_fingerprinting': 0,
-                    'fingerprinting_domains': []
-                }
+                'total_fingerprinting': 0,
+                'fingerprinting_domains': [],
+                'identified_sources': []
             }
             
             # Track unique base URLs and their request counts
@@ -80,8 +78,8 @@ def identify_site_sources():
                         pbar.update(1)
                         
                         if result['fingerprinting']:
-                            source_analysis['fingerprinting_stats']['total_fingerprinting'] += 1
-                            source_analysis['fingerprinting_stats']['fingerprinting_domains'].append({
+                            source_analysis['total_fingerprinting'] += 1
+                            source_analysis['fingerprinting_domains'].append({
                                 'url': base_url,
                                 'request_count': url_counts[base_url],
                                 'organization': result['organization'],
@@ -134,10 +132,10 @@ def identify_site_sources():
             tqdm.write("Source owners:")
             for org, count in source_analysis['source_owners'].items():
                 tqdm.write(f"  - {org}: {count}")
-            tqdm.write(f"\nTotal fingerprinting domains: {source_analysis['fingerprinting_stats']['total_fingerprinting']}")
-            if source_analysis['fingerprinting_stats']['fingerprinting_domains']:
+            tqdm.write(f"\nTotal fingerprinting domains: {source_analysis['total_fingerprinting']}")
+            if source_analysis['fingerprinting_domains']:
                 tqdm.write("\nFingerprinting domains:")
-                for domain in source_analysis['fingerprinting_stats']['fingerprinting_domains']:
+                for domain in source_analysis['fingerprinting_domains']:
                     tqdm.write(f"  - {domain['url']} ({domain['request_count']} requests)")
             
         except Exception as e:

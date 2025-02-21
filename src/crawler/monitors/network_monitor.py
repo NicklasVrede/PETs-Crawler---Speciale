@@ -5,6 +5,7 @@ class NetworkMonitor:
     def __init__(self):
         self.requests = []
         self.current_page = None
+        self.script_metadata = []
 
     async def setup_monitoring(self, page):
         """Setup network monitoring for a page"""
@@ -40,6 +41,12 @@ class NetworkMonitor:
                         'headers': dict(response.headers),
                         'body': await response.text()
                     }
+                    # Add script metadata
+                    self.script_metadata.append({
+                        'url': request.url,
+                        'page_url': self.current_page,
+                        'timestamp': datetime.now().isoformat()
+                    })
                     await route.fulfill(response=response)
                 else:
                     await route.continue_()

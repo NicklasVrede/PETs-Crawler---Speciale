@@ -51,3 +51,9 @@ instructions.txt
 #ignore all data folders
 data/*
 
+#ignore lib folder
+lib/*
+
+#ignore all extracted scripts
+extracted_scripts/*
+
