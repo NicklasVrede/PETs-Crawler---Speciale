@@ -1,26 +1,26 @@
 import json
 import subprocess
 from typing import Dict
-import urllib.parse
+from urllib.parse import urlparse
 
 class GhosteryManager:
     def analyze_request(self, url: str) -> Dict:
         """Analyze a request URL for tracking behavior using Ghostery CLI"""
         try:
-            # Clean the URL to avoid command line parsing issues
-            cleaned_url = urllib.parse.quote(url, safe=':/?=&')
+            # Extract just the scheme and hostname
+            parsed = urlparse(url)
+            base_url = f"{parsed.scheme}://{parsed.netloc}"
             
             result = subprocess.run(
-                ['npx', '@ghostery/trackerdb', cleaned_url],
+                ['npx', '@ghostery/trackerdb', base_url],
                 capture_output=True,
                 text=True,
-                check=False,  # Don't raise on non-zero exit
-                shell=True    # This helps find npx in the environment
+                check=False,
+                shell=True
             )
             
-            # Parse the JSON output if available
+            # Parse the JSON output
             if result.stdout and '{' in result.stdout:
-                # Extract the JSON part from the output
                 json_start = result.stdout.find('{')
                 json_end = result.stdout.rfind('}') + 1
                 json_str = result.stdout[json_start:json_end]
@@ -33,7 +33,8 @@ class GhosteryManager:
                         'is_tracker': False,
                         'category': None,
                         'organization': None,
-                        'pattern_name': None
+                        'pattern_name': None,
+                        'fingerprinting': False
                     }
                 
                 # Get the first match (most relevant)
@@ -44,6 +45,7 @@ class GhosteryManager:
                     'pattern_name': match['pattern']['name'],
                     'category': match['category']['name'],
                     'organization': match['organization']['name'],
+                    'fingerprinting': match.get('fingerprinting', False),  # Add fingerprinting check
                     'details': {
                         'category_description': match['category']['description'],
                         'organization_description': match['organization']['description'],
@@ -57,16 +59,17 @@ class GhosteryManager:
                 'is_tracker': False,
                 'category': None,
                 'organization': None,
-                'pattern_name': None
+                'pattern_name': None,
+                'fingerprinting': False
             }
             
-        except Exception:
-            # Silently handle any errors and return not a tracker
+        except Exception as e:
             return {
                 'is_tracker': False,
                 'category': None,
                 'organization': None,
-                'pattern_name': None
+                'pattern_name': None,
+                'fingerprinting': False
             }
 
     def get_statistics(self) -> Dict:

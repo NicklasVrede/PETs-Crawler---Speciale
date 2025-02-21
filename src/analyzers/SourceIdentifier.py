@@ -1,5 +1,6 @@
 from managers.ghostery_manager import GhosteryManager
 from typing import Dict
+from urllib.parse import urlparse
 
 class SourceIdentifier:
     def __init__(self):
@@ -11,12 +12,16 @@ class SourceIdentifier:
             'total_analyzed': 0,
             'source_categories': {},
             'source_owners': {},
-            'masked_sources': []  # Previously cname_cloaking
+            'masked_sources': []
         }
 
         # Analyze each request in the site data
         for page_data in site_data['pages'].values():
             for request in page_data['requests']:
+                # Skip if URL is not from a third party
+                if not self.ghostery.is_third_party(request['page_url'], request['url']):
+                    continue
+
                 tracking_info = self.ghostery.analyze_request(request['url'])
                 
                 if tracking_info['is_tracker']:
