@@ -47,3 +47,7 @@ config.local.yaml
 
 #Ignore instructions
 instructions.txt
+
+#ignore all data folders
+data/*
+
