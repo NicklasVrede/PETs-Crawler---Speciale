@@ -6,7 +6,7 @@ from datetime import datetime
 class SiteManager:
     def __init__(self, storage_folder):
         self.storage_folder = storage_folder
-        self.base_dir = os.path.join('data', storage_folder)
+        self.base_dir = os.path.join('data', self.storage_folder)
         self._ensure_directory_exists()
 
     def _ensure_directory_exists(self):

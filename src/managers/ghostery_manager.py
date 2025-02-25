@@ -3,82 +3,60 @@ import subprocess
 from typing import Dict
 from urllib.parse import urlparse
 
-class GhosteryManager:
-    def analyze_request(self, url: str) -> Dict:
-        """Analyze a request URL for tracking behavior using Ghostery CLI"""
-        try:
-            # Extract just the scheme and hostname
-            parsed = urlparse(url)
-            base_url = f"{parsed.scheme}://{parsed.netloc}"
-            
-            result = subprocess.run(
-                ['npx', '@ghostery/trackerdb', base_url],
-                capture_output=True,
-                text=True,
-                check=False,
-                shell=True
-            )
-            
-            # Parse the JSON output
-            if result.stdout and '{' in result.stdout:
-                json_start = result.stdout.find('{')
-                json_end = result.stdout.rfind('}') + 1
-                json_str = result.stdout[json_start:json_end]
-                
-                data = json.loads(json_str)
-                
-                # If no matches found
-                if not data.get('matches'):
-                    return {
-                        'is_tracker': False,
-                        'category': None,
-                        'organization': None,
-                        'pattern_name': None,
-                        'fingerprinting': False
-                    }
-                
-                # Get the first match (most relevant)
-                match = data['matches'][0]
-                
-                return {
-                    'is_tracker': True,
-                    'pattern_name': match['pattern']['name'],
-                    'category': match['category']['name'],
-                    'organization': match['organization']['name'],
-                    'fingerprinting': match.get('fingerprinting', False),  # Add fingerprinting check
-                    'details': {
-                        'category_description': match['category']['description'],
-                        'organization_description': match['organization']['description'],
-                        'organization_privacy_contact': match['organization'].get('privacy_contact'),
-                        'organization_privacy_policy': match['organization'].get('privacy_policy_url'),
-                        'pattern_website': match['pattern'].get('website_url')
-                    }
-                }
-            
-            return {
-                'is_tracker': False,
-                'category': None,
-                'organization': None,
-                'pattern_name': None,
-                'fingerprinting': False
-            }
-            
-        except Exception as e:
-            return {
-                'is_tracker': False,
-                'category': None,
-                'organization': None,
-                'pattern_name': None,
-                'fingerprinting': False
-            }
-
-    def get_statistics(self) -> Dict:
-        """Get statistics about tracked URLs"""
-        stats = {
-            'total_tracked': 0,
-            'categories': {},
-            'organizations': {}
-        }
+def analyze_request(url: str) -> Dict:
+    """Return the full output from the Ghostery database for a given URL"""
+    try:
+        # Extract just the scheme and hostname
+        parsed = urlparse(url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
         
-        # Statistics will be populated by NetworkMonitor
-        return stats 
+        result = subprocess.run(
+            ['npx', '@ghostery/trackerdb', base_url],
+            capture_output=True,
+            text=True,
+            check=False,
+            shell=True
+        )
+        
+        # Parse the JSON output
+        if result.stdout and '{' in result.stdout:
+            json_start = result.stdout.find('{')
+            json_end = result.stdout.rfind('}') + 1
+            json_str = result.stdout[json_start:json_end]
+            
+            data = json.loads(json_str)
+            
+            
+            # Return the full data
+            return data
+        
+        return {}
+        
+    except Exception as e:
+        print(f"Error analyzing {url}: {e}")
+        return {}
+
+def check_organization_consistency(main_site: str, request_domain: str) -> bool:
+    """Check if both domains belong to the same organization"""
+    result_main = analyze_request(main_site)
+    result_request = analyze_request(request_domain)
+    
+    # Extract organization names
+    organization_main = result_main['matches'][0]['organization']['name'] if result_main.get('matches') else None
+    organization_request = result_request['matches'][0]['organization']['name'] if result_request.get('matches') else None
+    
+    # Print organization names
+    print(f"Organization for {main_site}: {organization_main}")
+    print(f"Organization for {request_domain}: {organization_request}")
+    
+    # Check for consistency
+    if organization_main and organization_request:
+        return organization_main == organization_request
+    return False
+
+# Example usage
+if __name__ == "__main__":
+    main_site = "https://www.amazon.co.uk"
+    request_domain = "https://images-eu.ssl-images-amazon.com"
+    is_consistent = check_organization_consistency(main_site, request_domain)
+    print(f"Organization Consistency: {is_consistent}")

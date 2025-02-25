@@ -12,14 +12,20 @@ class WebsiteCrawler:
         self.network_monitor = NetworkMonitor()
         self.fp_collector = FingerprintCollector()
 
-    async def crawl_site(self, domain):
-        """Crawl a website and collect data"""
+    async def crawl_site(self, domain, user_data_dir, full_extension_path, headless=False, viewport=None):
+        """Crawl a website and collect data using a specified browser executable."""
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=False)
-            context = await browser.new_context(
-                viewport={'width': 1280, 'height': 800}
+            # Launch a persistent context with the specified user data directory and extension
+            browser = await p.chromium.launch_persistent_context(
+                user_data_dir=user_data_dir,
+                headless=headless,
+                viewport=viewport or {'width': 1280, 'height': 800},
+                args=[
+                    f'--disable-extensions-except={full_extension_path}',
+                    f'--load-extension={full_extension_path}'
+                ]
             )
-            page = await context.new_page()
+            page = await browser.new_page()
             
             # Setup monitoring
             await self.network_monitor.setup_monitoring(page)
@@ -52,19 +58,7 @@ class WebsiteCrawler:
                     'scripts': self.network_monitor.script_metadata
                 }
                 
-                # Save to file
-                output_dir = Path('data/baseline')
-                output_dir.mkdir(parents=True, exist_ok=True)
-                
-                output_file = output_dir / f"{domain}.json"
-                with open(output_file, 'w') as f:
-                    json.dump(site_data, f, indent=2)
-                
-                print(f"\nResults saved to {output_file}")
-                if fp_results['fingerprinting_detected']:
-                    print(f"Found {len(fp_results['suspicious_scripts'])} suspicious scripts")
-                    
                 return site_data
                 
             finally:
-                await browser.close() 
+                await browser.close()

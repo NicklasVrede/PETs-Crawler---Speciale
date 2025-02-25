@@ -49,11 +49,13 @@ config.local.yaml
 instructions.txt
 
 #ignore all data folders
-data/*
+data/
 
 #ignore lib folder
-lib/*
+lib/
 
 #ignore all extracted scripts
-extracted_scripts/*
+extracted_scripts/
 
+#ignore all extensions
+extensions/
