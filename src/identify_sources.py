@@ -68,15 +68,27 @@ def analyze_subdomain(domain_analyzer, base_url, request_count):
     
     # Process Ghostery trackerdb matches
     identified_sources = []
-    for match in result.get('matches', []):
+    if result.get('matches'):
+        for match in result['matches']:
+            identified_sources.append({
+                'subdomain': base_url,
+                'request_count': request_count,
+                'resource_type': match['pattern']['name'],
+                'category': match['category']['name'],
+                'organization': match['organization']['name'],
+                'filter_analysis': filter_analysis,
+                'details': match['pattern']
+            })
+    else:
+        # Log unidentified subdomain
         identified_sources.append({
             'subdomain': base_url,
             'request_count': request_count,
-            'resource_type': match['pattern']['name'],
-            'category': match['category']['name'],
-            'organization': match['organization']['name'],
+            'resource_type': 'unknown',
+            'category': 'unidentified',
+            'organization': 'unknown',
             'filter_analysis': filter_analysis,
-            'details': match['pattern']
+            'details': None
         })
     
     # Create filter match if applicable
@@ -105,7 +117,7 @@ def initialize_site_analysis(file_path):
     
     # Initialize analysis stats
     source_analysis = {
-        'total_analyzed': 0,
+        'total_analyzed': 0,  # This will be set to len(subdomain_requests)
         'source_categories': {},
         'source_owners': {},
         'identified_sources': [],
@@ -118,6 +130,9 @@ def initialize_site_analysis(file_path):
         for request in page_data.get('requests', []):
             base_url = get_base_url(request['url'])
             subdomain_requests[base_url] += 1
+    
+    # Set total analyzed to number of unique subdomains
+    source_analysis['total_analyzed'] = len(subdomain_requests)
             
     return site_data, source_analysis, subdomain_requests
 
@@ -159,9 +174,6 @@ def identify_site_sources(data_dir):
                 for base_url, request_count in subdomain_requests.items():
                     analysis = analyze_subdomain(domain_analyzer, base_url, request_count)
                     
-                    # Update source analysis
-                    source_analysis['total_analyzed'] += 1
-                    
                     # Update categories and owners
                     for category in analysis['categories']:
                         source_analysis['source_categories'][category] = source_analysis['source_categories'].get(category, 0) + 1
@@ -186,13 +198,20 @@ def identify_site_sources(data_dir):
 def print_analysis_summary(site_data, source_analysis):
     """Print a summary of the source analysis results."""
     tqdm.write(f"\nResults for {site_data.get('domain', 'unknown domain')}:")
-    tqdm.write(f"Total analyzed subdomains: {source_analysis['total_analyzed']}")
-    tqdm.write(f"Unique subdomains analyzed: {len(source_analysis['identified_sources'])}")
+    tqdm.write(f"Unique subdomains analyzed: {source_analysis['total_analyzed']}")
+    tqdm.write(f"Subdomains identified as potential trackers (according to trackerdb): {len([s for s in source_analysis['identified_sources'] if s['category'] != 'unidentified'])}")
     
     # Print Ghostery matches
-    tqdm.write("\nTop 5 most frequent subdomains (Ghostery):")
-    for source in source_analysis['identified_sources'][:5]:
+    tqdm.write("\nTop 5 most frequent tracking subdomains:")
+    for source in [s for s in source_analysis['identified_sources'] if s['category'] != 'unidentified'][:5]:
         tqdm.write(f"  - {source['subdomain']}: {source['request_count']} requests ({source['category']})")
+    
+    # Print unidentified subdomains
+    unidentified = [s for s in source_analysis['identified_sources'] if s['category'] == 'unidentified']
+    if unidentified:
+        tqdm.write("\nUnidentified subdomains:")
+        for source in unidentified:
+            tqdm.write(f"  - {source['subdomain']}: {source['request_count']} requests")
     
     # Print filter matches
     if source_analysis['filter_matches']:
