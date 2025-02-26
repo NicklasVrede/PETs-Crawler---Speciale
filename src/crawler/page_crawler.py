@@ -38,6 +38,18 @@ class WebsiteCrawler:
                 extractor = LinkExtractor(domain)
                 urls = await extractor.get_subpages(page, self.max_pages)
                 
+                # Visit each URL and collect data
+                for url in urls:
+                    #print(f"\nVisiting and analyzing: {url}")
+                    try:
+                        await page.goto(url, timeout=30000)
+                        await page.wait_for_load_state('domcontentloaded')
+                        # Allow some time for scripts to load and execute
+                        await page.wait_for_load_state('networkidle', timeout=5000)
+                    except Exception as e:
+                        print(f"Error visiting {url}: {str(e)}")
+                        continue
+                
                 # Get results
                 fp_results = self.fp_collector.get_fingerprinting_results()
                 
