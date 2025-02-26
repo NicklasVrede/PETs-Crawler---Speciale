@@ -98,6 +98,45 @@ def analyze_subdomain(domain_analyzer, base_url, request_count):
         'owners': [match['organization']['name'] for match in result.get('matches', [])]
     }
 
+def initialize_site_analysis(file_path):
+    """Initialize analysis for a site by loading data and counting requests."""
+    # Load existing data
+    site_data = load_json(file_path)
+    
+    # Initialize analysis stats
+    source_analysis = {
+        'total_analyzed': 0,
+        'source_categories': {},
+        'source_owners': {},
+        'identified_sources': [],
+        'filter_matches': []
+    }
+    
+    # Count requests per subdomain
+    subdomain_requests = Counter()
+    for page_data in site_data['pages'].values():
+        for request in page_data.get('requests', []):
+            base_url = get_base_url(request['url'])
+            subdomain_requests[base_url] += 1
+            
+    return site_data, source_analysis, subdomain_requests
+
+def finalize_site_analysis(site_data, source_analysis, file_path):
+    """Finalize analysis by sorting results, saving data, and printing summary."""
+    # Sort identified sources by request count (most frequent first)
+    source_analysis['identified_sources'].sort(key=lambda x: x['request_count'], reverse=True)
+    source_analysis['filter_matches'].sort(key=lambda x: x['request_count'], reverse=True)
+    
+    # Add analysis to site data
+    site_data['source_analysis'] = source_analysis
+    site_data['last_analyzed'] = datetime.now()
+    
+    # Save updated data
+    save_json(site_data, file_path)
+    
+    # Print analysis summary
+    print_analysis_summary(site_data, source_analysis)
+
 def identify_site_sources(data_dir):
     """Identify the sources/origins of URLs in site data using both Ghostery and filter analysis"""
     
@@ -112,27 +151,8 @@ def identify_site_sources(data_dir):
         file_path = os.path.join(data_dir, filename)
         
         try:
-            # Load existing data
-            site_data = load_json(file_path)
-            
-            # Extract main site URL from the homepage
-            main_site = site_data['pages']['homepage']['url']
-            
-            # Initialize analysis stats
-            source_analysis = {
-                'total_analyzed': 0,
-                'source_categories': {},
-                'source_owners': {},
-                'identified_sources': [],
-                'filter_matches': []
-            }
-            
-            # Count requests per subdomain
-            subdomain_requests = Counter()
-            for page_data in site_data['pages'].values():
-                for request in page_data.get('requests', []):
-                    base_url = get_base_url(request['url'])
-                    subdomain_requests[base_url] += 1
+            # Initialize analysis for this site
+            site_data, source_analysis, subdomain_requests = initialize_site_analysis(file_path)
             
             # Analyze each unique subdomain
             with tqdm(total=len(subdomain_requests), desc=f"Analyzing {filename}", leave=False) as pbar:
@@ -157,19 +177,8 @@ def identify_site_sources(data_dir):
                     
                     pbar.update(1)
             
-            # Sort identified sources by request count (most frequent first)
-            source_analysis['identified_sources'].sort(key=lambda x: x['request_count'], reverse=True)
-            source_analysis['filter_matches'].sort(key=lambda x: x['request_count'], reverse=True)
-            
-            # Add analysis to site data
-            site_data['source_analysis'] = source_analysis
-            site_data['last_analyzed'] = datetime.now()
-            
-            # Save updated data
-            save_json(site_data, file_path)
-            
-            # Print analysis summary
-            print_analysis_summary(site_data, source_analysis)
+            # Finalize and save analysis
+            finalize_site_analysis(site_data, source_analysis, file_path)
             
         except Exception as e:
             tqdm.write(f"Error processing {filename}: {str(e)}")
