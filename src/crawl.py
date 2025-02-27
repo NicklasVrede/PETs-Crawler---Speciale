@@ -7,6 +7,8 @@ import os
 from utils import construct_paths, extract_javascript, load_config, get_profile_config
 from identify_sources import identify_site_sources
 
+
+
 async def main(setup, storage_name, data_dir=None):
     # Load configuration
     config = load_config('config.json')
