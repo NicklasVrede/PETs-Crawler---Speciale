@@ -10,10 +10,10 @@ from tqdm import tqdm
 from urllib.parse import urlparse
 from collections import Counter
 sys.path.append('.')
-from src.managers.ghostery_manager import analyze_request, check_organization_consistency
+from src.managers.ghostery_manager import analyze_request
 from src.analyzers.check_filters import DomainFilterAnalyzer
-from utils.domain_parser import get_base_domain, are_domains_related
-from utils.public_suffix_updater import update_public_suffix_list
+from src.utils.domain_parser import get_base_domain, are_domains_related
+from src.utils.public_suffix_updater import update_public_suffix_list
 
 def load_json(file_path):
     with open(file_path, 'r', encoding='utf-8') as f:
@@ -66,40 +66,34 @@ def analyze_subdomain(domain_analyzer, main_site, base_url, request_count):
     # Analyze the base URL using Ghostery database
     result = analyze_request(base_url)
     
-    # Only check for CNAME cloaking if it's actually a subdomain
-    is_cloaked = False
-    is_direct_tracker = False
-    cloaking_rule = None
-    cname_resolution = None
+    # Initialize tracking analysis results
+    tracking_analysis = {
+        'is_first_party': is_subdomain,
+        'is_tracking': False,
+        'evidence': [],
+        'cname_chain': [],
+        'categorization': {},
+    }
     
     if is_subdomain:
-        # Get CNAME resolution and check for cloaking
+        # Get CNAME chain and analyze for tracking
         parsed_url = urlparse(base_url).netloc
-        cname_resolution = domain_analyzer.resolve_cname(parsed_url)
+        cname_chain = get_cname_chain(domain_analyzer, parsed_url)
         
-        if cname_resolution:
-            # Check if CNAME points to a different domain
-            is_third_party_cname = not are_domains_related(
-                cname_resolution, 
-                main_site, 
+        if cname_chain:
+            tracking_analysis['cname_chain'] = cname_chain
+            is_tracking, evidence, categorization = analyze_cname_chain(
+                domain_analyzer,
+                parsed_url,
+                f"{main_base}.{main_suffix}",
+                cname_chain,
                 domain_analyzer.public_suffixes
             )
-            
-            if is_third_party_cname:
-                # Check if the CNAME destination is a known tracking domain
-                is_cloaked, cloaking_rule, _ = domain_analyzer.check_for_cname_cloaking(cname_resolution)
-    else:
-        # If not a subdomain, check for direct tracking
-        is_direct_tracker, cloaking_rule, _ = domain_analyzer.check_for_cname_cloaking(base_url)
-    
-    # Initialize filter analysis results
-    filter_analysis = {
-        'is_first_party': is_subdomain,
-        'is_direct_tracker': is_direct_tracker,
-        'is_cname_cloaked': is_cloaked,
-        'cname_resolution': cname_resolution,
-        'matching_rule': cloaking_rule
-    }
+            tracking_analysis.update({
+                'is_tracking': is_tracking,
+                'evidence': evidence,
+                'categorization': categorization
+            })
     
     # Process Ghostery trackerdb matches
     identified_sources = []
@@ -112,7 +106,7 @@ def analyze_subdomain(domain_analyzer, main_site, base_url, request_count):
                 'resource_type': match['pattern']['name'],
                 'category': match['category']['name'],
                 'organization': match['organization']['name'],
-                'filter_analysis': filter_analysis,
+                'tracking_analysis': tracking_analysis,
                 'details': match['pattern']
             })
     else:
@@ -124,26 +118,12 @@ def analyze_subdomain(domain_analyzer, main_site, base_url, request_count):
             'resource_type': 'unknown',
             'category': 'unidentified',
             'organization': 'unknown',
-            'filter_analysis': filter_analysis,
+            'tracking_analysis': tracking_analysis,
             'details': None
         })
     
-    # Create filter match if applicable
-    filter_match = None
-    if is_cloaked or is_direct_tracker:
-        filter_match = {
-            'url': base_url,
-            'is_first_party': is_subdomain,
-            'request_count': request_count,
-            'is_direct_tracker': is_direct_tracker,
-            'is_cname_cloaked': is_cloaked,
-            'cname_resolution': cname_resolution,
-            'matching_rule': cloaking_rule
-        }
-    
     return {
         'identified_sources': identified_sources,
-        'filter_match': filter_match,
         'categories': [match['category']['name'] for match in result.get('matches', [])],
         'owners': [match['organization']['name'] for match in result.get('matches', [])]
     }
@@ -221,10 +201,6 @@ def identify_site_sources(data_dir):
                     # Add identified sources
                     source_analysis['identified_sources'].extend(analysis['identified_sources'])
                     
-                    # Add filter match if present
-                    if analysis['filter_match']:
-                        source_analysis['filter_matches'].append(analysis['filter_match'])
-                    
                     pbar.update(1)
             
             # Finalize and save analysis
@@ -284,13 +260,15 @@ def get_ip_addresses(domain):
         print(f"Error resolving IP for {domain}: {e}")
         return set()
 
-def is_first_party_cname_chain(domain_analyzer, subdomain, main_site, cname_chain, public_suffixes):
+def is_first_party_cname_chain(domain_analyzer, subdomain, main_site, cname_chain, public_suffixes, verbose=False):
     """Check if a CNAME chain is first-party.
     
     Args:
         subdomain: The full subdomain being checked (e.g., dnklry.plushbeds.com)
         main_site: The second-level domain (e.g., plushbeds.com)
         cname_chain: List of CNAMEs in resolution chain
+        public_suffixes: List of public suffixes
+        verbose: Whether to print debug information
     
     A chain is first-party if:
     1. Final CNAME matches main site domain, or
@@ -304,35 +282,80 @@ def is_first_party_cname_chain(domain_analyzer, subdomain, main_site, cname_chai
     final_cname = cname_chain[-1]
     final_base, final_suffix = get_base_domain(final_cname, public_suffixes)
     
-    print(f"\nFirst-party check debug:")
-    print(f"Subdomain: {subdomain}")
-    print(f"Main site: {main_site} -> base='{main_base}', suffix='{main_suffix}'")
-    print(f"Final CNAME: {final_cname} -> base='{final_base}', suffix='{final_suffix}'")
+    if verbose:
+        print(f"\nFirst-party check debug:")
+        print(f"Subdomain: {subdomain}")
+        print(f"Main site: {main_site} -> base='{main_base}', suffix='{main_suffix}'")
+        print(f"Final CNAME: {final_cname} -> base='{final_base}', suffix='{final_suffix}'")
     
     # Check if final CNAME matches main site domain
     domains_match = main_base == final_base and main_suffix == final_suffix
-    print(f"Domains match: {domains_match}")
+    if verbose:
+        print(f"Domains match: {domains_match}")
     
     # Check IP addresses of main site (not subdomain) and final CNAME
     main_ips = get_ip_addresses(main_site)
     final_ips = get_ip_addresses(final_cname)
     
-    print(f"Main site IPs: {main_ips}")
-    print(f"Final CNAME IPs: {final_ips}")
+    if verbose:
+        print(f"Main site IPs: {main_ips}")
+        print(f"Final CNAME IPs: {final_ips}")
+    
     ip_match = bool(main_ips & final_ips)
-    print(f"IP addresses match: {ip_match}")
+    if verbose:
+        print(f"IP addresses match: {ip_match}")
     
     return domains_match or ip_match
 
-def analyze_cname_chain(domain_analyzer, subdomain, main_site, cname_chain, public_suffixes):
-    """Analyze each node in the CNAME chain for tracking behavior."""
-    if not cname_chain:
-        return
+def get_tracker_categorization(domain):
+    """Get detailed categorization of a domain using Ghostery's trackerdb.
+    
+    Returns:
+        dict: Dictionary containing categories and organizations found, or None if not identified
+    """
+    result = analyze_request(f"https://{domain}")
+    if not result.get('matches'):
+        return None
         
-    print("\nCNAME chain analysis:")
-    print(f"Original: {subdomain}")
-    for i, cname in enumerate(cname_chain, 1):
-        print(f"  {i}. → {cname}")
+    categories = set()
+    organizations = set()
+    
+    for match in result['matches']:
+        categories.add(match['category']['name'])
+        organizations.add(match['organization']['name'])
+    
+    return {
+        'categories': list(categories),
+        'organizations': list(organizations),
+        'details': result['matches']
+    }
+
+def analyze_cname_chain(domain_analyzer, subdomain, main_site, cname_chain, public_suffixes, verbose=False):
+    """Analyze each node in the CNAME chain for tracking behavior.
+    First checks filter lists, then falls back to Ghostery for detailed categorization.
+    
+    Args:
+        domain_analyzer: The analyzer instance
+        subdomain: The subdomain being analyzed
+        main_site: The main site domain
+        cname_chain: List of CNAMEs in the resolution chain
+        public_suffixes: List of public suffixes
+        verbose: Whether to print detailed analysis information
+    
+    Returns:
+        tuple: (is_tracking, evidence, categorization)
+    """
+    if not cname_chain:
+        return False, [], {}
+    
+    evidence = []
+    categorization = {}
+    
+    if verbose:
+        print("\nCNAME chain analysis:")
+        print(f"Original: {subdomain}")
+        for i, cname in enumerate(cname_chain, 1):
+            print(f"  {i}. → {cname}")
     
     # First check if chain is first-party
     is_first_party = is_first_party_cname_chain(
@@ -340,113 +363,76 @@ def analyze_cname_chain(domain_analyzer, subdomain, main_site, cname_chain, publ
         subdomain,
         main_site,
         cname_chain,
-        public_suffixes
+        public_suffixes,
+        verbose=verbose
     )
     
-    print(f"\nIs first-party chain? {is_first_party}")
+    if verbose:
+        print(f"\nIs first-party chain? {is_first_party}")
     
     if not is_first_party:
-        print("\nChecking each domain against tracking filters and Ghostery:")
-        
-        tracking_nodes = []
+        if verbose:
+            print("\nAnalyzing domains for tracking behavior:")
         
         # Check the original subdomain
-        print(f"\nOriginal domain: {subdomain}")
+        if verbose:
+            print(f"\nOriginal domain: {subdomain}")
         filter_name, rule = domain_analyzer.is_domain_in_filters(subdomain)
         if filter_name:
-            print(f"  Found in filter: {filter_name}")
-            print(f"  Matching rule: {rule}")
-            tracking_nodes.append((subdomain, f"Filter: {filter_name}", rule))
-        else:
-            # Check Ghostery if not in filters
-            result = analyze_request(subdomain)
-            if result.get('matches'):
-                for match in result['matches']:
-                    print(f"  Found in Ghostery:")
-                    print(f"    Category: {match['category']['name']}")
-                    print(f"    Organization: {match['organization']['name']}")
-                    tracking_nodes.append((
-                        subdomain,
-                        f"Ghostery: {match['category']['name']}",
-                        match['organization']['name']
-                    ))
-            else:
-                print("  No matches found")
-        
-        # Check each CNAME in the chain
-        for i, cname in enumerate(cname_chain, 1):
-            print(f"\nNode {i}: {cname}")
-            filter_name, rule = domain_analyzer.is_domain_in_filters(cname)
-            if filter_name:
+            if verbose:
                 print(f"  Found in filter: {filter_name}")
                 print(f"  Matching rule: {rule}")
-                tracking_nodes.append((cname, f"Filter: {filter_name}", rule))
-            else:
-                # Check Ghostery if not in filters
-                result = analyze_request(cname)
-                if result.get('matches'):
-                    for match in result['matches']:
-                        print(f"  Found in Ghostery:")
-                        print(f"    Category: {match['category']['name']}")
-                        print(f"    Organization: {match['organization']['name']}")
-                        tracking_nodes.append((
-                            cname,
-                            f"Ghostery: {match['category']['name']}",
-                            match['organization']['name']
-                        ))
-                else:
-                    print("  No matches found")
+            evidence.append(f"{subdomain} found in {filter_name}")
+        
+        # Always check Ghostery for categorization
+        tracker_info = get_tracker_categorization(subdomain)
+        if tracker_info:
+            categorization[subdomain] = tracker_info
+            if verbose:
+                print(f"  Categories: {', '.join(tracker_info['categories'])}")
+                print(f"  Organizations: {', '.join(tracker_info['organizations'])}")
+            evidence.append(f"{subdomain} identified as {'/'.join(tracker_info['categories'])} tracker by Ghostery")
+        elif verbose:
+            print("  No Ghostery matches found")
+        
+        # Check each CNAME in the chain
+        for cname in cname_chain:
+            if verbose:
+                print(f"\nAnalyzing CNAME: {cname}")
+            filter_name, rule = domain_analyzer.is_domain_in_filters(cname)
+            if filter_name:
+                if verbose:
+                    print(f"  Found in filter: {filter_name}")
+                    print(f"  Matching rule: {rule}")
+                evidence.append(f"{cname} found in {filter_name}")
+            
+            # Always check Ghostery for categorization
+            tracker_info = get_tracker_categorization(cname)
+            if tracker_info:
+                categorization[cname] = tracker_info
+                if verbose:
+                    print(f"  Categories: {', '.join(tracker_info['categories'])}")
+                    print(f"  Organizations: {', '.join(tracker_info['organizations'])}")
+                evidence.append(f"{cname} identified as {'/'.join(tracker_info['categories'])} tracker by Ghostery")
+            elif verbose:
+                print("  No Ghostery matches found")
+    
+    # Flag as tracking if any node in the chain was identified as a tracker
+    is_tracking = len(evidence) > 0
+    
+    if is_tracking and verbose:
+        print("\nCNAME chain classified as tracking due to:")
+        for finding in evidence:
+            print(f"- {finding}")
+        
+        print("\nDetailed categorization:")
+        for domain, info in categorization.items():
+            print(f"\n{domain}:")
+            print(f"  Categories: {', '.join(info['categories'])}")
+            print(f"  Organizations: {', '.join(info['organizations'])}")
+    
+    return is_tracking, evidence, categorization
 
 if __name__ == "__main__":
-    # Regular execution
     data_directory = 'data/consent_o_matic_opt_out_non_headless'
-    #identify_site_sources(data_directory)
-    
-    # Test domain processing
-    print("\nTesting domain processing:")
-    print("-" * 80)
-    
-    test_cases = [
-        # (main_site, test_url, description)
-        ("https://plushbeds.com", "https://dnklry.plushbeds.com", "Suspicious subdomain"),
-        # Add more test cases here
-    ]
-    
-    # Initialize domain analyzer and get public suffixes
-    domain_analyzer = DomainFilterAnalyzer()
-    public_suffixes = update_public_suffix_list()
-    
-    for main_site, test_url, description in test_cases:
-        print(f"\nTesting: {description}")
-        print(f"Main site: {main_site}")
-        print(f"Test URL: {test_url}")
-        
-        # Parse domains using PSL
-        main_base, main_suffix = get_base_domain(main_site, public_suffixes)
-        test_base, test_suffix = get_base_domain(test_url, public_suffixes)
-        
-        # Check if domains are related
-        is_related = are_domains_related(main_site, test_url, public_suffixes)
-        
-        print("\nDomain parsing results:")
-        print(f"Main site: base='{main_base}', suffix='{main_suffix}'")
-        print(f"Test URL: base='{test_base}', suffix='{test_suffix}'")
-        print(f"Are domains related? {is_related}")
-        
-        # If related, analyze CNAME chain
-        if is_related:
-            parsed_url = urlparse(test_url).netloc
-            cname_chain = get_cname_chain(domain_analyzer, parsed_url)
-            
-            if cname_chain:
-                analyze_cname_chain(
-                    domain_analyzer,
-                    parsed_url,
-                    f"{main_base}.{main_suffix}",
-                    cname_chain,
-                    public_suffixes
-                )
-            else:
-                print("\nNo CNAME records found")
-        
-        print("-" * 80)
+    identify_site_sources(data_directory)

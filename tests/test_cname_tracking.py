@@ -1,25 +1,23 @@
 import sys
 import os
+from urllib.parse import urlparse
 
 # Add project root to Python path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+sys.path.append(project_root)
 
-# Now we can import the modules
-from urllib.parse import urlparse
 from src.identify_sources import (
     get_base_domain,
     are_domains_related,
     get_cname_chain,
     analyze_cname_chain
 )
-from analyzers.check_filters import DomainFilterAnalyzer
-from utils.public_suffix_updater import update_public_suffix_list
+from src.analyzers.check_filters import DomainFilterAnalyzer
+from src.utils.public_suffix_updater import update_public_suffix_list
 
-def test_domain_processing():
-    """Test domain processing and CNAME chain analysis."""
-    print("\nTesting domain processing:")
+def test_cname_tracking():
+    """Test CNAME-based tracking detection with known cases."""
+    print("\nTesting CNAME-based tracking detection:")
     print("-" * 80)
     
     test_cases = [
@@ -55,17 +53,28 @@ def test_domain_processing():
             cname_chain = get_cname_chain(domain_analyzer, parsed_url)
             
             if cname_chain:
-                analyze_cname_chain(
+                is_tracking, evidence, categorization = analyze_cname_chain(
                     domain_analyzer,
                     parsed_url,
                     f"{main_base}.{main_suffix}",
                     cname_chain,
-                    public_suffixes
+                    public_suffixes,
+                    verbose=True
                 )
+                if is_tracking:
+                    print("\nCNAME chain classified as tracking due to:")
+                    for finding in evidence:
+                        print(f"- {finding}")
+                    
+                    print("\nDetailed categorization:")
+                    for domain, info in categorization.items():
+                        print(f"\n{domain}:")
+                        print(f"  Categories: {', '.join(info['categories'])}")
+                        print(f"  Organizations: {', '.join(info['organizations'])}")
             else:
                 print("\nNo CNAME records found")
         
         print("-" * 80)
 
 if __name__ == "__main__":
-    test_domain_processing() 
+    test_cname_tracking() 
