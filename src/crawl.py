@@ -56,5 +56,4 @@ if __name__ == "__main__":
 
     #Run the identify_sources script
     #identify_site_sources("data/adguard_non_headless")
-
     

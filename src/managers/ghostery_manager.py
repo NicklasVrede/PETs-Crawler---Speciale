@@ -26,7 +26,6 @@ def analyze_request(url: str) -> Dict:
             
             data = json.loads(json_str)
             
-            
             # Return the full data
             return data
         
@@ -36,27 +35,23 @@ def analyze_request(url: str) -> Dict:
         print(f"Error analyzing {url}: {e}")
         return {}
 
-def check_organization_consistency(main_site: str, request_domain: str) -> bool:
-    """Check if both domains belong to the same organization"""
-    result_main = analyze_request(main_site)
-    result_request = analyze_request(request_domain)
-    
-    # Extract organization names
-    organization_main = result_main['matches'][0]['organization']['name'] if result_main.get('matches') else None
-    organization_request = result_request['matches'][0]['organization']['name'] if result_request.get('matches') else None
-    
-    # Print organization names
-    print(f"Organization for {main_site}: {organization_main}")
-    print(f"Organization for {request_domain}: {organization_request}")
-    
-    # Check for consistency
-    if organization_main and organization_request:
-        return organization_main == organization_request
-    return False
 
 # Example usage
 if __name__ == "__main__":
-    main_site = "https://www.amazon.co.uk"
-    request_domain = "https://images-eu.ssl-images-amazon.com"
-    is_consistent = check_organization_consistency(main_site, request_domain)
-    print(f"Organization Consistency: {is_consistent}")
+    test_urls = [
+        "https://dnklry.plushbeds.com",
+        "https://dnsdelegation.io",
+        "https://gum.criteo.com",
+        "https://gum.fr3.vip.prod.criteo.com"
+    ]
+    
+    for url in test_urls:
+        print(f"\nAnalyzing: {url}")
+        print("-" * 50)
+        result = analyze_request(url)
+        if result:
+            print(json.dumps(result, indent=2))
+        else:
+            print("No tracking information found")
+        print("-" * 50)
+    

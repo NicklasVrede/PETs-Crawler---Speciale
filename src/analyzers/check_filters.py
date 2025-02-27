@@ -48,9 +48,10 @@ class DomainFilterAnalyzer:
         
         return filters
 
-    def is_subdomain_blocked(self, subdomain):
-        """Check if a subdomain matches any rule in the loaded filter lists."""
-        parsed_domain = urlparse(subdomain).netloc if '//' in subdomain else subdomain
+    def is_domain_in_filters(self, domain):
+        """Check if a domain matches any rule in the loaded filter lists."""
+        parsed_domain = urlparse(domain).netloc if '//' in domain else domain
+        domain_parts = parsed_domain.split('.')
         
         for filter_name, rules in self.filters.items():
             for rule in rules:
@@ -58,9 +59,15 @@ class DomainFilterAnalyzer:
                 if rule == parsed_domain:
                     return filter_name, rule
                 
-                # Domain suffix match
-                if parsed_domain.endswith('.' + rule) or parsed_domain == rule:
-                    return filter_name, rule
+                # Check if any part of the domain matches the rule
+                for i in range(len(domain_parts)):
+                    subdomain = '.'.join(domain_parts[i:])
+                    if subdomain == rule:
+                        return filter_name, rule
+                    
+                    # Domain suffix match (e.g., criteo.com matches gum.criteo.com)
+                    if subdomain.endswith('.' + rule) or subdomain == rule:
+                        return filter_name, rule
                 
                 # Wildcard match
                 if '*' in rule and fnmatch.fnmatch(parsed_domain, rule):
@@ -83,34 +90,6 @@ class DomainFilterAnalyzer:
             self.cache[domain] = None
             return None
 
-    def check_for_cname_cloaking(self, url):
-        """
-        Check for CNAME cloaking by comparing original and resolved domains.
-        Returns (is_cloaked, matching_rule, is_direct_tracker).
-        """
-        original_domain = urlparse(url).netloc if '//' in url else url
-        
-        # Check original domain first
-        filter_name, original_rule = self.is_subdomain_blocked(original_domain)
-        
-        # If original domain is already blocked, it's not cloaking but direct tracking
-        if original_rule:
-            return False, original_rule, True
-            
-        # Check CNAME resolution
-        cname_domain = self.resolve_cname(original_domain)
-        if not cname_domain:
-            return False, None, False
-        
-        # Check CNAME domain
-        _, cname_rule = self.is_subdomain_blocked(cname_domain)
-        
-        # Only consider it cloaking if original wasn't blocked but CNAME is
-        if cname_rule:
-            return True, cname_rule, False
-        
-        return False, None, False
-
     def __del__(self):
         """Cleanup the cache when the object is destroyed."""
         self.cache.close()
@@ -120,23 +99,20 @@ if __name__ == "__main__":
     # Create an instance of the DomainFilterAnalyzer
     analyzer = DomainFilterAnalyzer()
     
-    # List of URLs to check for CNAME cloaking and direct matches
+    # List of URLs to check
     urls_to_check = [
-        'https://shop.example.com',
-        'https://ads.example.com',
-        'https://secure.example.net',
-        'https://smetrics.afpjobs.amazon.com',
-        'https://marketing.advancedpractice.com',
-        'https://aax-eu.amazon-adsystem.com'
+        'marketprivateg.net.daraz.com',
+        'https://aax-eu.amazon-adsystem.com',
+        'dnklry.plushbeds.com',
+        'gum.fr3.vip.prod.criteo.com'
     ]
     
-    # Check each URL for CNAME cloaking and direct matches
+    # Check each URL against filter lists
     for url in urls_to_check:
-        is_cloaked, matched_rule, is_direct_tracker = analyzer.check_for_cname_cloaking(url)
-        
-        if is_direct_tracker:
-            print(f"Direct tracker detected for URL '{url}' (matched rule: '{matched_rule}').")
-        elif is_cloaked:
-            print(f"CNAME cloaking detected for URL '{url}' (matched rule: '{matched_rule}').")
+        filter_name, rule = analyzer.is_domain_in_filters(url)
+        if filter_name:
+            print(f"Tracker detected for URL '{url}'")
+            print(f"  Filter list: {filter_name}")
+            print(f"  Matching rule: {rule}")
         else:
-            print(f"No tracking detected for URL '{url}'.")
+            print(f"No tracker detected for URL '{url}'")

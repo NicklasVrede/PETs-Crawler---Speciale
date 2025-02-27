@@ -25,7 +25,8 @@ class WebsiteCrawler:
                     f'--load-extension={full_extension_path}'
                 ]
             )
-            page = await browser.new_page()
+            # Reference to the first page:
+            page = browser.pages[0]
             
             # Setup monitoring
             await self.network_monitor.setup_monitoring(page)
