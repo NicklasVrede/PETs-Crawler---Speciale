@@ -52,36 +52,71 @@ def check_tracking_cname(cname: str, tracking_list: list) -> bool:
     return False
 
 def analyze_subdomain(domain_analyzer, main_site, base_url, request_count):
-    """Analyze a single subdomain for tracking behavior and ownership."""
+    """Analyze a single subdomain for tracking behavior.
+    
+    Workflow:
+    1. Check if domain is first-party using public suffix list
+    2. For third-party domains: check filter lists and trackerdb
+    3. For first-party domains: analyze CNAME chain for tracking behavior
+    """
     if not hasattr(domain_analyzer, 'public_suffixes'):
         domain_analyzer.public_suffixes = update_public_suffix_list()
     
-    # Get base domains using PSL
-    main_base, main_suffix = get_base_domain(main_site, domain_analyzer.public_suffixes)
-    url_base, url_suffix = get_base_domain(base_url, domain_analyzer.public_suffixes)
-    
-    # Check if this is actually a subdomain of the main site
-    is_subdomain = are_domains_related(main_site, base_url, domain_analyzer.public_suffixes)
-    
-    # Analyze the base URL using Ghostery database
-    result = analyze_request(base_url)
-    
-    # Initialize tracking analysis results
-    tracking_analysis = {
-        'is_first_party': is_subdomain,
-        'is_tracking': False,
-        'evidence': [],
-        'cname_chain': [],
-        'categorization': {},
+    # Initialize the analysis result
+    analysis_result = {
+        'domain': base_url,
+        'request_count': request_count,
+        'is_first_party_domain': False,
+        'third_party_tracking': {
+            'is_tracking': False,
+            'evidence': [],
+            'categorization': {}
+        },
+        'cname_tracking': {
+            'is_tracking': False,
+            'evidence': [],
+            'cname_chain': [],
+            'categorization': {}
+        }
     }
     
-    if is_subdomain:
-        # Get CNAME chain and analyze for tracking
+    # Check if this is a first-party domain
+    is_first_party_domain = are_domains_related(main_site, base_url, domain_analyzer.public_suffixes)
+    analysis_result['is_first_party_domain'] = is_first_party_domain
+    
+    if not is_first_party_domain:
+        # Analyze third-party domain for tracking
+        parsed_url = urlparse(base_url).netloc
+        
+        # Check filter lists
+        filter_name, rule = domain_analyzer.is_domain_in_filters(parsed_url)
+        if filter_name:
+            analysis_result['third_party_tracking']['is_tracking'] = True
+            analysis_result['third_party_tracking']['evidence'].append(
+                f"Domain found in filter list: {filter_name}"
+            )
+        
+        # Check Ghostery trackerdb
+        tracker_info = get_tracker_categorization(parsed_url)
+        if tracker_info:
+            analysis_result['third_party_tracking']['is_tracking'] = True
+            analysis_result['third_party_tracking']['categorization'] = tracker_info
+            analysis_result['third_party_tracking']['evidence'].append(
+                f"Domain identified as {'/'.join(tracker_info['categories'])} tracker by Ghostery"
+            )
+    
+    else:
+        # Analyze first-party domain for CNAME-based tracking
         parsed_url = urlparse(base_url).netloc
         cname_chain = get_cname_chain(domain_analyzer, parsed_url)
         
         if cname_chain:
-            tracking_analysis['cname_chain'] = cname_chain
+            analysis_result['cname_tracking']['cname_chain'] = cname_chain
+            
+            # Get base domain for main site
+            main_base, main_suffix = get_base_domain(main_site, domain_analyzer.public_suffixes)
+            
+            # Analyze CNAME chain for tracking
             is_tracking, evidence, categorization = analyze_cname_chain(
                 domain_analyzer,
                 parsed_url,
@@ -89,44 +124,14 @@ def analyze_subdomain(domain_analyzer, main_site, base_url, request_count):
                 cname_chain,
                 domain_analyzer.public_suffixes
             )
-            tracking_analysis.update({
+            
+            analysis_result['cname_tracking'].update({
                 'is_tracking': is_tracking,
                 'evidence': evidence,
                 'categorization': categorization
             })
     
-    # Process Ghostery trackerdb matches
-    identified_sources = []
-    if result.get('matches'):
-        for match in result['matches']:
-            identified_sources.append({
-                'domain': base_url,
-                'is_first_party': is_subdomain,
-                'request_count': request_count,
-                'resource_type': match['pattern']['name'],
-                'category': match['category']['name'],
-                'organization': match['organization']['name'],
-                'tracking_analysis': tracking_analysis,
-                'details': match['pattern']
-            })
-    else:
-        # Log unidentified subdomain
-        identified_sources.append({
-            'domain': base_url,
-            'is_first_party': is_subdomain,
-            'request_count': request_count,
-            'resource_type': 'unknown',
-            'category': 'unidentified',
-            'organization': 'unknown',
-            'tracking_analysis': tracking_analysis,
-            'details': None
-        })
-    
-    return {
-        'identified_sources': identified_sources,
-        'categories': [match['category']['name'] for match in result.get('matches', [])],
-        'owners': [match['organization']['name'] for match in result.get('matches', [])]
-    }
+    return analysis_result
 
 def initialize_site_analysis(file_path):
     """Initialize analysis for a site by loading data and counting requests."""
@@ -171,8 +176,7 @@ def finalize_site_analysis(site_data, source_analysis, file_path):
     print_analysis_summary(site_data, source_analysis)
 
 def identify_site_sources(data_dir):
-    """Identify the sources/origins of URLs in site data using both Ghostery and filter analysis"""
-    
+    """Identify the sources/origins of URLs in site data"""
     domain_analyzer = DomainFilterAnalyzer()
     json_files = [f for f in os.listdir(data_dir) if f.endswith('.json')]
     
@@ -184,27 +188,36 @@ def identify_site_sources(data_dir):
             site_data = load_json(file_path)
             main_site = site_data['pages']['homepage']['url']
             
-            # Initialize analysis
-            site_data, source_analysis, subdomain_requests = initialize_site_analysis(file_path)
+            # First pass: count unique domains
+            unique_domains = set()
+            for page_data in site_data['pages'].values():
+                for request in page_data.get('requests', []):
+                    unique_domains.add(get_base_url(request['url']))
             
             # Analyze each unique subdomain
-            with tqdm(total=len(subdomain_requests), desc=f"Analyzing {filename}", leave=False) as pbar:
-                for base_url, request_count in subdomain_requests.items():
-                    analysis = analyze_subdomain(domain_analyzer, main_site, base_url, request_count)
-                    
-                    # Update categories and owners
-                    for category in analysis['categories']:
-                        source_analysis['source_categories'][category] = source_analysis['source_categories'].get(category, 0) + 1
-                    for owner in analysis['owners']:
-                        source_analysis['source_owners'][owner] = source_analysis['source_owners'].get(owner, 0) + 1
-                    
-                    # Add identified sources
-                    source_analysis['identified_sources'].extend(analysis['identified_sources'])
-                    
-                    pbar.update(1)
+            analyzed_domains = {}
+            with tqdm(total=len(unique_domains), desc=f"Analyzing domains in {filename}", leave=False) as pbar:
+                for page_data in site_data['pages'].values():
+                    for request in page_data.get('requests', []):
+                        base_url = get_base_url(request['url'])
+                        if base_url not in analyzed_domains:
+                            analysis = analyze_subdomain(
+                                domain_analyzer, 
+                                main_site, 
+                                base_url, 
+                                1  # Initial count
+                            )
+                            analyzed_domains[base_url] = analysis
+                            pbar.update(1)
+                        else:
+                            analyzed_domains[base_url]['request_count'] += 1
             
-            # Finalize and save analysis
-            finalize_site_analysis(site_data, source_analysis, file_path)
+            # Save results
+            site_data['domain_analysis'] = {
+                'analyzed_at': datetime.now().isoformat(),
+                'domains': list(analyzed_domains.values())
+            }
+            save_json(site_data, file_path)
             
         except Exception as e:
             tqdm.write(f"Error processing {filename}: {str(e)}")
