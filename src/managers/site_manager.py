@@ -26,7 +26,7 @@ class SiteManager:
             rank, domain = next(reader)
             return rank, domain
 
-    def save_site_data(self, domain, rank, network_monitor):
+    def save_site_data(self, domain, rank, network_monitor, fingerprinting_data=None):
         site_data = {
             'domain': domain,
             'rank': rank,
@@ -37,7 +37,8 @@ class SiteManager:
                     'requests': network_monitor.requests
                 }
             },
-            'statistics': network_monitor.get_statistics()
+            'statistics': network_monitor.get_statistics(),
+            'fingerprinting': fingerprinting_data
         }
         
         json_path = os.path.join(self.base_dir, f'{domain}.json')
@@ -49,6 +50,13 @@ class SiteManager:
         print(f"Total Requests: {stats['total_requests']}")
         print(f"Request Types: {stats['request_types']}")
         print(f"Total Cookies in Headers: {stats['total_cookies']}")
+        
+        if fingerprinting_data:
+            print("\nFingerprinting Statistics:")
+            print(f"Suspicious Scripts: {len(fingerprinting_data.get('suspicious_scripts', []))}")
+            for script in fingerprinting_data.get('suspicious_scripts', []):
+                print(f"- Script: {script['script']}")
+                print(f"  Techniques: {', '.join(script['techniques'])}")
 
     def get_site_data_file(self, domain):
         """Get the full path to a site's JSON data file"""

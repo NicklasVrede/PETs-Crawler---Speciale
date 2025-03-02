@@ -19,30 +19,40 @@ class WebsiteCrawler:
 
     async def clear_browser_data(self, context):
         """Clear all browser storage data including cookies and local storage"""
-        # Clear cookies from context
-        await context.clear_cookies()
-        
-        # Get existing pages
-        pages = context.pages
-        if not pages:
-            # Create a new page if none exists
-            page = await context.new_page()
-        else:
-            page = pages[0]
-        
         try:
-            # Try to clear storage, but don't fail if we can't
+            # Get the active page
+            page = context.pages[0]
+            
+            # Clear cookies and storage at browser level
+            await context.clear_cookies()
+            await context.clear_permissions()
+            
+            # Clear page-level storage
             await page.evaluate("""() => {
-                try {
-                    localStorage.clear();
-                    sessionStorage.clear();
-                } catch (e) {
-                    // Ignore errors if storage isn't accessible
-                    console.log('Could not clear storage:', e);
-                }
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                // Clear all cookies with all possible domain patterns
+                document.cookie.split(";").forEach(c => { 
+                    const domain = window.location.hostname;
+                    const name = c.split("=")[0].trim();
+                    document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${domain}`;
+                    document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.${domain}`;
+                });
+                
+                // Clear IndexedDB
+                indexedDB.databases().then(dbs => {
+                    dbs.forEach(db => indexedDB.deleteDatabase(db.name));
+                });
             }""")
+            
+            # Clear browser cache using CDP
+            client = await page.context.new_cdp_session(page)
+            await client.send('Network.clearBrowserCache')
+            await client.send('Network.clearBrowserCookies')
+            
         except Exception as e:
-            print(f"Note: Could not clear browser storage: {str(e)}")
+            tqdm.write(f"Warning: Could not clear browser data: {str(e)}")
 
     async def populate_cache(self, domain, user_data_dir, full_extension_path, headless, viewport):
         """Pre-populate browser cache with initial page load"""
@@ -75,7 +85,9 @@ class WebsiteCrawler:
     async def simulate_user_interaction(self, page):
         """Simulate natural user behavior on the page using smooth mouse wheel scrolling"""
         try:
-            # Get total scroll height
+            # Get total scroll height and start scrolling quickly
+            await asyncio.sleep(0.3)  # Brief initial wait
+            
             max_scroll = await page.evaluate('document.body.scrollHeight')
             scroll_amount = 0
             
@@ -85,41 +97,40 @@ class WebsiteCrawler:
             
             tqdm.write(f"\nScrolling {int(scroll_percentage * 100)}% of page height: {target_scroll}px")
             
-            # Get viewport dimensions
+            # Get viewport dimensions and start mouse movement
             viewport = page.viewport_size
             middle_x = viewport['width'] // 2
             middle_y = viewport['height'] // 2
             
-            # Move mouse to middle of viewport
-            await page.mouse.move(middle_x, middle_y)
+            # Quick initial mouse movement
+            await page.mouse.move(middle_x, middle_y, steps=2)
             
             # Scroll down with smooth acceleration and deceleration
             while scroll_amount < target_scroll:
                 # Use smaller, more frequent wheel deltas for smoother scrolling
-                # Simulate touchpad-like smooth scroll
                 for _ in range(5):  # Bundle multiple small scrolls together
-                    delta_y = random.randint(30, 50)  # Smaller increments
+                    delta_y = random.randint(30, 50)
                     await page.mouse.wheel(0, delta_y)
                     scroll_amount += delta_y
                     await asyncio.sleep(0.016)  # ~60fps for smooth animation
                 
-                # Move mouse smoothly and naturally
-                if random.random() > 0.7:  # 30% chance to move mouse
+                # Quick mouse movements
+                if random.random() > 0.7:
                     await page.mouse.move(
                         middle_x + random.randint(-200, 200),
                         middle_y + random.randint(-100, 100),
-                        steps=5  # Smooth mouse movement
+                        steps=3
                     )
                 
-                # Brief pause between scroll bundles
-                await asyncio.sleep(random.uniform(0.1, 0.2))
+                # Shorter pauses between scroll bundles
+                await asyncio.sleep(random.uniform(0.05, 0.1))
                 
-                # Occasional longer pause (5% chance)
-                if random.random() > 0.95:
-                    await asyncio.sleep(random.uniform(0.3, 0.7))
+                # Rare longer pause (2% chance)
+                if random.random() > 0.98:
+                    await asyncio.sleep(random.uniform(0.2, 0.4))
             
-            # Short pause at current position
-            await asyncio.sleep(0.3)
+            # Quick pause at current position
+            await asyncio.sleep(0.2)
             
             # 50% chance to scroll back to top
             if random.random() > 0.5:
@@ -153,6 +164,9 @@ class WebsiteCrawler:
                 page = browser.pages[0]
                 await self.network_monitor.setup_monitoring(page)
                 await self.fp_collector.setup_monitoring(page)
+                
+                # Clear data only once at the start
+                await self.clear_browser_data(browser)
                 
                 # Visit and scroll homepage first
                 homepage = f"https://{domain}"
@@ -190,7 +204,7 @@ class WebsiteCrawler:
                                 except TimeoutError as e:
                                     tqdm.write(f"Page load timeout - attempting scroll anyway: {str(e)}")
                                     await self.simulate_user_interaction(page)
-                            
+                        
                             pbar.update(1)
                             
                         except Exception as e:

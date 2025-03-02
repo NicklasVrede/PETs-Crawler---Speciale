@@ -40,7 +40,12 @@ async def main(setup, storage_name, data_dir=None):
     print(f"\nDebug: Total requests captured: {len(crawler.network_monitor.requests)}")
     
     # Store data
-    site_manager.save_site_data(domain, rank, crawler.network_monitor)
+    site_manager.save_site_data(
+        domain, 
+        rank, 
+        crawler.network_monitor,
+        fingerprinting_data=site_data['fingerprinting']
+    )
     
     # Extract JavaScript from the saved data
     json_file = site_manager.get_site_data_file(domain)
