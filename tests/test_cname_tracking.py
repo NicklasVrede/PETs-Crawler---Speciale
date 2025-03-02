@@ -22,7 +22,7 @@ def test_cname_tracking():
     
     test_cases = [
         # (main_site, test_url, description)
-        ("https://plushbeds.com", "https://dnklry.plushbeds.com", "Suspicious subdomain"),
+        ("Amazon.co.uk", "https://aan.amazon.co.uk", "Suspicious subdomain"),
         # Add more test cases here
     ]
     

@@ -4,7 +4,7 @@ from managers.site_manager import SiteManager
 import json
 from pathlib import Path
 import os
-from utils import construct_paths, extract_javascript, load_config, get_profile_config
+from util import construct_paths, extract_javascript, load_config, get_profile_config
 from identify_sources import identify_site_sources
 
 

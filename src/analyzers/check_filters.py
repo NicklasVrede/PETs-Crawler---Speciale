@@ -101,10 +101,7 @@ if __name__ == "__main__":
     
     # List of URLs to check
     urls_to_check = [
-        'marketprivateg.net.daraz.com',
-        'https://aax-eu.amazon-adsystem.com',
-        'dnklry.plushbeds.com',
-        'gum.fr3.vip.prod.criteo.com'
+        'https://a.media-amazon.com'
     ]
     
     # Check each URL against filter lists

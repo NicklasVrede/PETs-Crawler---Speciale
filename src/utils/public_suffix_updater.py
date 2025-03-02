@@ -20,7 +20,7 @@ def update_public_suffix_list(force_update=False):
         if not force_update and os.path.exists(cache_file):
             mtime = datetime.fromtimestamp(os.path.getmtime(cache_file))
             if datetime.now() - mtime < cache_max_age:
-                print("Using cached Public Suffix List")
+                #print("Using cached Public Suffix List")
                 with open(cache_file, 'r', encoding='utf-8') as f:
                     return set(line.strip() for line in f 
                              if line.strip() and not line.startswith('//'))

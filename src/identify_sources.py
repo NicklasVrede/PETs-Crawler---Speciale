@@ -51,85 +51,75 @@ def check_tracking_cname(cname: str, tracking_list: list) -> bool:
                 return True
     return False
 
-def analyze_subdomain(domain_analyzer, main_site, base_url, request_count):
-    """Analyze a single subdomain for tracking behavior.
+def is_cdn_domain(domain: str) -> tuple[bool, str]:
+    """Check if a domain belongs to a known CDN provider.
     
-    Workflow:
-    1. Check if domain is first-party using public suffix list
-    2. For third-party domains: check filter lists and trackerdb
-    3. For first-party domains: analyze CNAME chain for tracking behavior
+    Args:
+        domain: Domain name to check
+    Returns:
+        tuple: (is_cdn: bool, provider_name: str)
     """
-    if not hasattr(domain_analyzer, 'public_suffixes'):
-        domain_analyzer.public_suffixes = update_public_suffix_list()
+    cdn_providers = {
+        'cloudfront.net': 'Amazon CloudFront',
+        'cloudflare.com': 'Cloudflare',
+        'akamai.net': 'Akamai',
+        'fastly.net': 'Fastly',
+        'edgecast.net': 'Edgecast',
+        'cdn.jsdelivr.net': 'jsDelivr',
+        'googleapis.com': 'Google CDN',
+        'gstatic.com': 'Google Static',
+        'azureedge.net': 'Azure CDN',
+    }
     
-    # Initialize the analysis result
+    for cdn_domain, provider in cdn_providers.items():
+        if cdn_domain in domain:
+            return True, provider
+    return False, None
+
+def analyze_subdomain(domain_analyzer, main_site, base_url, request_count):
+    """Analyze a single subdomain."""
     analysis_result = {
         'domain': base_url,
         'request_count': request_count,
-        'is_first_party_domain': False,
-        'third_party_tracking': {
-            'is_tracking': False,
-            'evidence': [],
-            'categorization': {}
-        },
-        'cname_tracking': {
-            'is_tracking': False,
-            'evidence': [],
-            'cname_chain': [],
-            'categorization': {}
-        }
+        'is_first_party_domain': None,
+        'tracking_type': None,
+        'tracking_evidence': [],
+        'categories': [],
+        'organizations': [],
+        'infrastructure_type': None,
+        'provider': None,
+        'cname_chain': []  # Add this to store the chain
     }
     
-    # Check if this is a first-party domain
-    is_first_party_domain = are_domains_related(main_site, base_url, domain_analyzer.public_suffixes)
-    analysis_result['is_first_party_domain'] = is_first_party_domain
+    # First check if URL matches filter rules
+    filter_name, rule = domain_analyzer.is_domain_in_filters(base_url)
+    if filter_name:
+        analysis_result['tracking_type'] = 'filter_match'
+        analysis_result['is_first_party_domain'] = False
+        analysis_result['tracking_evidence'].append(f"Domain found in {filter_name}: {rule}")
     
-    if not is_first_party_domain:
-        # Analyze third-party domain for tracking
-        parsed_url = urlparse(base_url).netloc
-        
-        # Check filter lists
-        filter_name, rule = domain_analyzer.is_domain_in_filters(parsed_url)
-        if filter_name:
-            analysis_result['third_party_tracking']['is_tracking'] = True
-            analysis_result['third_party_tracking']['evidence'].append(
-                f"Domain found in filter list: {filter_name}"
-            )
-        
-        # Check Ghostery trackerdb
-        tracker_info = get_tracker_categorization(parsed_url)
-        if tracker_info:
-            analysis_result['third_party_tracking']['is_tracking'] = True
-            analysis_result['third_party_tracking']['categorization'] = tracker_info
-            analysis_result['third_party_tracking']['evidence'].append(
-                f"Domain identified as {'/'.join(tracker_info['categories'])} tracker by Ghostery"
-            )
+    # Check CNAME chain
+    parsed_url = urlparse(base_url).netloc
+    cname_chain = get_cname_chain(domain_analyzer, parsed_url)
+    if cname_chain:
+        analysis_result['cname_chain'] = cname_chain
+        # Check each CNAME in chain against filters
+        for cname in cname_chain:
+            filter_name, rule = domain_analyzer.is_domain_in_filters(cname)
+            if filter_name:
+                analysis_result['tracking_type'] = 'cname_tracking'
+                analysis_result['is_first_party_domain'] = False
+                analysis_result['tracking_evidence'].append(f"CNAME chain member {cname} found in {filter_name}: {rule}")
     
-    else:
-        # Analyze first-party domain for CNAME-based tracking
-        parsed_url = urlparse(base_url).netloc
-        cname_chain = get_cname_chain(domain_analyzer, parsed_url)
+    # Always check Ghostery DB for additional info
+    tracker_info = get_tracker_categorization(parsed_url)
+    if tracker_info:
+        analysis_result['categories'] = tracker_info['categories']
+        analysis_result['organizations'] = tracker_info['organizations']
         
-        if cname_chain:
-            analysis_result['cname_tracking']['cname_chain'] = cname_chain
-            
-            # Get base domain for main site
-            main_base, main_suffix = get_base_domain(main_site, domain_analyzer.public_suffixes)
-            
-            # Analyze CNAME chain for tracking
-            is_tracking, evidence, categorization = analyze_cname_chain(
-                domain_analyzer,
-                parsed_url,
-                f"{main_base}.{main_suffix}",
-                cname_chain,
-                domain_analyzer.public_suffixes
-            )
-            
-            analysis_result['cname_tracking'].update({
-                'is_tracking': is_tracking,
-                'evidence': evidence,
-                'categorization': categorization
-            })
+        if 'Hosting' in tracker_info['categories']:
+            analysis_result['infrastructure_type'] = 'hosting'
+            analysis_result['provider'] = tracker_info['organizations'][0]
     
     return analysis_result
 
@@ -445,6 +435,13 @@ def analyze_cname_chain(domain_analyzer, subdomain, main_site, cname_chain, publ
             print(f"  Organizations: {', '.join(info['organizations'])}")
     
     return is_tracking, evidence, categorization
+
+def is_cdn_or_hosting(tracker_info: dict) -> bool:
+    """Check if a domain is categorized as hosting/CDN infrastructure."""
+    if not tracker_info:
+        return False
+        
+    return 'Hosting' in tracker_info['categories']
 
 if __name__ == "__main__":
     data_directory = 'data/consent_o_matic_opt_out_non_headless'

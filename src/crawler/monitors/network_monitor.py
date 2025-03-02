@@ -1,11 +1,18 @@
 from datetime import datetime
 from typing import Dict, List
+from urllib.parse import urlparse
 
 class NetworkMonitor:
     def __init__(self):
         self.requests = []
         self.current_page = None
         self.script_metadata = []
+
+    def _format_url_for_print(self, url):
+        """Format URL to show only domain and truncated path"""
+        parsed = urlparse(url)
+        path = parsed.path[:30] + '...' if len(parsed.path) > 30 else parsed.path
+        return f"{parsed.netloc}{path}"
 
     async def setup_monitoring(self, page):
         """Setup network monitoring for a page"""
@@ -15,7 +22,6 @@ class NetworkMonitor:
         async def handle_navigation(frame):
             if frame == page.main_frame:
                 self.current_page = frame.url
-                print(f"Page: {self.current_page}")
         
         page.on("framenavigated", handle_navigation)
         
@@ -61,6 +67,13 @@ class NetworkMonitor:
 
         # Monitor ALL network requests
         await page.route("**", lambda route: handle_request(route, route.request))
+
+    def get_results(self):
+        """Get all collected network monitoring results"""
+        return {
+            'requests': self.requests,
+            'script_metadata': self.script_metadata
+        }
 
     def get_statistics(self):
         """Get basic request statistics"""
