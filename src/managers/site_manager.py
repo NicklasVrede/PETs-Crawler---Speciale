@@ -31,12 +31,7 @@ class SiteManager:
             'domain': domain,
             'rank': rank,
             'timestamp': datetime.now(),
-            'pages': {
-                'homepage': {
-                    'url': f"https://{domain}",
-                    'requests': network_monitor.requests
-                }
-            },
+            'network_data': network_monitor.get_results(),
             'statistics': network_monitor.get_statistics(),
             'fingerprinting': fingerprinting_data
         }
@@ -53,10 +48,11 @@ class SiteManager:
         
         if fingerprinting_data:
             print("\nFingerprinting Statistics:")
-            print(f"Suspicious Scripts: {len(fingerprinting_data.get('suspicious_scripts', []))}")
-            for script in fingerprinting_data.get('suspicious_scripts', []):
-                print(f"- Script: {script['script']}")
-                print(f"  Techniques: {', '.join(script['techniques'])}")
+            if fingerprinting_data.get('techniques_detected'):
+                print(f"Detected techniques: {', '.join(fingerprinting_data['techniques_detected'])}")
+                print(f"Total API calls: {fingerprinting_data['summary']['total_calls']}")
+            else:
+                print("No fingerprinting techniques detected")
 
     def get_site_data_file(self, domain):
         """Get the full path to a site's JSON data file"""

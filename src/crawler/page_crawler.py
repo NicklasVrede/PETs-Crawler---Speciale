@@ -11,65 +11,113 @@ import random
 import asyncio
 
 class WebsiteCrawler:
-    def __init__(self, max_pages=20):
+    def __init__(self, max_pages=20, visits=2):
         self.max_pages = max_pages
+        self.visits = visits
         self.network_monitor = NetworkMonitor()
         self.fp_collector = FingerprintCollector()
-        self.cache_populated = False
         self.base_domain = None
 
-    async def clear_browser_data(self, context):
-        """Clear all browser storage data including cookies and local storage"""
+    async def clear_all_browser_data(self, browser):
+        """Clear ALL browser data at startup"""
         try:
-            # Get the active page
-            page = context.pages[0]
+            page = browser.pages[0]
             
-            # Clear cookies and storage at browser level
-            await context.clear_cookies()
-            await context.clear_permissions()
+            # Clear browser-level data
+            await browser.clear_cookies()
+            await browser.clear_permissions()
             
-            # Clear page-level storage with error handling
+            # Clear ALL storage data
             await page.evaluate("""() => {
                 try {
-                    // Clear localStorage if accessible
-                    try { localStorage.clear(); } catch (e) { console.log("localStorage not accessible"); }
+                    // Clear localStorage
+                    localStorage.clear();
                     
-                    // Clear sessionStorage if accessible
-                    try { sessionStorage.clear(); } catch (e) { console.log("sessionStorage not accessible"); }
+                    // Clear sessionStorage
+                    sessionStorage.clear();
                     
-                    // Clear cookies with error handling
+                    // Clear cookies
+                    document.cookie.split(";").forEach(c => {
+                        const domain = window.location.hostname;
+                        if (domain) {
+                            const name = c.split("=")[0].trim();
+                            document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${domain}`;
+                            document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.${domain}`;
+                        }
+                    });
+                    
+                    // Clear IndexedDB
+                    indexedDB.databases().then(dbs => {
+                        dbs.forEach(db => indexedDB.deleteDatabase(db.name));
+                    });
+                    
+                    // Clear Cache Storage
+                    if ('caches' in window) {
+                        caches.keys().then(keys => {
+                            keys.forEach(key => caches.delete(key));
+                        });
+                    }
+                    
+                    // Clear Service Workers
+                    if ('serviceWorker' in navigator) {
+                        navigator.serviceWorker.getRegistrations().then(registrations => {
+                            registrations.forEach(registration => registration.unregister());
+                        });
+                    }
+                    
+                } catch (e) {
+                    console.log("Error clearing data:", e);
+                }
+            }""")
+            
+            print("Successfully cleared all browser data at startup")
+            
+        except Exception as e:
+            print(f"Error during initial data clearing: {e}")
+
+    async def clear_browser_data(self, browser):
+        """Selectively clear data between visits"""
+        try:
+            # Get the active page
+            page = browser.pages[0]
+            
+            # Clear only session-related data
+            await page.evaluate("""() => {
+                try {
+                    // Clear sessionStorage
+                    try { 
+                        sessionStorage.clear(); 
+                    } catch (e) { 
+                        console.log("sessionStorage not accessible"); 
+                    }
+                    
+                    // Clear session cookies only (keep persistent cookies)
                     try {
                         document.cookie.split(";").forEach(c => { 
-                            const domain = window.location.hostname;
-                            if (domain) {
-                                const name = c.split("=")[0].trim();
+                            const cookie = c.trim();
+                            // Check if cookie has no expiry (session cookie)
+                            if (!cookie.toLowerCase().includes('expires=') && 
+                                !cookie.toLowerCase().includes('max-age=')) {
+                                const name = cookie.split("=")[0];
+                                const domain = window.location.hostname;
                                 document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${domain}`;
                                 document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.${domain}`;
                             }
                         });
-                    } catch (e) { console.log("Cookie clearing not accessible"); }
+                    } catch (e) { 
+                        console.log("Cookie clearing not accessible"); 
+                    }
                     
-                    // Clear IndexedDB if accessible
-                    try {
-                        indexedDB.databases().then(dbs => {
-                            dbs.forEach(db => indexedDB.deleteDatabase(db.name));
-                        });
-                    } catch (e) { console.log("IndexedDB not accessible"); }
                 } catch (e) {
                     console.log("Storage clearing error:", e);
                 }
             }""")
             
-            # Try to clear browser cache using CDP if available
-            try:
-                client = await page.context.new_cdp_session(page)
-                await client.send('Network.clearBrowserCache')
-                await client.send('Network.clearBrowserCookies')
-            except Exception as e:
-                tqdm.write(f"CDP clearing not available: {str(e)}")
+            # Clear browser cache but keep cookies
+            await browser.clear_permissions()
             
         except Exception as e:
-            tqdm.write(f"Warning: Could not clear all browser data: {str(e)}")
+            print(f"Error clearing browser data: {e}")
 
     async def populate_cache(self, domain, user_data_dir, full_extension_path, headless, viewport):
         """Pre-populate browser cache with initial page load"""
@@ -131,7 +179,7 @@ class WebsiteCrawler:
             
             target_scroll = int(max_scroll * scroll_percentage)
             
-            tqdm.write(f"Scrolling {int(scroll_percentage * 100)}% of page ({target_scroll}px)")
+            #tqdm.write(f"Scrolling {int(scroll_percentage * 100)}% of page ({target_scroll}px)")
             
             # Get viewport dimensions
             viewport = page.viewport_size
@@ -191,13 +239,13 @@ class WebsiteCrawler:
             tqdm.write(f"Scroll error: {str(e)}")
 
     async def crawl_site(self, domain, user_data_dir, full_extension_path, headless=False, viewport=None):
-        """Crawl a website and collect data using a specified browser executable."""
-        # Set base_domain for use in other methods
+        """Crawl a website multiple times to analyze cookie persistence"""
         self.base_domain = domain.lower().replace('www.', '')
+        visit_results = []
         
-        if not self.cache_populated:
-            await self.populate_cache(domain, user_data_dir, full_extension_path, headless, viewport)
-        
+        # First get list of URLs to visit (done once)
+        print("\nCollecting URLs to visit...")
+        urls = []
         async with async_playwright() as p:
             browser = await p.chromium.launch_persistent_context(
                 user_data_dir=user_data_dir,
@@ -208,96 +256,76 @@ class WebsiteCrawler:
                     f'--load-extension={full_extension_path}'
                 ]
             )
-
+            
             try:
+                # Clear ALL data at startup
+                await self.clear_all_browser_data(browser)
+                
+                # Get URLs to visit
                 page = browser.pages[0]
-                await self.network_monitor.setup_monitoring(page)
-                await self.fp_collector.setup_monitoring(page)
-                
-                # Clear data only once at the start
-                await self.clear_browser_data(browser)
-                
-                # Visit and scroll homepage first (index 0)
-                homepage = f"https://{domain}"
-                tqdm.write(f"\nVisiting homepage (index 0): {homepage}")
-                await page.goto(homepage, timeout=60000)
-                await page.wait_for_load_state('domcontentloaded', timeout=30000)
-                await page.wait_for_load_state('networkidle', timeout=10000)
-                
-                # Set page index for homepage
-                await page.evaluate("window.currentPageIndex = 0;")
-                
-                tqdm.write("Starting homepage interaction...")
-                await self.simulate_user_interaction(page)
-                tqdm.write("Finished homepage interaction")
-                
-                # Now extract links directly without visiting subpages yet
                 extractor = LinkExtractor(domain)
-                
-                # First extract from homepage (we already did some interaction)
-                homepage_links = await extractor.extract_links(page)
-                
-                # Now try clicking menus and navigation to expose more links
-                # Common navigation trigger selectors
-                nav_triggers = [
-                    '.menu-toggle', '.navbar-toggle', '.menu-icon', '.nav-toggle',
-                    '.hamburger', '[data-toggle="collapse"]', '.mobile-nav-toggle',
-                    '#menu-button', '.navigation-trigger', '.menu-trigger',
-                    'button[aria-label*="menu"]', 'button[aria-label*="navigation"]'
-                ]
-                
-                tqdm.write("Trying to open navigation menus to find more links...")
-                for selector in nav_triggers:
-                    try:
-                        count = await page.locator(selector).count()
-                        if count > 0:
-                            tqdm.write(f"Found menu trigger: {selector}")
-                            await page.locator(selector).first.click()
-                            await asyncio.sleep(1)  # Wait for menu to expand
-                            more_links = await extractor.extract_links(page)
-                            tqdm.write(f"Found {len(more_links)} additional links after clicking {selector}")
-                            homepage_links.update(more_links)
-                    except Exception as e:
-                        continue
-                
-                # Complete subpage extraction
                 urls = await extractor.get_subpages(page, self.max_pages)
-                
-                with tqdm(total=len(urls), desc=f"Crawling {domain}", unit="page") as pbar:
-                    for index, url in enumerate(urls, start=1):  # Start from 1 since homepage is 0
-                        try:
-                            if url != homepage:  # Skip homepage since we already visited it
-                                tqdm.write(f"\nVisiting (index {index}): {url}")
-                                await page.goto(url, timeout=60000)
-                                
-                                # Set page index for current page
-                                await page.evaluate(f"window.currentPageIndex = {index};")
-                                
-                                try:
-                                    await page.wait_for_load_state('domcontentloaded', timeout=30000)
-                                    try:
-                                        await page.wait_for_load_state('networkidle', timeout=10000)
-                                    except TimeoutError:
-                                        tqdm.write("Network idle timeout - continuing anyway")
-                                    
-                                    tqdm.write("Starting page interaction...")
-                                    await self.simulate_user_interaction(page)
-                                    tqdm.write("Finished page interaction")
-                                    
-                                except TimeoutError as e:
-                                    tqdm.write(f"Page load timeout - attempting scroll anyway: {str(e)}")
-                                    await self.simulate_user_interaction(page)
-                        
-                            pbar.update(1)
-                            
-                        except Exception as e:
-                            tqdm.write(f"Error on page {url}: {str(e)}")
-                            continue
-                
-                return {
-                    'fingerprinting': self.fp_collector.get_fingerprinting_results(),
-                    'network': self.network_monitor.get_results()
-                }
+                urls = urls[:self.max_pages]  # Ensure max_pages limit
+                print(f"Found {len(urls)} URLs to visit")
                 
             finally:
                 await browser.close()
+
+        # Now do multiple visits with the SAME collected URLs
+        for visit in range(self.visits):
+            print(f"\nStarting visit {visit + 1} of {self.visits}")
+            print(f"Will visit {len(urls)} pages")
+            
+            async with async_playwright() as p:
+                browser = await p.chromium.launch_persistent_context(
+                    user_data_dir=user_data_dir,
+                    headless=headless,
+                    viewport=viewport or {'width': 1280, 'height': 800},
+                    args=[
+                        f'--disable-extensions-except={full_extension_path}',
+                        f'--load-extension={full_extension_path}'
+                    ]
+                )
+                
+                try:
+                    page = browser.pages[0]
+                    await self.network_monitor.setup_monitoring(page, visit_number=visit)
+                    await self.fp_collector.setup_monitoring(page)
+                    
+                    # Visit each URL in this visit
+                    for i, url in enumerate(urls, 1):
+                        #print(f"\nVisiting page {i}/{len(urls)}: {url}")
+                        try:
+                            await page.goto(url, timeout=60000)
+                            await page.wait_for_load_state('domcontentloaded', timeout=30000)
+                            try:
+                                await page.wait_for_load_state('networkidle', timeout=10000)
+                            except:
+                                pass  # Continue if networkidle times out
+                            
+                            # Capture storage state after each page load
+                            await self.network_monitor.storage_monitor.capture_snapshot(page, visit_number=visit)
+                            
+                            # Simple interaction (scroll)
+                            await self.simulate_user_interaction(page)
+                        except Exception as e:
+                            print(f"Error visiting {url}: {e}")
+                    
+                    # Store results for this visit
+                    visit_results.append({
+                        'visit_number': visit,
+                        'network': self.network_monitor.get_results(),
+                        'fingerprinting': self.fp_collector.get_fingerprinting_results()
+                    })
+                    
+                finally:
+                    await browser.close()
+        
+        # Analyze persistence between visits
+        persistent_cookies = self.network_monitor.analyze_cookie_persistence(visit_results)
+        
+        return {
+            'visits': visit_results,
+            'persistent_cookies': persistent_cookies,
+            'fingerprinting': self.fp_collector.get_fingerprinting_results()
+        }

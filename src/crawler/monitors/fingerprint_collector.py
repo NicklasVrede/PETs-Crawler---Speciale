@@ -188,49 +188,35 @@ class FingerprintCollector:
 
     def get_fingerprinting_results(self):
         """Get analysis results with aggregated statistics"""
-        # Identify suspicious scripts
-        suspicious_scripts = [
-            {
-                'script': script,
-                'techniques': list(patterns)
-            }
-            for script, patterns in self.script_patterns.items()
-            if self._is_likely_fingerprinting(script)
-        ]
+        # Get detected techniques from actual usage in page_data
+        detected_techniques = set()
         
-        # Get top pages by fingerprinting activity
-        top_pages = sorted(
-            self.page_data.items(), 
-            key=lambda x: sum(x[1]['api_counts'].values()), 
-            reverse=True
-        )
+        for data in self.page_data.values():
+            category_breakdown = data['categories']
+            if category_breakdown.get('canvas', 0) > 0:
+                detected_techniques.add('canvas')
+            if category_breakdown.get('webgl', 0) > 0:
+                detected_techniques.add('webgl')
+            if category_breakdown.get('hardware', 0) > 0:
+                detected_techniques.add('hardware')
         
         # Create page summaries
         page_summaries = []
-        for url, data in top_pages:
+        for url, data in self.page_data.items():
             page_summaries.append({
                 'url': url,
                 'total_calls': sum(data['api_counts'].values()),
                 'api_breakdown': dict(data['api_counts']),
-                'category_breakdown': dict(data['categories']),
-                'script_count': len(data['scripts'])
+                'category_breakdown': dict(data['categories'])
             })
         
-        # Create overall summary
-        total_calls = sum(sum(data['api_counts'].values()) for data in self.page_data.values())
-        
         return {
-            'fingerprinting_detected': len(suspicious_scripts) > 0,
-            'suspicious_scripts': suspicious_scripts,
+            'fingerprinting_detected': bool(detected_techniques),  # Will be true if any techniques were detected
+            'techniques_detected': list(detected_techniques),
             'page_summaries': page_summaries,
             'summary': {
-                'total_calls': total_calls,
+                'total_calls': sum(sum(data['api_counts'].values()) for data in self.page_data.values()),
                 'pages_analyzed': len(self.page_data),
-                'category_counts': dict(self.category_counts),
-                'top_apis': dict(Counter({
-                    api: count 
-                    for page_data in self.page_data.values() 
-                    for api, count in page_data['api_counts'].items()
-                }).most_common(10))
+                'category_counts': dict(self.category_counts)
             }
         } 

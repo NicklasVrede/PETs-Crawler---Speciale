@@ -139,7 +139,7 @@ class LinkExtractor:
                 if next_url in self.visited_urls:
                     continue
                 
-                print(f"\nVisiting subpage: {next_url}")
+                #print(f"\nVisiting subpage: {next_url}")
                 try:
                     await page.goto(next_url, timeout=30000)
                     await page.wait_for_load_state('domcontentloaded')
