@@ -51,30 +51,7 @@ def check_tracking_cname(cname: str, tracking_list: list) -> bool:
                 return True
     return False
 
-def is_cdn_domain(domain: str) -> tuple[bool, str]:
-    """Check if a domain belongs to a known CDN provider.
-    
-    Args:
-        domain: Domain name to check
-    Returns:
-        tuple: (is_cdn: bool, provider_name: str)
-    """
-    cdn_providers = {
-        'cloudfront.net': 'Amazon CloudFront',
-        'cloudflare.com': 'Cloudflare',
-        'akamai.net': 'Akamai',
-        'fastly.net': 'Fastly',
-        'edgecast.net': 'Edgecast',
-        'cdn.jsdelivr.net': 'jsDelivr',
-        'googleapis.com': 'Google CDN',
-        'gstatic.com': 'Google Static',
-        'azureedge.net': 'Azure CDN',
-    }
-    
-    for cdn_domain, provider in cdn_providers.items():
-        if cdn_domain in domain:
-            return True, provider
-    return False, None
+
 
 def analyze_subdomain(domain_analyzer, main_site, base_url, request_count):
     """Analyze a single subdomain."""
@@ -88,18 +65,37 @@ def analyze_subdomain(domain_analyzer, main_site, base_url, request_count):
         'organizations': [],
         'infrastructure_type': None,
         'provider': None,
-        'cname_chain': []  # Add this to store the chain
+        'cname_chain': []
     }
     
-    # First check if URL matches filter rules
+    # First determine if this is a first-party domain
+    parsed_url = urlparse(base_url).netloc
+    main_domain = main_site if '://' not in main_site else urlparse(main_site).netloc
+    
+    # Use are_domains_related to check first-party status
+    try:
+        if not domain_analyzer.public_suffixes:
+            # Make sure we have public suffixes loaded
+            domain_analyzer.public_suffixes = update_public_suffix_list()
+        
+        is_first_party = are_domains_related(
+            main_domain, 
+            parsed_url, 
+            domain_analyzer.public_suffixes
+        )
+        analysis_result['is_first_party_domain'] = is_first_party
+    except Exception as e:
+        print(f"Error checking domain relationship: {e}")
+        # Keep as None if there's an error
+    
+    # Check if URL matches filter rules
     filter_name, rule = domain_analyzer.is_domain_in_filters(base_url)
     if filter_name:
         analysis_result['tracking_type'] = 'filter_match'
-        analysis_result['is_first_party_domain'] = False
+        analysis_result['is_first_party_domain'] = False  # Override for known trackers
         analysis_result['tracking_evidence'].append(f"Domain found in {filter_name}: {rule}")
     
     # Check CNAME chain
-    parsed_url = urlparse(base_url).netloc
     cname_chain = get_cname_chain(domain_analyzer, parsed_url)
     if cname_chain:
         analysis_result['cname_chain'] = cname_chain
@@ -176,31 +172,41 @@ def identify_site_sources(data_dir):
         try:
             # Load site data
             site_data = load_json(file_path)
-            main_site = site_data['pages']['homepage']['url']
             
-            # First pass: count unique domains
+            # Get main site domain from the site_data
+            main_site = site_data.get('domain', filename.replace('.json', ''))
+            
+            # Extract all requests based on the actual structure
+            all_requests = []
+            if 'network_data' in site_data and 'requests' in site_data['network_data']:
+                all_requests = site_data['network_data']['requests']
+            
+            # Get unique domains
             unique_domains = set()
-            for page_data in site_data['pages'].values():
-                for request in page_data.get('requests', []):
+            for request in all_requests:
+                if 'url' in request:
                     unique_domains.add(get_base_url(request['url']))
             
-            # Analyze each unique subdomain
+            # Skip if no domains found
+            if not unique_domains:
+                tqdm.write(f"No domains found in {filename}")
+                continue
+                
+            tqdm.write(f"Found {len(unique_domains)} unique domains in {filename}")
+            
+            # Analyze each unique domain
             analyzed_domains = {}
             with tqdm(total=len(unique_domains), desc=f"Analyzing domains in {filename}", leave=False) as pbar:
-                for page_data in site_data['pages'].values():
-                    for request in page_data.get('requests', []):
-                        base_url = get_base_url(request['url'])
-                        if base_url not in analyzed_domains:
-                            analysis = analyze_subdomain(
-                                domain_analyzer, 
-                                main_site, 
-                                base_url, 
-                                1  # Initial count
-                            )
-                            analyzed_domains[base_url] = analysis
-                            pbar.update(1)
-                        else:
-                            analyzed_domains[base_url]['request_count'] += 1
+                for domain in unique_domains:
+                    request_count = sum(1 for req in all_requests if get_base_url(req['url']) == domain)
+                    analysis = analyze_subdomain(
+                        domain_analyzer,
+                        main_site,
+                        domain,
+                        request_count
+                    )
+                    analyzed_domains[domain] = analysis
+                    pbar.update(1)
             
             # Save results
             site_data['domain_analysis'] = {
@@ -211,6 +217,8 @@ def identify_site_sources(data_dir):
             
         except Exception as e:
             tqdm.write(f"Error processing {filename}: {str(e)}")
+            import traceback
+            tqdm.write(traceback.format_exc())  # Print the full error trace
 
 def print_analysis_summary(site_data, source_analysis):
     """Print a summary of the source analysis results."""
@@ -444,5 +452,5 @@ def is_cdn_or_hosting(tracker_info: dict) -> bool:
     return 'Hosting' in tracker_info['categories']
 
 if __name__ == "__main__":
-    data_directory = 'data/consent_o_matic_opt_out_non_headless'
+    data_directory = 'data/i_dont_care_about_cookies_non_headless'
     identify_site_sources(data_directory)

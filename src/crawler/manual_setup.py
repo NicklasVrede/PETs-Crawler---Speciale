@@ -35,4 +35,4 @@ def launch_browser_for_manual_setup(profile_name="manual_setup", browser_type="c
 
 if __name__ == "__main__":
     # Launch the browser for manual setup
-    launch_browser_for_manual_setup(profile_name="consent_o_matic", browser_type="chrome")
+    launch_browser_for_manual_setup(profile_name="i_dont_care_about_cookies", browser_type="chrome")

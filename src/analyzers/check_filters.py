@@ -3,6 +3,7 @@ import fnmatch
 from urllib.parse import urlparse
 import dns.resolver
 from diskcache import Cache
+from src.utils.public_suffix_updater import update_public_suffix_list
 
 class DomainFilterAnalyzer:
     def __init__(self, filter_dir='data/filters', cache_dir='data/cache'):
@@ -12,6 +13,8 @@ class DomainFilterAnalyzer:
         if not self.filters:
             raise ValueError("No filter rules were loaded")
         self.cache = Cache(cache_dir)
+        # Initialize public suffixes
+        self.public_suffixes = update_public_suffix_list()
 
     def load_filter_list(self, file_path):
         """Load and parse a filter list from a file."""

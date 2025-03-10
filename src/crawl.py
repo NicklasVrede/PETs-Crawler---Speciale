@@ -4,9 +4,8 @@ from managers.site_manager import SiteManager
 import json
 from pathlib import Path
 import os
-from util import construct_paths, extract_javascript, load_config, get_profile_config
+from utils.util import construct_paths, extract_javascript, load_config, get_profile_config
 from identify_sources import identify_site_sources
-
 
 
 async def main(setup, storage_name, data_dir=None):
@@ -19,6 +18,9 @@ async def main(setup, storage_name, data_dir=None):
     # Construct paths
     user_data_dir, full_extension_path = construct_paths(config, setup)
     
+    #print the full extension path
+    print(f"Using extension path: {full_extension_path}")
+
     #debugging:
     #print(f"Using data directory: {user_data_dir}")
     #print(f"Using extension path: {full_extension_path}")
@@ -38,13 +40,13 @@ async def main(setup, storage_name, data_dir=None):
     
     # Debug print
     print(f"\nDebug: Total requests captured: {len(crawler.network_monitor.requests)}")
-    
+        
     # Store data
     site_manager.save_site_data(
         domain, 
         rank, 
         crawler.network_monitor,
-        fingerprinting_data=site_data['fingerprinting']
+        fingerprinting_data=site_data['fingerprinting_summary']
     )
     
     # Extract JavaScript from the saved data
@@ -57,7 +59,7 @@ if __name__ == "__main__":
     profile_names = config.get('profiles', {}).keys()
     print("Profile names:", list(profile_names))
 
-    current_profile = 'consent_o_matic_opt_out'
+    current_profile = 'i_dont_care_about_cookies'
     storage_name = f"{current_profile}_non_headless"
     asyncio.run(main(current_profile, storage_name))
 
