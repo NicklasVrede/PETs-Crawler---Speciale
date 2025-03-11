@@ -356,10 +356,8 @@ class StorageMonitor:
 class NetworkMonitor:
     def __init__(self):
         self.requests = []
-        self.cookies_set = []
         self.domains_contacted = set()
         self.storage_monitor = StorageMonitor()
-        self.cookie_updates = {}
         
     async def setup_monitoring(self, page, visit_number=0):
         """Setup network monitoring"""
@@ -400,17 +398,6 @@ class NetworkMonitor:
                     }
                 }
                 
-                # Track cookies
-                if "set-cookie" in response.headers:
-                    self.cookies_set.append({
-                        "domain": domain,
-                        "cookie": response.headers["set-cookie"],
-                        "url": url,
-                        "visit_number": visit_number,
-                        "timestamp": datetime.now().isoformat(),
-                        "response_type": request.resource_type
-                    })
-                
                 # Add response data to request record
                 request_data["response"] = response_data
                 
@@ -442,117 +429,12 @@ class NetworkMonitor:
         except:
             return url.split('/')[2] if '://' in url else url.split('/')[0]
     
-    def analyze_cookies(self, visit_number):
-        """Analyze cookies with focus on persistence and updates"""
-        cookies_analysis = {
-            'persistent_cookies': [],
-            'session_cookies': [],
-            'cookie_updates': [],  # Track cookies that changed from previous visit
-            'consent_related': []  # Track consent-related cookies
-        }
-        
-        for cookie in self.cookies_set:
-            cookie_data = self._parse_cookie(cookie)
-            
-            # Track cookie updates between visits
-            cookie_key = f"{cookie_data['name']}:{cookie_data['domain']}"
-            if visit_number > 0 and cookie_key in self.cookie_updates:
-                old_expiry = self.cookie_updates[cookie_key]['expires']
-                if old_expiry and cookie_data['expires'] and old_expiry != cookie_data['expires']:
-                    cookies_analysis['cookie_updates'].append({
-                        'name': cookie_data['name'],
-                        'domain': cookie_data['domain'],
-                        'old_expiry': old_expiry,
-                        'new_expiry': cookie_data['expires']
-                    })
-            
-            # Store current cookie data for next visit comparison
-            self.cookie_updates[cookie_key] = cookie_data
-            
-            # Identify consent-related cookies
-            if self._is_consent_related(cookie_data['name']):
-                cookies_analysis['consent_related'].append(cookie_data)
-            
-            # Categorize as persistent or session
-            if cookie_data['expires']:
-                cookies_analysis['persistent_cookies'].append(cookie_data)
-            else:
-                cookies_analysis['session_cookies'].append(cookie_data)
-        
-        return cookies_analysis
-    
-    def _parse_cookie(self, cookie):
-        """Parse detailed cookie information"""
-        cookie_str = cookie['cookie']
-        parts = cookie_str.split(';')
-        name_value = parts[0].split('=', 1)
-        
-        cookie_data = {
-            'name': name_value[0].strip(),
-            'value': name_value[1].strip() if len(name_value) > 1 else '',
-            'domain': cookie['domain'],
-            'url': cookie['url'],
-            'response_type': cookie['response_type'],
-            'visit_number': cookie.get('visit_number'),
-            'timestamp': cookie.get('timestamp'),
-            'expires': None,
-            'same_site': None,
-            'secure': False,
-            'http_only': False
-        }
-        
-        for part in parts[1:]:
-            part = part.strip().lower()
-            if part.startswith('expires='):
-                try:
-                    expiry = datetime.strptime(part[8:], '%a, %d-%b-%Y %H:%M:%S GMT')
-                    cookie_data['expires'] = expiry.isoformat()
-                except ValueError:
-                    pass
-            elif part.startswith('max-age='):
-                try:
-                    max_age = int(part[8:])
-                    if max_age > 0:
-                        cookie_data['expires'] = (datetime.now() + timedelta(seconds=max_age)).isoformat()
-                except ValueError:
-                    pass
-            elif part == 'secure':
-                cookie_data['secure'] = True
-            elif part == 'httponly':
-                cookie_data['http_only'] = True
-            elif part.startswith('samesite='):
-                cookie_data['same_site'] = part[9:]
-        
-        return cookie_data
-    
-    def _is_consent_related(self, cookie_name):
-        """Identify consent-related cookies"""
-        consent_patterns = [
-            'consent', 'gdpr', 'ccpa', 'cookie', 'opt', 
-            'privacy', 'choice', 'preference', 'euconsent'
-        ]
-        return any(pattern in cookie_name.lower() for pattern in consent_patterns)
-    
     def get_results(self):
         """Get comprehensive monitoring results"""
-        # Handle case where no cookies were set
-        max_visit = 0
-        if self.cookies_set:
-            max_visit = max(c['visit_number'] for c in self.cookies_set)
-        
         return {
             'requests': self.requests,
             'domains_contacted': list(self.domains_contacted),
-            'cookie_analysis': {
-                visit: self.analyze_cookies(visit) 
-                for visit in range(max_visit + 1)
-            },
-            'storage': self.storage_monitor.get_results(),
-            'tracking_evolution': {
-                'cookie_updates': len([c for c in self.cookie_updates.values() if c['expires']]),
-                'consent_cookies': len([c for c in self.cookies_set if self._is_consent_related(c['name'])]),
-                'third_party_cookies': len([c for c in self.cookies_set if not c['domain'] in c['url']])
-            }
+            'storage': self.storage_monitor.get_results()
         }
     
     def get_statistics(self):
@@ -560,8 +442,7 @@ class NetworkMonitor:
         stats = {
             'total_requests': len(self.requests),
             'request_types': {},
-            'domains': {},
-            'total_cookies': len(self.cookies_set)
+            'domains': {}
         }
         
         for req in self.requests:
@@ -574,50 +455,3 @@ class NetworkMonitor:
             stats['domains'][domain] = stats['domains'].get(domain, 0) + 1
         
         return stats
-    def analyze_cookie_persistence(self, visit_results):
-        """Analyze which cookies persist across visits"""
-        persistent_cookies = []
-        cookie_values_by_visit = {}
-        
-        # Collect cookie values from each visit
-        for visit in visit_results:
-            visit_num = visit['visit_number']
-            visit_cookies = visit['network'].get('cookies_set', [])
-            cookie_values_by_visit[visit_num] = {
-                self._parse_cookie_value(cookie['cookie']): cookie
-                for cookie in visit_cookies
-            }
-        
-        # Find cookies that appear in all visits
-        if len(cookie_values_by_visit) > 1:
-            first_visit_cookies = cookie_values_by_visit[0]
-            
-            for cookie_value, cookie_data in first_visit_cookies.items():
-                appears_in_all_visits = True
-                
-                # Check if cookie appears in subsequent visits
-                for visit_num in range(1, len(cookie_values_by_visit)):
-                    if cookie_value not in cookie_values_by_visit[visit_num]:
-                        appears_in_all_visits = False
-                        break
-                
-                if appears_in_all_visits and len(cookie_value) >= 8:  # Only track cookies with sufficient length
-                    persistent_cookies.append({
-                        'cookie': cookie_data,
-                        'persistence': 'across_visits',
-                        'visits_found': list(cookie_values_by_visit.keys()),
-                        'length': len(cookie_value)
-                    })
-        
-        return persistent_cookies
-
-    def _parse_cookie_value(self, cookie_header: str) -> str:
-        """Extract the value from a Set-Cookie header"""
-        try:
-            # Get the main part before any attributes
-            main_part = cookie_header.split(';')[0]
-            # Get the value after the first =
-            value = main_part.split('=', 1)[1]
-            return value
-        except:
-            return ""

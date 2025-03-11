@@ -36,7 +36,12 @@ class SiteManager:
             'fingerprinting': fingerprinting_data
         }
         
-        json_path = os.path.join(self.base_dir, f'{domain}.json')
+        # Make sure the crawler_data directory exists
+        crawler_data_dir = os.path.join('data', 'crawler_data', self.storage_folder)
+        os.makedirs(crawler_data_dir, exist_ok=True)
+        
+        # Save the file to the crawler_data subdirectory
+        json_path = os.path.join(crawler_data_dir, f'{domain}.json')
         self._save_to_json(site_data, json_path)
         
         # Print final statistics
@@ -56,4 +61,4 @@ class SiteManager:
 
     def get_site_data_file(self, domain):
         """Get the full path to a site's JSON data file"""
-        return f"data/{self.storage_folder}/{domain}.json" 
+        return f"data/crawler_data/{self.storage_folder}/{domain}.json" 

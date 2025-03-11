@@ -47,33 +47,31 @@ class UserSimulator:
                 print("Page too short to scroll")
                 return
 
-            # Always do at least one scroll
-            scroll_attempts = random.randint(1, self.max_scroll_attempts)
+            # Calculate target scroll position (between 30% and 70% of available scroll)
+            available_scroll = metrics['availableScroll']
+            target_scroll = random.randint(
+                int(available_scroll * 0.3),
+                int(available_scroll * 0.7)
+            )
             
-            for i in range(scroll_attempts):
-                # Calculate next scroll position (between 30% and 70% of available scroll)
-                available_scroll = metrics['availableScroll']
-                scroll_amount = random.randint(
-                    int(available_scroll * 0.3),
-                    int(available_scroll * 0.7)
-                )
+            # Scroll in smaller increments
+            current_position = 0
+            while current_position < target_scroll:
+                # Scroll 300-400 pixels at a time
+                increment = random.randint(300, 400)
+                next_position = min(current_position + increment, target_scroll)
                 
                 # Perform the scroll
                 await page.evaluate(f'''() => {{
                     window.scrollTo({{
-                        top: {scroll_amount},
+                        top: {next_position},
                         behavior: "smooth"
                     }});
                 }}''')
                 
-                # Short wait for scroll to complete
-                await asyncio.sleep(random.uniform(0.3, 0.5))
-                
-                # Verify scroll happened
-                new_position = await page.evaluate('window.scrollY')
-                if new_position == initial_position:
-                    print("Scroll didn't change position")
-                    break
+                # Even shorter wait between scrolls
+                await asyncio.sleep(random.uniform(0.2, 0.4))
+                current_position = next_position
 
         except Exception as e:
             print(f"Error during scrolling: {e}")

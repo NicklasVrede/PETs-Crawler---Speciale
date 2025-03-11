@@ -10,6 +10,7 @@ import random
 import asyncio
 from utils.page_collector import load_site_pages
 from utils.user_simulator import UserSimulator
+import os
 
 class WebsiteCrawler:
     def __init__(self, max_pages=20, visits=2):
@@ -31,9 +32,31 @@ class WebsiteCrawler:
             await context.clear_permissions()
             await asyncio.sleep(1)
             
-            # Clear storage state
-            await context.clear_storage_state()
-            await asyncio.sleep(1)
+            # Use page-level JavaScript to clear storage with error handling
+            page = context.pages[0] if context.pages else None
+            if page:
+                print("Clearing local and session storage...")
+                try:
+                    # Use a safer approach with try/catch inside the JS
+                    await page.evaluate("""() => {
+                        try {
+                            if (window.localStorage) {
+                                localStorage.clear();
+                                console.log('LocalStorage cleared');
+                            }
+                            if (window.sessionStorage) {
+                                sessionStorage.clear();
+                                console.log('SessionStorage cleared');
+                            }
+                            return true;
+                        } catch (e) {
+                            console.log('Storage clearing error (expected on blank pages):', e);
+                            return false;
+                        }
+                    }""")
+                    await asyncio.sleep(1)
+                except Exception as e:
+                    print(f"Note: Could not clear page storage: {e}")
             
             print("✓ Browser data cleared")
             
@@ -155,6 +178,48 @@ class WebsiteCrawler:
         except Exception as e:
             tqdm.write(f"Scroll error: {str(e)}")
 
+    async def _setup_browser(self, p, user_data_dir, full_extension_path, headless, viewport):
+        """Setup browser with context"""
+        return await p.chromium.launch_persistent_context(
+            user_data_dir=user_data_dir,
+            headless=headless,
+            viewport=viewport or {'width': 1280, 'height': 800},
+            args=[
+                f'--disable-extensions-except={full_extension_path}',
+                f'--load-extension={full_extension_path}'
+            ]
+        )
+
+    async def _clear_browser_data(self, context):
+        """Clear browser data"""
+        await context.clear_cookies()
+        await context.clear_permissions()
+        
+        # Use page-level JavaScript to clear storage with error handling
+        page = context.pages[0] if context.pages else None
+        if page:
+            try:
+                # Use a safer approach with try/catch inside the JS
+                await page.evaluate("""() => {
+                    try {
+                        if (window.localStorage) {
+                            localStorage.clear();
+                            console.log('LocalStorage cleared');
+                        }
+                        if (window.sessionStorage) {
+                            sessionStorage.clear();
+                            console.log('SessionStorage cleared');
+                        }
+                        return true;
+                    } catch (e) {
+                        console.log('Storage clearing error (expected on blank pages):', e);
+                        return false;
+                    }
+                }""")
+                await asyncio.sleep(1)
+            except Exception as e:
+                print(f"Note: Could not clear page storage: {e}")
+
     async def crawl_site(self, domain, user_data_dir, full_extension_path, headless=False, viewport=None):
         """Crawl a website multiple times to analyze cookie persistence"""
         self.base_domain = domain.lower().replace('www.', '')
@@ -170,102 +235,92 @@ class WebsiteCrawler:
         
         print(f"Loaded {len(urls)} pre-collected URLs for {domain}")
         
+        # Initial browser setup - we only clear data once at the beginning
+        print(f"\n{'='*50}")
+        print(f"Initial browser setup")
+        print(f"{'='*50}")
+        
+        # Clear data only once at the start of the entire crawling process
+        print("\nInitial browser session to clear data and visit homepage...")
+        async with async_playwright() as p:
+            # Setup browser with context
+            context = await self._setup_browser(
+                p, user_data_dir, full_extension_path, headless, viewport
+            )
+            
+            # Clear all browser data to start fresh
+            print("\nClearing browser data...")
+            await self._clear_browser_data(context)
+            print("✓ Browser data cleared")
+            
+            # Close the context after clearing data
+            await context.close()
+        
+        # Now perform multiple visits WITHOUT clearing data between them
         for visit in range(self.visits):
             print(f"\n{'='*50}")
             print(f"Starting visit {visit + 1} of {self.visits}")
             print(f"{'='*50}")
             
-            # First browser session: Clear data and visit homepage
+            # Browser session for this visit - data persists between visits
+            print("\nStarting browser session...")
             async with async_playwright() as p:
-                print("\nInitial browser session to clear data and visit homepage...")
-                context = await p.chromium.launch_persistent_context(
-                    user_data_dir=user_data_dir,
-                    headless=headless,
-                    viewport=viewport or {'width': 1280, 'height': 800},
-                    args=[
-                        f'--disable-extensions-except={full_extension_path}',
-                        f'--load-extension={full_extension_path}'
-                    ]
+                # Setup browser with context
+                context = await self._setup_browser(
+                    p, user_data_dir, full_extension_path, headless, viewport
                 )
                 
-                try:
-                    page = context.pages[0]
-                    await self.clear_all_browser_data(context)
-                    
-                    # Visit homepage
-                    print("\nVisiting homepage...")
-                    homepage_url = f"https://{domain}/"
-                    try:
-                        await page.goto(homepage_url, timeout=30000)
-                        await page.wait_for_load_state('domcontentloaded')
-                        await page.wait_for_timeout(random.uniform(2000, 4000))  # Random wait 2-4 seconds
-                        print("✓ Homepage visited")
-                    except Exception as e:
-                        print(f"Error during homepage visit: {e}")
-                    
-                finally:
-                    await context.close()
-                    print("Initial browser session closed")
-            
-            # Second browser session: Actual crawl
-            async with async_playwright() as p:
-                print("\nStarting new browser session for crawl...")
-                context = await p.chromium.launch_persistent_context(
-                    user_data_dir=user_data_dir,
-                    headless=headless,
-                    viewport=viewport or {'width': 1280, 'height': 800},
-                    args=[
-                        f'--disable-extensions-except={full_extension_path}',
-                        f'--load-extension={full_extension_path}'
-                    ]
-                )
+                # Create a new page for this visit
+                page = await context.new_page()
                 
+                # Setup monitoring
+                await self.network_monitor.setup_monitoring(page, visit)
+                await self.fp_collector.setup_monitoring(page, visit)
+                
+                # Visit the homepage first
+                print("\nVisiting homepage...")
+                homepage_url = f"https://{domain}"
                 try:
-                    page = context.pages[0]
-                    await self.network_monitor.setup_monitoring(page, visit_number=visit)
-                    await self.fp_collector.setup_monitoring(page, visit_number=visit)
-                    
-                    # Start the crawl
-                    print("\nStarting URL visits...")
-                    visited_in_this_cycle = []
-                    with tqdm(total=len(urls), desc=f"Visit #{visit + 1}", unit="page") as pbar:
-                        for url in urls:
-                            try:
-                                await page.goto(url, timeout=30000)
-                                await page.wait_for_load_state('domcontentloaded')
-                                await page.wait_for_timeout(random.uniform(1000, 2000))  # Random wait 1-2 seconds
-                                
-                                final_url = page.url
-                                visited_in_this_cycle.append({"original": url, "final": final_url})
-                                
-                                await self.network_monitor.storage_monitor.capture_snapshot(page, visit_number=visit)
-                                await self.user_simulator.simulate_interaction(page)
-                                
-                                pbar.update(1)
-                                
-                            except Exception as e:
-                                print(f"\nError visiting {url}: {e}")
-                                visited_in_this_cycle.append({"original": url, "error": str(e)})
-                                pbar.update(1)
-                    
-                    visit_results.append({
-                        'visit_number': visit,
-                        'network': self.network_monitor.get_results(),
-                        'fingerprinting': self.fp_collector._get_results_for_visit(visit),
-                        'visited_urls': visited_in_this_cycle
-                    })
-                    
-                    with open(f"data/visit_{visit}_{domain}.json", "w") as f:
-                        json.dump(visited_in_this_cycle, f, indent=2)
-                    
-                finally:
-                    await context.close()
-                    print("Crawl browser session closed")
+                    await page.goto(homepage_url, timeout=30000)
+                    await page.wait_for_timeout(5000)  # Wait for 5 seconds
+                except Exception as e:
+                    print(f"Error visiting homepage: {e}")
+                
+                # Start the crawl
+                print("\nStarting URL visits...")
+                visited_in_this_cycle = []
+                with tqdm(total=len(urls), desc=f"Visit #{visit + 1}", unit="page") as pbar:
+                    for url in urls:
+                        try:
+                            await page.goto(url, timeout=30000)
+                            await page.wait_for_load_state('domcontentloaded')
+                            await page.wait_for_timeout(random.uniform(1000, 2000))  # Random wait 1-2 seconds
+                            
+                            final_url = page.url
+                            visited_in_this_cycle.append({"original": url, "final": final_url})
+                            
+                            await self.network_monitor.storage_monitor.capture_snapshot(page, visit_number=visit)
+                            await self.user_simulator.simulate_interaction(page)
+                            
+                            pbar.update(1)
+                            
+                        except Exception as e:
+                            print(f"\nError visiting {url}: {e}")
+                            visited_in_this_cycle.append({"original": url, "error": str(e)})
+                            pbar.update(1)
+                
+                visit_results.append({
+                    'visit_number': visit,
+                    'network': self.network_monitor.get_results(),
+                    'fingerprinting': self.fp_collector._get_results_for_visit(visit),
+                    'visited_urls': visited_in_this_cycle
+                })
+                
+                # Close the context at the end of this visit
+                await context.close()
         
-        persistent_cookies = self.network_monitor.analyze_cookie_persistence(visit_results)
-        
+        # Remove the cookie persistence analysis - we'll do this separately
         return {
             'visits': visit_results,
-            'persistent_cookies': persistent_cookies,
             'fingerprinting_summary': self.fp_collector._get_combined_results()
         }

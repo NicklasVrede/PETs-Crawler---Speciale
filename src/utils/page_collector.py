@@ -1,11 +1,13 @@
 import asyncio
 import json
 import os
+import csv
 from urllib.parse import urlparse
 from collections import deque
 from playwright.async_api import async_playwright
 import sys
 import os
+from tqdm import tqdm
 from utils.util import construct_paths, load_config, get_profile_config
 
 class PageCollector:
@@ -15,6 +17,7 @@ class PageCollector:
         self.visited_urls = set()
         self.to_visit = deque()
         self.found_urls = []  # Use list to maintain order
+        self.progress_bar = None
 
     def is_same_domain(self, url):
         """Check if URL belongs to the same domain"""
@@ -52,19 +55,20 @@ class PageCollector:
 
     async def collect_pages(self, page, max_pages=40, homepage_links=3):
         """
-        Collect subpages from a website
+        Collect subpages from a website using multiple chains if needed
         
         Args:
             page: Playwright page object
-            max_pages: Maximum pages to collect
-            homepage_links: Number of direct links from homepage to prioritize
+            max_pages: Maximum pages to collect in total
+            homepage_links: Maximum number of chains to try from homepage
         """
-        print(f"\n===== Collecting up to {max_pages} pages from {self.base_domain} =====")
+        # Initialize progress bar
+        self.progress_bar = tqdm(total=max_pages, desc="Collecting URLs", unit="page")
+        
         try:
             start_url = f"https://{self.base_domain}/"
             
             # Initial visit to homepage
-            print(f"Initial visit to homepage: {start_url}")
             await page.goto(start_url, timeout=30000)
             await page.wait_for_load_state('domcontentloaded')
             
@@ -74,85 +78,118 @@ class PageCollector:
             # Wait for network to become idle with a reasonable timeout
             try:
                 await page.wait_for_load_state('networkidle', timeout=5000)
-            except Exception as e:
-                print(f"Network idle timeout on homepage, continuing anyway: {e}")
+            except Exception:
+                pass
             
             # Add homepage as first URL
-            if start_url not in self.found_urls:
-                self.found_urls.append(start_url)
-                self.visited_urls.add(start_url)
-                print(f"Added homepage: {start_url}")
+            self.found_urls.append(start_url)
+            self.visited_urls.add(start_url)
+            self.progress_bar.update(1)
             
-            # Get direct links from homepage
-            homepage_direct_links = await self.extract_links(page)
-            print(f"Found {len(homepage_direct_links)} links on homepage")
+            # Get links from homepage
+            homepage_links_list = list(await self.extract_links(page))
             
-            # Add homepage_links direct links first
-            direct_link_count = 0
-            for link in homepage_direct_links:
-                if link not in self.found_urls and link != start_url:
-                    self.found_urls.append(link)
-                    self.to_visit.append(link)
-                    direct_link_count += 1
-                    print(f"Added direct homepage link: {link}")
+            # Try to build multiple chains if needed
+            chain_start_index = 0
+            homepage_links_tried = 0
+            
+            while len(self.found_urls) < max_pages and homepage_links_tried < homepage_links and chain_start_index < len(homepage_links_list):
+                # Get next homepage link to start a chain
+                chain_start = None
+                while chain_start_index < len(homepage_links_list):
+                    potential_start = homepage_links_list[chain_start_index]
+                    chain_start_index += 1
+                    if potential_start != start_url and potential_start not in self.found_urls:
+                        chain_start = potential_start
+                        self.found_urls.append(chain_start)
+                        self.progress_bar.update(1)
+                        break
+                
+                if not chain_start:
+                    break
                     
-                    if direct_link_count >= homepage_links:
+                homepage_links_tried += 1
+                
+                # Start chain exploration
+                current_url = chain_start
+                chain_depth = 1
+                chain_visited = {start_url, chain_start}  # Track visited URLs in this chain
+                
+                # Follow this chain until we find max 10 URLs per chain or can't find more links
+                while chain_depth < 10 and len(self.found_urls) < max_pages:
+                    try:
+                        # Visit the current URL in the chain
+                        await page.goto(current_url, wait_until='domcontentloaded', timeout=20000)
+                        await page.wait_for_timeout(1000)
+                        
+                        # Mark as visited
+                        self.visited_urls.add(current_url)
+                        
+                        # Get links from this page
+                        page_links = list(await self.extract_links(page))
+                        if not page_links:
+                            break
+                            
+                        # Find next link in chain - prioritize unvisited links
+                        next_link = None
+                        
+                        # First try: look for links not in this chain
+                        for link in page_links:
+                            if link not in chain_visited and link not in self.found_urls:
+                                next_link = link
+                                self.found_urls.append(link)
+                                self.progress_bar.update(1)
+                                chain_visited.add(link)
+                                break
+                        
+                        # Second try: accept any unvisited link
+                        if not next_link:
+                            for link in page_links:
+                                if link not in self.visited_urls and link not in self.found_urls:
+                                    next_link = link
+                                    self.found_urls.append(link)
+                                    self.progress_bar.update(1)
+                                    chain_visited.add(link)
+                                    break
+                        
+                        # Last resort: just take any link on the page we haven't added to found_urls
+                        if not next_link:
+                            for link in page_links:
+                                if link not in self.found_urls:
+                                    next_link = link
+                                    self.found_urls.append(link)
+                                    self.progress_bar.update(1)
+                                    chain_visited.add(link)
+                                    break
+                        
+                        if next_link:
+                            current_url = next_link
+                            chain_depth += 1
+                        else:
+                            break
+                            
+                    except Exception:
                         break
             
-            # Add remaining homepage links to the queue for later
-            for link in homepage_direct_links:
-                if link not in self.found_urls and link != start_url:
-                    self.to_visit.append(link)
+            # If we still don't have enough links, just add more from homepage
+            if len(self.found_urls) < max_pages and homepage_links_list:
+                for link in homepage_links_list:
+                    if link not in self.found_urls:
+                        self.found_urls.append(link)
+                        self.progress_bar.update(1)
+                        if len(self.found_urls) >= max_pages:
+                            break
             
-            # Continue with subpage visits to reach max_pages
-            crawl_counter = 1
+            # Close the progress bar
+            self.progress_bar.close()
             
-            # Now visit each prioritized link and collect their links
-            while len(self.found_urls) < max_pages and self.to_visit:
-                next_url = self.to_visit.popleft()
-                if next_url in self.visited_urls:
-                    continue
-                
-                print(f"\nCollection step {crawl_counter}: Visiting {next_url}")
-                crawl_counter += 1
-                
-                try:
-                    # Fast loading for subpages - just wait for DOM content
-                    await page.goto(next_url, wait_until='domcontentloaded', timeout=20000)
-                    
-                    # Small timeout for cookie extension
-                    await page.wait_for_timeout(1000)
-                    
-                    # Mark as visited
-                    self.visited_urls.add(next_url)
-                    
-                    # Add to found_urls if not already added
-                    if next_url not in self.found_urls:
-                        self.found_urls.append(next_url)
-                        print(f"Added to collection: {next_url}")
-                    
-                    # Extract links from this subpage
-                    subpage_links = await self.extract_links(page)
-                    
-                    # Add new links to the queue
-                    for link in subpage_links:
-                        if link not in self.visited_urls and link not in self.found_urls:
-                            self.to_visit.append(link)
-                    
-                    print(f"  Found {len(subpage_links)} internal links")
-                    print(f"  Queue now has {len(self.to_visit)} URLs")
-                    print(f"  Total pages collected so far: {len(self.found_urls)}")
-                    
-                except Exception as e:
-                    print(f"Error visiting {next_url}: {str(e)}")
-            
-            # Return up to max_pages URLs
+            # Return collected URLs (up to max_pages)
             result_urls = self.found_urls[:max_pages]
-            print(f"\n===== Collected {len(result_urls)}/{max_pages} unique pages to analyze =====")
             return result_urls
             
         except Exception as e:
-            print(f"Error processing homepage: {str(e)}")
+            if self.progress_bar:
+                self.progress_bar.close()
             return []
 
 
@@ -163,8 +200,8 @@ async def collect_site_pages(domain, max_pages=40, homepage_links=3, setup='i_do
     profile_config = get_profile_config(config, setup)
     user_data_dir, full_extension_path = construct_paths(config, setup)
     
-    print(f"Using extension path: {full_extension_path}")
-    print(f"Using user data directory: {user_data_dir}")
+    #print(f"Using extension path: {full_extension_path}")
+    #print(f"Using user data directory: {user_data_dir}")
     
     # Verify extension path exists
     if not os.path.exists(full_extension_path):
@@ -247,34 +284,40 @@ def load_site_pages(domain, input_dir="data/site_pages", count=20):
         return None
 
 
-async def main():
-    """Collect pages for multiple domains"""
-    # List of domains to collect
-    domains = [
-        "amazon.co.uk",
-        "bbc.co.uk",
-        "google.com"
-        # Add more domains as needed
-    ]
-    
-    # Use the same profile as in the main crawler
-    setup = 'i_dont_care_about_cookies'
+async def collect_all_site_pages(setup='i_dont_care_about_cookies', max_pages=40, homepage_links=3):
+    """Collect pages for all domains in study-sites.csv"""
+    # Load domains from CSV
+    domains = []
+    try:
+        with open('data/study-sites.csv', 'r') as f:
+            reader = csv.DictReader(f)
+            domains = [row['domain'].lower().replace('.', '_') for row in reader]
+    except Exception as e:
+        print(f"Error loading study-sites.csv: {e}")
+        return
+
+    print(f"\nCollecting pages for {len(domains)} domains...")
     
     for domain in domains:
-        print(f"\nCollecting pages for {domain}...")
-        # Collect 40 pages, with 3 priority links from homepage
-        pages = await collect_site_pages(domain, max_pages=40, homepage_links=3, setup=setup)
+        # Check if file already exists
+        file_path = f"data/site_pages/{domain}.json"
+        if os.path.exists(file_path):
+            print(f"\nSkipping {domain} - already collected")
+            continue
+            
+        print(f"\n{'='*50}")
+        print(f"Collecting pages for {domain}...")
+        print(f"{'='*50}")
+        
+        # Convert back to proper domain format for collection
+        original_domain = domain.replace('_', '.')
+        pages = await collect_site_pages(original_domain, max_pages=max_pages, homepage_links=homepage_links, setup=setup)
         if pages:
             save_site_pages(domain, pages)
-            
-    # Example: print the top 20 for each domain
-    for domain in domains:
-        top_pages = load_site_pages(domain, count=20)
-        if top_pages:
-            print(f"\nTop 20 pages for {domain}:")
-            for i, url in enumerate(top_pages, 1):
-                print(f"{i}. {url}")
+            print(f"✓ Saved {len(pages)} pages for {domain}")
+        else:
+            print(f"✗ No pages collected for {domain}")
 
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    asyncio.run(collect_all_site_pages()) 

@@ -25,11 +25,15 @@ async def main(setup, storage_name, data_dir=None):
     #print(f"Using data directory: {user_data_dir}")
     #print(f"Using extension path: {full_extension_path}")
 
+    # Create SiteManager (no logs_folder parameter needed anymore)
+    
+    max_pages = 5
+
     site_manager = SiteManager(storage_name)
     rank, domain = site_manager.get_next_site()
     
     # Crawl site
-    crawler = WebsiteCrawler(max_pages=20)
+    crawler = WebsiteCrawler(max_pages=max_pages)
     site_data = await crawler.crawl_site(
         domain,
         user_data_dir=user_data_dir,
@@ -60,8 +64,7 @@ if __name__ == "__main__":
     print("Profile names:", list(profile_names))
 
     current_profile = 'i_dont_care_about_cookies'
-    storage_name = f"{current_profile}_non_headless"
-    asyncio.run(main(current_profile, storage_name))
+    asyncio.run(main(current_profile, current_profile))
 
     #Run the identify_sources script
     #identify_site_sources("data/adguard_non_headless")
