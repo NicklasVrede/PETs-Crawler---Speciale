@@ -376,3 +376,13 @@ class FingerprintCollector:
                         detected_techniques.add('hardware')
         
         return detected_techniques
+
+    def get_fingerprinting_data(self):
+        """Get comprehensive fingerprinting results"""
+        return {
+            'summary': self._get_combined_results(),
+            'visits': {
+                visit: self._get_results_for_visit(visit) 
+                for visit in self.visits_data.keys()
+            }
+        }

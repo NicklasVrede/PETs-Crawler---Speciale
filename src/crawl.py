@@ -1,22 +1,19 @@
 import asyncio
 from crawler.page_crawler import WebsiteCrawler
-from managers.site_manager import SiteManager
-import json
-from pathlib import Path
-import os
+from managers.crawl_data_manager import CrawlDataManager
 from utils.util import construct_paths, extract_javascript, load_config, get_profile_config
-from identify_sources import identify_site_sources
 
 
-async def main(setup, storage_name, data_dir=None):
+
+async def main(profile, data_dir=None):
     # Load configuration
     config = load_config('config.json')
     
     # Extract profile configuration
-    profile_config = get_profile_config(config, setup)
+    profile_config = get_profile_config(config, profile)
     
     # Construct paths
-    user_data_dir, full_extension_path = construct_paths(config, setup)
+    user_data_dir, full_extension_path = construct_paths(config, profile)
     
     #print the full extension path
     print(f"Using extension path: {full_extension_path}")
@@ -29,8 +26,8 @@ async def main(setup, storage_name, data_dir=None):
     
     max_pages = 5
 
-    site_manager = SiteManager(storage_name)
-    rank, domain = site_manager.get_next_site()
+    crawl_data_manager = CrawlDataManager(profile)
+    rank, domain = crawl_data_manager.get_next_site()
     
     # Crawl site
     crawler = WebsiteCrawler(max_pages=max_pages)
@@ -46,15 +43,15 @@ async def main(setup, storage_name, data_dir=None):
     print(f"\nDebug: Total requests captured: {len(crawler.network_monitor.requests)}")
         
     # Store data
-    site_manager.save_site_data(
+    crawl_data_manager.save_crawl_data(
         domain, 
         rank, 
         crawler.network_monitor,
-        fingerprinting_data=site_data['fingerprinting_summary']
+        fingerprint_collector=crawler.fp_collector
     )
     
     # Extract JavaScript from the saved data
-    json_file = site_manager.get_site_data_file(domain)
+    json_file = crawl_data_manager.get_result_file_path(domain)
     #extract_javascript(json_file)
 
 if __name__ == "__main__":
@@ -63,8 +60,8 @@ if __name__ == "__main__":
     profile_names = config.get('profiles', {}).keys()
     print("Profile names:", list(profile_names))
 
-    current_profile = 'i_dont_care_about_cookies'
-    asyncio.run(main(current_profile, current_profile))
+    profile = 'i_dont_care_about_cookies'
+    asyncio.run(main(profile))
 
     #Run the identify_sources script
     #identify_site_sources("data/adguard_non_headless")

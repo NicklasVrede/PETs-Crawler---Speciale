@@ -231,7 +231,7 @@ class WebsiteCrawler:
         
         if not urls or len(urls) == 0:
             print(f"ERROR: No pre-collected URLs found for {domain}")
-            return {'visits': [], 'persistent_cookies': [], 'fingerprinting_summary': {}}
+            return {'visits': [], 'fingerprinting': {}}
         
         print(f"Loaded {len(urls)} pre-collected URLs for {domain}")
         
@@ -311,7 +311,8 @@ class WebsiteCrawler:
                 
                 visit_results.append({
                     'visit_number': visit,
-                    'network': self.network_monitor.get_results(),
+                    'network': self.network_monitor.get_results()['network_data'],
+                    'statistics': self.network_monitor.get_statistics(),
                     'fingerprinting': self.fp_collector._get_results_for_visit(visit),
                     'visited_urls': visited_in_this_cycle
                 })
