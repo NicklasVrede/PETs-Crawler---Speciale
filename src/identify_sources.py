@@ -14,6 +14,109 @@ from src.managers.ghostery_manager import analyze_request
 from src.analyzers.check_filters import DomainFilterAnalyzer
 from src.utils.domain_parser import get_base_domain, are_domains_related
 from src.utils.public_suffix_updater import update_public_suffix_list
+import functools
+import pickle
+import atexit
+from cachetools import TTLCache, cached
+import time
+
+# Define the cache file path
+CACHE_FILE = 'data/dns_cache.pickle'
+
+# Initialize the DNS cache
+dns_cache = TTLCache(maxsize=10000, ttl=3600)
+
+def load_dns_cache():
+    """Load DNS cache from file if it exists"""
+    try:
+        if os.path.exists(CACHE_FILE):
+            with open(CACHE_FILE, 'rb') as f:
+                cached_data = pickle.load(f)
+                # Only load cache entries that haven't expired
+                current_time = time.time()
+                for key, (value, expire_time) in cached_data.items():
+                    if expire_time > current_time:
+                        dns_cache[key] = value
+                print(f"Loaded {len(dns_cache)} DNS cache entries from {CACHE_FILE}")
+    except Exception as e:
+        print(f"Error loading DNS cache: {e}")
+
+def save_dns_cache():
+    """Save DNS cache to file"""
+    try:
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
+        
+        # Save cache entries with their expiration times
+        cache_with_ttl = {}
+        for key in dns_cache:
+            # Get the internal timer from the cache
+            expire_time = dns_cache.timer() + dns_cache.ttl
+            cache_with_ttl[key] = (dns_cache[key], expire_time)
+        
+        with open(CACHE_FILE, 'wb') as f:
+            pickle.dump(cache_with_ttl, f)
+        print(f"Saved {len(dns_cache)} DNS cache entries to {CACHE_FILE}")
+    except Exception as e:
+        print(f"Error saving DNS cache: {e}")
+
+# Register the save function to run when the script exits
+atexit.register(save_dns_cache)
+
+# Create a decorator that will use our cached resolver
+def cached_dns_resolver(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        key = str(args) + str(kwargs)
+        if key in dns_cache:
+            return dns_cache[key]
+        result = func(*args, **kwargs)
+        dns_cache[key] = result
+        return result
+    return wrapper
+
+@cached_dns_resolver
+def resolve_cname(domain: str) -> str:
+    """Resolve the CNAME for a given domain with caching"""
+    try:
+        answers = dns.resolver.resolve(domain, 'CNAME')
+        for rdata in answers:
+            return str(rdata.target).rstrip('.')
+    except dns.resolver.NoAnswer:
+        return None
+    except dns.resolver.NXDOMAIN:
+        return None
+    except dns.exception.Timeout:
+        print(f"DNS query for {domain} timed out.")
+        return None
+    except Exception as e:
+        print(f"An error occurred while resolving CNAME for {domain}: {e}")
+        return None
+
+@cached_dns_resolver
+def get_ip_addresses(domain):
+    """Get IP addresses for a domain using A record lookup with caching."""
+    try:
+        answers = dns.resolver.resolve(domain, 'A')
+        return {str(rdata) for rdata in answers}
+    except Exception:
+        return set()
+
+def get_cname_chain(domain_analyzer, domain):
+    """Follow and return the complete CNAME chain until we hit an A record."""
+    chain = []
+    current = domain
+    seen = set()  # Prevent infinite loops
+    
+    while True:
+        cname = resolve_cname(current)  # Use the cached function directly
+        if not cname or cname in seen:
+            break
+        chain.append(cname)
+        seen.add(cname)
+        current = cname
+    
+    return chain
 
 def load_json(file_path):
     with open(file_path, 'r', encoding='utf-8') as f:
@@ -26,22 +129,6 @@ def save_json(data, file_path):
 def get_base_url(url: str) -> str:
     parsed = urlparse(url)
     return f"{parsed.scheme}://{parsed.netloc}"
-
-def resolve_cname(domain: str) -> str:
-    """Resolve the CNAME for a given domain"""
-    try:
-        answers = dns.resolver.resolve(domain, 'CNAME')
-        for rdata in answers:
-            return str(rdata.target).rstrip('.')
-    except dns.resolver.NoAnswer:
-        print(f"No CNAME record found for {domain}.")
-    except dns.resolver.NXDOMAIN:
-        print(f"Domain {domain} does not exist.")
-    except dns.exception.Timeout:
-        print(f"DNS query for {domain} timed out.")
-    except Exception as e:
-        print(f"An error occurred while resolving CNAME for {domain}: {e}")
-    return None
 
 def check_tracking_cname(cname: str, tracking_list: list) -> bool:
     """Check if the CNAME resolution matches a known tracking domain"""
@@ -194,6 +281,37 @@ def identify_site_sources(data_dir):
                 
             tqdm.write(f"Found {len(unique_domains)} unique domains in {filename}")
             
+            # Initialize statistics
+            stats = {
+                'total_domains': len(unique_domains),
+                'filter_matches': 0,
+                'cname_cloaking': {
+                    'total': 0,
+                    'trackers_using_cloaking': Counter(),  # Which trackers use CNAME cloaking
+                },
+                'first_party': {
+                    'total': 0,
+                    'trackers': {
+                        'total': 0,
+                        'direct': 0,      # Direct first-party trackers
+                        'cloaked': 0      # First-party trackers using CNAME cloaking
+                    },
+                    'clean': 0            # Non-tracking first-party domains
+                },
+                'third_party': {
+                    'total': 0,
+                    'infrastructure': 0,    # CDNs, hosting, etc.
+                    'trackers': {
+                        'total': 0,
+                        'direct': 0,        # Direct third-party trackers
+                        'cloaked': 0        # Third-party trackers using CNAME cloaking
+                    },
+                    'other': 0              # Other third-party domains
+                },
+                'categories': Counter(),    # Will count occurrences of each category
+                'organizations': Counter()  # Will count occurrences of each organization
+            }
+            
             # Analyze each unique domain
             analyzed_domains = {}
             with tqdm(total=len(unique_domains), desc=f"Analyzing domains in {filename}", leave=False) as pbar:
@@ -206,14 +324,142 @@ def identify_site_sources(data_dir):
                         request_count
                     )
                     analyzed_domains[domain] = analysis
+                    
+                    # Check for CNAME cloaking
+                    has_cname_chain = bool(analysis['cname_chain'])
+                    is_cname_cloaking = has_cname_chain and any(
+                        "CNAME chain member" in evidence for evidence in analysis['tracking_evidence']
+                    )
+                    
+                    # Update global filter match count
+                    is_tracker = bool(analysis['tracking_evidence'])
+                    if is_tracker:
+                        stats['filter_matches'] += 1
+                    
+                    # Update CNAME cloaking stats
+                    if is_cname_cloaking:
+                        stats['cname_cloaking']['total'] += 1
+                        # Record which trackers use cloaking (from CNAME chain)
+                        for cname in analysis['cname_chain']:
+                            tracker_info = get_tracker_categorization(cname)
+                            if tracker_info:
+                                for org in tracker_info['organizations']:
+                                    stats['cname_cloaking']['trackers_using_cloaking'][org] += 1
+                    
+                    # Check if domain is first-party or third-party
+                    if analysis['is_first_party_domain'] == True:
+                        stats['first_party']['total'] += 1
+                        
+                        # Check if first-party domain is also a tracker
+                        if is_tracker:
+                            stats['first_party']['trackers']['total'] += 1
+                            
+                            if is_cname_cloaking:
+                                stats['first_party']['trackers']['cloaked'] += 1
+                            else:
+                                stats['first_party']['trackers']['direct'] += 1
+                        else:
+                            stats['first_party']['clean'] += 1
+                            
+                    elif analysis['is_first_party_domain'] == False:
+                        stats['third_party']['total'] += 1
+                        
+                        # Determine third-party type
+                        is_infrastructure = 'Hosting' in analysis['categories'] or 'CDN' in analysis['categories']
+                        
+                        if is_infrastructure:
+                            stats['third_party']['infrastructure'] += 1
+                        elif is_tracker:
+                            stats['third_party']['trackers']['total'] += 1
+                            
+                            if is_cname_cloaking:
+                                stats['third_party']['trackers']['cloaked'] += 1
+                            else:
+                                stats['third_party']['trackers']['direct'] += 1
+                        else:
+                            stats['third_party']['other'] += 1
+                    
+                    # Count categories
+                    for category in analysis['categories']:
+                        stats['categories'][category] += 1
+                    
+                    # Count organizations
+                    for org in analysis['organizations']:
+                        stats['organizations'][org] += 1
+                    
                     pbar.update(1)
+            
+            # Convert counters to dictionaries for JSON serialization
+            stats['categories'] = dict(stats['categories'])
+            stats['organizations'] = dict(stats['organizations'])
+            stats['cname_cloaking']['trackers_using_cloaking'] = dict(stats['cname_cloaking']['trackers_using_cloaking'])
             
             # Save results
             site_data['domain_analysis'] = {
                 'analyzed_at': datetime.now().isoformat(),
-                'domains': list(analyzed_domains.values())
+                'domains': list(analyzed_domains.values()),
+                'statistics': stats
             }
             save_json(site_data, file_path)
+            
+            # Print summary statistics
+            tqdm.write(f"\nStatistics for {main_site}:")
+            tqdm.write(f"Total unique domains: {stats['total_domains']}")
+            tqdm.write(f"Total tracking domains: {stats['filter_matches']} ({stats['filter_matches']/stats['total_domains']*100:.1f}%)")
+            
+            # CNAME cloaking statistics
+            cname_total = stats['cname_cloaking']['total']
+            if cname_total > 0:
+                tqdm.write(f"CNAME cloaking detected: {cname_total} domains ({cname_total/stats['total_domains']*100:.1f}%)")
+                if stats['cname_cloaking']['trackers_using_cloaking']:
+                    tqdm.write("  Top trackers using CNAME cloaking:")
+                    for tracker, count in sorted(stats['cname_cloaking']['trackers_using_cloaking'].items(), 
+                                              key=lambda x: x[1], reverse=True)[:3]:
+                        tqdm.write(f"  - {tracker}: {count}")
+            
+            # First-party breakdown
+            first_party_total = stats['first_party']['total']
+            tqdm.write(f"First-party domains: {first_party_total} ({first_party_total/stats['total_domains']*100:.1f}%)")
+            if first_party_total > 0:
+                trackers_total = stats['first_party']['trackers']['total']
+                trackers_direct = stats['first_party']['trackers']['direct']
+                trackers_cloaked = stats['first_party']['trackers']['cloaked']
+                clean = stats['first_party']['clean']
+                
+                if trackers_total > 0:
+                    tqdm.write(f"  - First-party trackers: {trackers_total} ({trackers_total/first_party_total*100:.1f}% of first-party)")
+                    if trackers_direct > 0:
+                        tqdm.write(f"    - Direct: {trackers_direct} ({trackers_direct/trackers_total*100:.1f}% of first-party trackers)")
+                    if trackers_cloaked > 0:
+                        tqdm.write(f"    - CNAME cloaked: {trackers_cloaked} ({trackers_cloaked/trackers_total*100:.1f}% of first-party trackers)")
+                
+                tqdm.write(f"  - Clean first-party: {clean} ({clean/first_party_total*100:.1f}% of first-party)")
+            
+            # Third-party breakdown
+            third_party_total = stats['third_party']['total']
+            tqdm.write(f"Third-party domains: {third_party_total} ({third_party_total/stats['total_domains']*100:.1f}%)")
+            if third_party_total > 0:
+                infra = stats['third_party']['infrastructure']
+                trackers_total = stats['third_party']['trackers']['total']
+                trackers_direct = stats['third_party']['trackers']['direct']
+                trackers_cloaked = stats['third_party']['trackers']['cloaked']
+                other = stats['third_party']['other']
+                
+                tqdm.write(f"  - Infrastructure (CDN/Hosting): {infra} ({infra/third_party_total*100:.1f}% of third-party)")
+                
+                if trackers_total > 0:
+                    tqdm.write(f"  - Trackers: {trackers_total} ({trackers_total/third_party_total*100:.1f}% of third-party)")
+                    if trackers_direct > 0:
+                        tqdm.write(f"    - Direct: {trackers_direct} ({trackers_direct/trackers_total*100:.1f}% of trackers)")
+                    if trackers_cloaked > 0:
+                        tqdm.write(f"    - CNAME cloaked: {trackers_cloaked} ({trackers_cloaked/trackers_total*100:.1f}% of trackers)")
+                
+                tqdm.write(f"  - Other third-party: {other} ({other/third_party_total*100:.1f}% of third-party)")
+            
+            if stats['categories']:
+                tqdm.write("\nTop categories:")
+                for category, count in sorted(stats['categories'].items(), key=lambda x: x[1], reverse=True)[:5]:
+                    tqdm.write(f"  - {category}: {count} ({count/stats['total_domains']*100:.1f}%)")
             
         except Exception as e:
             tqdm.write(f"Error processing {filename}: {str(e)}")
@@ -245,31 +491,6 @@ def print_analysis_summary(site_data, source_analysis):
             status = "direct tracker" if match['is_direct_tracker'] else "cloaked tracker"
             cname_info = f" -> {match['cname_resolution']}" if match['is_cname_cloaked'] else ""
             tqdm.write(f"  - {match['url']}{cname_info} ({status})")
-
-def get_cname_chain(domain_analyzer, domain):
-    """Follow and return the complete CNAME chain until we hit an A record."""
-    chain = []
-    current = domain
-    seen = set()  # Prevent infinite loops
-    
-    while True:
-        cname = domain_analyzer.resolve_cname(current)
-        if not cname or cname in seen:
-            break
-        chain.append(cname)
-        seen.add(cname)
-        current = cname
-    
-    return chain
-
-def get_ip_addresses(domain):
-    """Get IP addresses for a domain using A record lookup."""
-    try:
-        answers = dns.resolver.resolve(domain, 'A')
-        return {str(rdata) for rdata in answers}
-    except Exception as e:
-        print(f"Error resolving IP for {domain}: {e}")
-        return set()
 
 def is_first_party_cname_chain(domain_analyzer, subdomain, main_site, cname_chain, public_suffixes, verbose=False):
     """Check if a CNAME chain is first-party.
@@ -452,5 +673,15 @@ def is_cdn_or_hosting(tracker_info: dict) -> bool:
     return 'Hosting' in tracker_info['categories']
 
 if __name__ == "__main__":
-    data_directory = 'data/i_dont_care_about_cookies_non_headless'
+    # Load the DNS cache at startup
+    load_dns_cache()
+    
+    data_directory = 'data/crawler_data/i_dont_care_about_cookies'
+    
+    # Validate directory exists
+    if not os.path.exists(data_directory):
+        print(f"Error: Directory not found: {data_directory}")
+        print("Please ensure the data directory exists before running the script.")
+        sys.exit(1)
+    
     identify_site_sources(data_directory)
