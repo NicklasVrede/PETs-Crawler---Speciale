@@ -37,9 +37,9 @@ def load_dns_cache():
                 for key, (value, expire_time) in cached_data.items():
                     if expire_time > current_time:
                         dns_cache[key] = value
-                print(f"Loaded {len(dns_cache)} DNS cache entries from {CACHE_FILE}")
+                tqdm.write(f"Loaded {len(dns_cache)} DNS cache entries from {CACHE_FILE}")
     except Exception as e:
-        print(f"Error loading DNS cache: {e}")
+        tqdm.write(f"Error loading DNS cache: {e}")
 
 def save_dns_cache():
     """Save DNS cache to file"""
@@ -56,9 +56,9 @@ def save_dns_cache():
         
         with open(CACHE_FILE, 'wb') as f:
             pickle.dump(cache_with_ttl, f)
-        print(f"Saved {len(dns_cache)} DNS cache entries to {CACHE_FILE}")
+        tqdm.write(f"Saved {len(dns_cache)} DNS cache entries to {CACHE_FILE}")
     except Exception as e:
-        print(f"Error saving DNS cache: {e}")
+        tqdm.write(f"Error saving DNS cache: {e}")
 
 # Register the save function to run when the script exits
 atexit.register(save_dns_cache)
@@ -98,12 +98,12 @@ def load_cname_chain_cache():
                 loaded_cache = pickle.load(f)
                 if isinstance(loaded_cache, dict):
                     cname_chain_cache.update(loaded_cache)
-                    print(f"Loaded {len(cname_chain_cache)} CNAME chain cache entries")
+                    tqdm.write(f"Loaded {len(cname_chain_cache)} CNAME chain cache entries")
                 else:
                     cname_chain_cache = {}
         cache_loaded = True
     except Exception as e:
-        print(f"Error loading CNAME chain cache: {e}")
+        tqdm.write(f"Error loading CNAME chain cache: {e}")
         cname_chain_cache = {}
         cache_loaded = True
 
@@ -121,7 +121,7 @@ def save_cname_chain_cache():
         with open(CNAME_CACHE_FILE, 'wb') as f:
             pickle.dump(cname_chain_cache, f)
     except Exception as e:
-        print(f"Error saving CNAME chain cache: {e}")
+        tqdm.write(f"Error saving CNAME chain cache: {e}")
 
 # Register the save function to run on exit
 atexit.register(save_cname_chain_cache)
@@ -215,7 +215,7 @@ def analyze_subdomain(domain_analyzer, main_site, base_url, request_count):
         )
         analysis_result['is_first_party_domain'] = is_first_party
     except Exception as e:
-        print(f"Error checking domain relationship: {e}")
+        tqdm.write(f"Error checking domain relationship: {e}")
         # Keep as None if there's an error
     
     # Check if URL matches filter rules
@@ -558,27 +558,27 @@ def is_first_party_cname_chain(domain_analyzer, subdomain, main_site, cname_chai
     final_base, final_suffix = get_base_domain(final_cname, public_suffixes)
     
     if verbose:
-        print(f"\nFirst-party check debug:")
-        print(f"Subdomain: {subdomain}")
-        print(f"Main site: {main_site} -> base='{main_base}', suffix='{main_suffix}'")
-        print(f"Final CNAME: {final_cname} -> base='{final_base}', suffix='{final_suffix}'")
+        tqdm.write(f"\nFirst-party check debug:")
+        tqdm.write(f"Subdomain: {subdomain}")
+        tqdm.write(f"Main site: {main_site} -> base='{main_base}', suffix='{main_suffix}'")
+        tqdm.write(f"Final CNAME: {final_cname} -> base='{final_base}', suffix='{final_suffix}'")
     
     # Check if final CNAME matches main site domain
     domains_match = main_base == final_base and main_suffix == final_suffix
     if verbose:
-        print(f"Domains match: {domains_match}")
+        tqdm.write(f"Domains match: {domains_match}")
     
     # Check IP addresses of main site (not subdomain) and final CNAME
     main_ips = get_ip_addresses(main_site)
     final_ips = get_ip_addresses(final_cname)
     
     if verbose:
-        print(f"Main site IPs: {main_ips}")
-        print(f"Final CNAME IPs: {final_ips}")
+        tqdm.write(f"Main site IPs: {main_ips}")
+        tqdm.write(f"Final CNAME IPs: {final_ips}")
     
     ip_match = bool(main_ips & final_ips)
     if verbose:
-        print(f"IP addresses match: {ip_match}")
+        tqdm.write(f"IP addresses match: {ip_match}")
     
     return domains_match or ip_match
 
@@ -627,10 +627,10 @@ def analyze_cname_chain(domain_analyzer, subdomain, main_site, cname_chain, publ
     categorization = {}
     
     if verbose:
-        print("\nCNAME chain analysis:")
-        print(f"Original: {subdomain}")
+        tqdm.write("\nCNAME chain analysis:")
+        tqdm.write(f"Original: {subdomain}")
         for i, cname in enumerate(cname_chain, 1):
-            print(f"  {i}. → {cname}")
+            tqdm.write(f"  {i}. → {cname}")
     
     # First check if chain is first-party
     is_first_party = is_first_party_cname_chain(
@@ -643,20 +643,20 @@ def analyze_cname_chain(domain_analyzer, subdomain, main_site, cname_chain, publ
     )
     
     if verbose:
-        print(f"\nIs first-party chain? {is_first_party}")
+        tqdm.write(f"\nIs first-party chain? {is_first_party}")
     
     if not is_first_party:
         if verbose:
-            print("\nAnalyzing domains for tracking behavior:")
+            tqdm.write("\nAnalyzing domains for tracking behavior:")
         
         # Check the original subdomain
         if verbose:
-            print(f"\nOriginal domain: {subdomain}")
+            tqdm.write(f"\nOriginal domain: {subdomain}")
         filter_name, rule = domain_analyzer.is_domain_in_filters(subdomain)
         if filter_name:
             if verbose:
-                print(f"  Found in filter: {filter_name}")
-                print(f"  Matching rule: {rule}")
+                tqdm.write(f"  Found in filter: {filter_name}")
+                tqdm.write(f"  Matching rule: {rule}")
             evidence.append(f"{subdomain} found in {filter_name}")
         
         # Always check Ghostery for categorization
@@ -664,21 +664,21 @@ def analyze_cname_chain(domain_analyzer, subdomain, main_site, cname_chain, publ
         if tracker_info:
             categorization[subdomain] = tracker_info
             if verbose:
-                print(f"  Categories: {', '.join(tracker_info['categories'])}")
-                print(f"  Organizations: {', '.join(tracker_info['organizations'])}")
+                tqdm.write(f"  Categories: {', '.join(tracker_info['categories'])}")
+                tqdm.write(f"  Organizations: {', '.join(tracker_info['organizations'])}")
             evidence.append(f"{subdomain} identified as {'/'.join(tracker_info['categories'])} tracker by Ghostery")
         elif verbose:
-            print("  No Ghostery matches found")
+            tqdm.write("  No Ghostery matches found")
         
         # Check each CNAME in the chain
         for cname in cname_chain:
             if verbose:
-                print(f"\nAnalyzing CNAME: {cname}")
+                tqdm.write(f"\nAnalyzing CNAME: {cname}")
             filter_name, rule = domain_analyzer.is_domain_in_filters(cname)
             if filter_name:
                 if verbose:
-                    print(f"  Found in filter: {filter_name}")
-                    print(f"  Matching rule: {rule}")
+                    tqdm.write(f"  Found in filter: {filter_name}")
+                    tqdm.write(f"  Matching rule: {rule}")
                 evidence.append(f"{cname} found in {filter_name}")
             
             # Always check Ghostery for categorization
@@ -686,25 +686,25 @@ def analyze_cname_chain(domain_analyzer, subdomain, main_site, cname_chain, publ
             if tracker_info:
                 categorization[cname] = tracker_info
                 if verbose:
-                    print(f"  Categories: {', '.join(tracker_info['categories'])}")
-                    print(f"  Organizations: {', '.join(tracker_info['organizations'])}")
+                    tqdm.write(f"  Categories: {', '.join(tracker_info['categories'])}")
+                    tqdm.write(f"  Organizations: {', '.join(tracker_info['organizations'])}")
                 evidence.append(f"{cname} identified as {'/'.join(tracker_info['categories'])} tracker by Ghostery")
             elif verbose:
-                print("  No Ghostery matches found")
+                tqdm.write("  No Ghostery matches found")
     
     # Flag as tracking if any node in the chain was identified as a tracker
     is_tracking = len(evidence) > 0
     
     if is_tracking and verbose:
-        print("\nCNAME chain classified as tracking due to:")
+        tqdm.write("\nCNAME chain classified as tracking due to:")
         for finding in evidence:
-            print(f"- {finding}")
+            tqdm.write(f"- {finding}")
         
-        print("\nDetailed categorization:")
+        tqdm.write("\nDetailed categorization:")
         for domain, info in categorization.items():
-            print(f"\n{domain}:")
-            print(f"  Categories: {', '.join(info['categories'])}")
-            print(f"  Organizations: {', '.join(info['organizations'])}")
+            tqdm.write(f"\n{domain}:")
+            tqdm.write(f"  Categories: {', '.join(info['categories'])}")
+            tqdm.write(f"  Organizations: {', '.join(info['organizations'])}")
     
     return is_tracking, evidence, categorization
 
@@ -723,8 +723,8 @@ if __name__ == "__main__":
     
     # Validate directory exists
     if not os.path.exists(data_directory):
-        print(f"Error: Directory not found: {data_directory}")
-        print("Please ensure the data directory exists before running the script.")
+        tqdm.write(f"Error: Directory not found: {data_directory}")
+        tqdm.write("Please ensure the data directory exists before running the script.")
         sys.exit(1)
     
     identify_site_sources(data_directory)
