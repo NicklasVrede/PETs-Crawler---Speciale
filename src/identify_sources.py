@@ -63,37 +63,14 @@ def save_dns_cache():
 # Register the save function to run when the script exits
 atexit.register(save_dns_cache)
 
-# Create a decorator that will use our cached resolver
-def cached_dns_resolver(func):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        key = str(args) + str(kwargs)
-        if key in dns_cache:
-            return dns_cache[key]
-        result = func(*args, **kwargs)
-        dns_cache[key] = result
-        return result
-    return wrapper
-
-@cached_dns_resolver
-def resolve_cname(domain: str) -> str:
-    """Resolve the CNAME for a given domain with caching"""
+def resolve_cname(domain):
+    """Resolve CNAME record for a domain. Returns None if no CNAME found."""
     try:
         answers = dns.resolver.resolve(domain, 'CNAME')
-        for rdata in answers:
-            return str(rdata.target).rstrip('.')
-    except dns.resolver.NoAnswer:
-        return None
-    except dns.resolver.NXDOMAIN:
-        return None
-    except dns.exception.Timeout:
-        print(f"DNS query for {domain} timed out.")
-        return None
-    except Exception as e:
-        print(f"An error occurred while resolving CNAME for {domain}: {e}")
+        return str(answers[0].target)
+    except Exception:
         return None
 
-@cached_dns_resolver
 def get_ip_addresses(domain):
     """Get IP addresses for a domain using A record lookup with caching."""
     try:
