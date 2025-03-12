@@ -205,7 +205,6 @@ def analyze_subdomain(domain_analyzer, main_site, base_url, request_count):
     # Use are_domains_related to check first-party status
     try:
         if not domain_analyzer.public_suffixes:
-            # Make sure we have public suffixes loaded
             domain_analyzer.public_suffixes = update_public_suffix_list()
         
         is_first_party = are_domains_related(
@@ -216,7 +215,6 @@ def analyze_subdomain(domain_analyzer, main_site, base_url, request_count):
         analysis_result['is_first_party_domain'] = is_first_party
     except Exception as e:
         tqdm.write(f"Error checking domain relationship: {e}")
-        # Keep as None if there's an error
     
     # Check if URL matches filter rules
     filter_name, rule = domain_analyzer.is_domain_in_filters(base_url)
@@ -237,15 +235,28 @@ def analyze_subdomain(domain_analyzer, main_site, base_url, request_count):
                 analysis_result['is_first_party_domain'] = False
                 analysis_result['tracking_evidence'].append(f"CNAME chain member {cname} found in {filter_name}: {rule}")
     
-    # Always check Ghostery DB for additional info
+    # Always check Ghostery DB for additional info, regardless of filter matches
     tracker_info = get_tracker_categorization(parsed_url)
     if tracker_info:
-        analysis_result['categories'] = tracker_info['categories']
-        analysis_result['organizations'] = tracker_info['organizations']
+        analysis_result['categories'].extend(tracker_info['categories'])
+        analysis_result['organizations'].extend(tracker_info['organizations'])
         
         if 'Hosting' in tracker_info['categories']:
             analysis_result['infrastructure_type'] = 'hosting'
-            analysis_result['provider'] = tracker_info['organizations'][0]
+            if tracker_info['organizations']:
+                analysis_result['provider'] = tracker_info['organizations'][0]
+    
+    # Also check CNAME chain members for additional categorization
+    if cname_chain:
+        for cname in cname_chain:
+            cname_info = get_tracker_categorization(cname)
+            if cname_info:
+                analysis_result['categories'].extend(cname_info['categories'])
+                analysis_result['organizations'].extend(cname_info['organizations'])
+    
+    # Remove duplicates while preserving order
+    analysis_result['categories'] = list(dict.fromkeys(analysis_result['categories']))
+    analysis_result['organizations'] = list(dict.fromkeys(analysis_result['organizations']))
     
     return analysis_result
 
