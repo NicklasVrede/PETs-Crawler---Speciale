@@ -556,9 +556,7 @@ def is_first_party_cname_chain(domain_analyzer, subdomain, main_site, cname_chai
         public_suffixes: List of public suffixes
         verbose: Whether to print debug information
     
-    A chain is first-party if:
-    1. Final CNAME matches main site domain, or
-    2. IP addresses of final CNAME and main site match
+    A chain is first-party if the final CNAME matches main site domain
     """
     if not cname_chain:
         return True
@@ -579,19 +577,7 @@ def is_first_party_cname_chain(domain_analyzer, subdomain, main_site, cname_chai
     if verbose:
         tqdm.write(f"Domains match: {domains_match}")
     
-    # Check IP addresses of main site (not subdomain) and final CNAME
-    main_ips = get_ip_addresses(main_site)
-    final_ips = get_ip_addresses(final_cname)
-    
-    if verbose:
-        tqdm.write(f"Main site IPs: {main_ips}")
-        tqdm.write(f"Final CNAME IPs: {final_ips}")
-    
-    ip_match = bool(main_ips & final_ips)
-    if verbose:
-        tqdm.write(f"IP addresses match: {ip_match}")
-    
-    return domains_match or ip_match
+    return domains_match
 
 def get_tracker_categorization(domain):
     """Get detailed categorization of a domain using Ghostery's trackerdb.
@@ -600,21 +586,22 @@ def get_tracker_categorization(domain):
         dict: Dictionary containing categories and organizations found, or None if not identified
     """
     result = analyze_request(f"https://{domain}")
-    if not result.get('matches'):
-        return None
+    
+    if result.get('matches'):
+        categories = set()
+        organizations = set()
         
-    categories = set()
-    organizations = set()
+        for match in result['matches']:
+            categories.add(match['category']['name'])
+            organizations.add(match['organization']['name'])
+        
+        return {
+            'categories': list(categories),
+            'organizations': list(organizations),
+            'details': result['matches']
+        }
     
-    for match in result['matches']:
-        categories.add(match['category']['name'])
-        organizations.add(match['organization']['name'])
-    
-    return {
-        'categories': list(categories),
-        'organizations': list(organizations),
-        'details': result['matches']
-    }
+    return None
 
 def analyze_cname_chain(domain_analyzer, subdomain, main_site, cname_chain, public_suffixes, verbose=False):
     """Analyze each node in the CNAME chain for tracking behavior.
