@@ -102,21 +102,87 @@ def get_ip_addresses(domain):
     except Exception:
         return set()
 
+# Define the cache file path
+CNAME_CACHE_FILE = 'data/cname_chain_cache.pickle'
+
+# Create a dictionary to store our cache
+cname_chain_cache = {}
+cache_loaded = False
+
+def load_cname_chain_cache():
+    """Load CNAME chain cache from file if it exists"""
+    global cname_chain_cache, cache_loaded
+    if cache_loaded:
+        return
+        
+    try:
+        if os.path.exists(CNAME_CACHE_FILE):
+            with open(CNAME_CACHE_FILE, 'rb') as f:
+                loaded_cache = pickle.load(f)
+                if isinstance(loaded_cache, dict):
+                    cname_chain_cache.update(loaded_cache)
+                    print(f"Loaded {len(cname_chain_cache)} CNAME chain cache entries")
+                else:
+                    cname_chain_cache = {}
+        cache_loaded = True
+    except Exception as e:
+        print(f"Error loading CNAME chain cache: {e}")
+        cname_chain_cache = {}
+        cache_loaded = True
+
+def save_cname_chain_cache():
+    """Save CNAME chain cache to file"""
+    try:
+        # Only save if we have entries
+        if not cname_chain_cache:
+            return
+            
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(CNAME_CACHE_FILE), exist_ok=True)
+        
+        # Write cache to file
+        with open(CNAME_CACHE_FILE, 'wb') as f:
+            pickle.dump(cname_chain_cache, f)
+    except Exception as e:
+        print(f"Error saving CNAME chain cache: {e}")
+
+# Register the save function to run on exit
+atexit.register(save_cname_chain_cache)
+
 def get_cname_chain(domain_analyzer, domain):
-    """Follow and return the complete CNAME chain until we hit an A record."""
+    """Follow and return the complete CNAME chain until we hit an A record.
+    
+    Results are cached to improve performance when the same domain is queried multiple times.
+    The cache is persisted between program runs.
+    """
+    # Ensure cache is loaded (if not already)
+    load_cname_chain_cache()
+    
+    # Normalize domain to ensure consistent caching
+    domain = domain.lower().strip()
+    cache_key = domain
+    
+    # Check if in cache
+    if cache_key in cname_chain_cache:
+        return cname_chain_cache[cache_key]
+    
+    # Not in cache, perform DNS lookups
     chain = []
     current = domain
     seen = set()  # Prevent infinite loops
     
     while True:
-        cname = resolve_cname(current)  # Use the cached function directly
+        cname = resolve_cname(current)
         if not cname or cname in seen:
             break
         chain.append(cname)
         seen.add(cname)
         current = cname
     
-    return chain
+    # Store in cache and return
+    result = tuple(chain)  # Convert to tuple for immutability
+    cname_chain_cache[cache_key] = result
+    return result
 
 def load_json(file_path):
     with open(file_path, 'r', encoding='utf-8') as f:
