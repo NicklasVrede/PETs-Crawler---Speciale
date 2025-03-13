@@ -301,7 +301,6 @@ def analyze_cookie(name: str) -> Optional[Dict]:
 def extract_base_name(name: str) -> str:
     """
     Extract the base name from a cookie using pattern recognition.
-    Does NOT hardcode specific cookie names.
     """
     # Pattern 1: prefix followed by separator and numbers
     # Examples: xyz_123456, abc.12345, etc.
