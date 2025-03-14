@@ -280,10 +280,7 @@ class WebsiteCrawler:
                 # Ensure page is ready before setting up monitor
                 await page.goto("about:blank")
                 
-                # Add verification test
-                print("\nVerifying storage interaction tracking...")
-                await self.network_monitor.storage_monitor.verify_interaction_tracking(page, 0)
-                
+
                 # Visit the homepage first
                 print("\nVisiting homepage...")
                 homepage_url = f"https://{domain}"
