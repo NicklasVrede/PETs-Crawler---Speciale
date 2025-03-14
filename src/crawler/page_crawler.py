@@ -220,7 +220,7 @@ class WebsiteCrawler:
             except Exception as e:
                 print(f"Note: Could not clear page storage: {e}")
 
-    async def crawl_site(self, domain, user_data_dir, full_extension_path, headless=False, viewport=None):
+    async def crawl_site(self, domain, user_data_dir=None, full_extension_path=None, headless=False, viewport=None):
         """Crawl a website multiple times to analyze cookie persistence"""
         self.base_domain = domain.lower().replace('www.', '')
         visit_results = []
@@ -277,6 +277,13 @@ class WebsiteCrawler:
                 await self.network_monitor.setup_monitoring(page, visit)
                 await self.fp_collector.setup_monitoring(page, visit)
                 
+                # Ensure page is ready before setting up monitor
+                await page.goto("about:blank")
+                
+                # Add verification test
+                print("\nVerifying storage interaction tracking...")
+                await self.network_monitor.storage_monitor.verify_interaction_tracking(page, 0)
+                
                 # Visit the homepage first
                 print("\nVisiting homepage...")
                 homepage_url = f"https://{domain}"
@@ -316,6 +323,9 @@ class WebsiteCrawler:
                     'fingerprinting': self.fp_collector._get_results_for_visit(visit),
                     'visited_urls': visited_in_this_cycle
                 })
+                
+                # Before closing the page, collect storage interactions again
+                await self.network_monitor.storage_monitor.collect_storage_interactions(page, visit)
                 
                 # Close the context at the end of this visit
                 await context.close()

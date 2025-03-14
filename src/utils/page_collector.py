@@ -33,15 +33,50 @@ class PageCollector:
             return False
 
     async def extract_links(self, page):
-        """Extract all links from the current page"""
+        """Extract all visible links from the current page"""
         links = await page.evaluate('''() => {
+            // Helper function to check if an element is visible
+            function isVisible(elem) {
+                if (!elem) return false;
+                
+                // Check computed style
+                const style = window.getComputedStyle(elem);
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+                    return false;
+                }
+                
+                // Check dimensions (a 1x1 element is likely invisible)
+                const rect = elem.getBoundingClientRect();
+                if (rect.width <= 1 || rect.height <= 1) {
+                    return false;
+                }
+                
+                // Check if element is within viewport or reasonably close
+                const viewportHeight = window.innerHeight;
+                const viewportWidth = window.innerWidth;
+                // Allow elements slightly outside viewport (200px buffer)
+                const buffer = 200;
+                if (rect.bottom < -buffer || 
+                    rect.top > viewportHeight + buffer || 
+                    rect.right < -buffer || 
+                    rect.left > viewportWidth + buffer) {
+                    return false;
+                }
+                
+                return true;
+            }
+            
             const links = document.querySelectorAll('a[href]');
             const results = [];
+            
             links.forEach(link => {
                 try {
-                    results.push(link.href);
+                    if (isVisible(link)) {
+                        results.push(link.href);
+                    }
                 } catch (e) {}
             });
+            
             return results;
         }''')
         

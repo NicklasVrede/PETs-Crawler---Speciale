@@ -28,9 +28,40 @@ class UserSimulator:
         except Exception as e:
             print(f"Error during user simulation: {e}")
 
+    async def _move_mouse(self, page: Page):
+        """Move mouse to a position within the viewport"""
+        try:
+            # Get viewport dimensions
+            page_dimensions = await page.evaluate('''() => {
+                return {
+                    width: document.documentElement.clientWidth,
+                    height: document.documentElement.clientHeight
+                }
+            }''')
+            
+            # Generate coordinates within the viewport (with margins)
+            target_x = random.randint(50, page_dimensions['width'] - 50)
+            target_y = random.randint(50, page_dimensions['height'] - 50)
+            
+            # Move mouse with steps
+            await page.mouse.move(
+                target_x,
+                target_y,
+                steps=random.randint(10, 20)
+            )
+            
+            # Short pause after movement
+            await asyncio.sleep(random.uniform(0.1, 0.3))
+            
+        except Exception as e:
+            print(f"Error during mouse movement: {e}")
+
     async def _perform_scrolling(self, page: Page):
         """Perform some scrolling actions"""
         try:
+            # Move mouse before scrolling
+            await self._move_mouse(page)
+            
             # Get initial scroll position
             initial_position = await page.evaluate('window.scrollY')
             

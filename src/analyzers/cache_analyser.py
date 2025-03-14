@@ -107,7 +107,7 @@ class CacheAnalyzer:
                     'value': f"Cache with {cache.get('entry_count', 0)} entries",
                     'domain': cache.get('domain', ''),
                     'visit': visit_num,
-                    'confidence': 0.3,  # Base confidence
+                    'confidence': 0.0,
                     'reasons': []
                 }
                 
