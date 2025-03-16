@@ -6,17 +6,20 @@ from collections import defaultdict
 from .storage_monitor import StorageMonitor  # Import the new class
 
 class NetworkMonitor:
-    def __init__(self):
+    def __init__(self, verbose=False):
         self.requests = []
         self.domains_contacted = set()
-        self.storage_monitor = StorageMonitor()  # Use the imported class
+        self.storage_monitor = StorageMonitor(verbose=verbose)  # Pass verbose to StorageMonitor
         self.cookies_by_visit = {}
+        self.verbose = verbose
+        
         # Track cookie operations per visit
         self.cookie_stats = defaultdict(lambda: {
             'created': 0,
             'deleted': 0,
             'modified': 0,
-            'cookies_seen': set()  # Track unique cookies we've seen
+            'cookies_seen': set(),
+            'cookies_deleted': set()
         })
 
     def _count_request_types(self):
@@ -63,7 +66,8 @@ class NetworkMonitor:
 
     async def setup_monitoring(self, page, visit_number=0):
         """Setup network monitoring"""
-        print(f"Starting network monitor for visit {visit_number}")
+        if self.verbose:
+            print(f"Starting network monitor for visit {visit_number}")
         
         # Capture all browser cookies at the end of page load
         async def capture_cookies():

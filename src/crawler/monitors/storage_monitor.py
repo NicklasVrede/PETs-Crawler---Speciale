@@ -5,10 +5,11 @@ from pathlib import Path
 class StorageMonitor:
     """Simple monitor for web storage usage"""
     
-    def __init__(self):
+    def __init__(self, verbose=False):
         """Initialize storage monitor"""
         self.storage_items = {}  # Storage data by visit
         self.api_usage = {}  # API usage by visit
+        self.verbose = verbose
         
         # Get path to the JavaScript file
         script_path = Path(__file__).parent / "storage_monitor.js"
@@ -21,7 +22,8 @@ class StorageMonitor:
             await page.add_init_script(self.monitor_js)
             return True
         except Exception as e:
-            print(f"Error setting up storage monitoring: {e}")
+            if self.verbose:
+                print(f"Error setting up storage monitoring: {e}")
             return False
     
     async def capture_snapshot(self, page, visit_number=0):
@@ -62,7 +64,8 @@ class StorageMonitor:
             
             return self.storage_items[visit_number]
         except Exception as e:
-            print(f"Error capturing storage: {e}")
+            if self.verbose:
+                print(f"Error capturing storage: {e}")
             return None
     
     async def collect_api_metrics(self, page, visit_number):
@@ -73,7 +76,8 @@ class StorageMonitor:
                 self.api_usage[visit_number] = metrics
             return metrics
         except Exception as e:
-            print(f"Error collecting API metrics: {e}")
+            if self.verbose:
+                print(f"Error collecting API metrics: {e}")
             return None
     
     def get_results(self):

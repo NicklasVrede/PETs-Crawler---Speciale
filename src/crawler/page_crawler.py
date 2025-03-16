@@ -13,20 +13,23 @@ from utils.user_simulator import UserSimulator
 import os
 
 class WebsiteCrawler:
-    def __init__(self, max_pages=20, visits=2):
+    def __init__(self, max_pages=20, visits=2, verbose=False):
         self.max_pages = max_pages
         self.visits = visits
-        self.network_monitor = NetworkMonitor()
-        self.fp_collector = FingerprintCollector()
+        self.network_monitor = NetworkMonitor(verbose=verbose)
+        self.fp_collector = FingerprintCollector(verbose=verbose)
         self.user_simulator = UserSimulator()
         self.base_domain = None
+        self.verbose = verbose
 
     async def clear_all_browser_data(self, context):
         """Clear browser data between visits"""
-        print("\nClearing browser data...")
+        if self.verbose:
+            print("\nClearing browser data...")
         try:
             # Clear context-level data
-            print("Clearing context-level data...")
+            if self.verbose:
+                print("Clearing context-level data...")
             await context.clear_cookies()
             await asyncio.sleep(1)
             await context.clear_permissions()
@@ -35,7 +38,8 @@ class WebsiteCrawler:
             # Use page-level JavaScript to clear storage with error handling
             page = context.pages[0] if context.pages else None
             if page:
-                print("Clearing local and session storage...")
+                if self.verbose:
+                    print("Clearing local and session storage...")
                 try:
                     # Use a safer approach with try/catch inside the JS
                     await page.evaluate("""() => {
@@ -56,12 +60,15 @@ class WebsiteCrawler:
                     }""")
                     await asyncio.sleep(1)
                 except Exception as e:
-                    print(f"Note: Could not clear page storage: {e}")
+                    if self.verbose:
+                        print(f"Note: Could not clear page storage: {e}")
             
-            print("✓ Browser data cleared")
+            if self.verbose:
+                print("✓ Browser data cleared")
             
         except Exception as e:
-            print(f"Warning: Error during data clearing: {e}")
+            if self.verbose:
+                print(f"Warning: Error during data clearing: {e}")
         
         await asyncio.sleep(1)  # Final wait before proceeding
 
@@ -226,22 +233,28 @@ class WebsiteCrawler:
         visit_results = []
         
         # Load pre-collected URLs
-        print("\nLoading pre-collected URLs...")
+        if self.verbose:
+            print("\nLoading pre-collected URLs...")
         urls = load_site_pages(domain, input_dir="data/site_pages", count=self.max_pages)
         
         if not urls or len(urls) == 0:
-            print(f"ERROR: No pre-collected URLs found for {domain}")
+            tqdm.write(f"ERROR: No pre-collected URLs found for {domain}")
             return {'visits': [], 'fingerprinting': {}}
         
-        print(f"Loaded {len(urls)} pre-collected URLs for {domain}")
+        if self.verbose:
+            print(f"Loaded {len(urls)} pre-collected URLs for {domain}")
+        else:
+            tqdm.write(f"Loaded {len(urls)} URLs for {domain}")
         
         # Initial browser setup - we only clear data once at the beginning
-        print(f"\n{'='*50}")
-        print(f"Initial browser setup")
-        print(f"{'='*50}")
+        if self.verbose:
+            print(f"\n{'='*50}")
+            print(f"Initial browser setup")
+            print(f"{'='*50}")
         
         # Clear data only once at the start of the entire crawling process
-        print("\nInitial browser session to clear data and visit homepage...")
+        if self.verbose:
+            print("\nInitial browser session to clear data and visit homepage...")
         async with async_playwright() as p:
             # Setup browser with context
             context = await self._setup_browser(
@@ -249,21 +262,29 @@ class WebsiteCrawler:
             )
             
             # Clear all browser data to start fresh
-            print("\nClearing browser data...")
+            if self.verbose:
+                print("\nClearing browser data...")
             await self._clear_browser_data(context)
-            print("✓ Browser data cleared")
+            if self.verbose:
+                print("✓ Browser data cleared")
             
             # Close the context after clearing data
             await context.close()
         
-        # Now perform multiple visits WITHOUT clearing data between them
+        # Always show progress with tqdm regardless of verbose setting
         for visit in range(self.visits):
-            print(f"\n{'='*50}")
-            print(f"Starting visit {visit + 1} of {self.visits}")
-            print(f"{'='*50}")
+            visited_in_this_cycle = []
+            
+            if self.verbose:
+                print(f"\n{'='*50}")
+                print(f"Starting visit {visit + 1} of {self.visits}")
+                print(f"{'='*50}")
+            else:
+                tqdm.write(f"Starting visit {visit + 1} of {self.visits}")
             
             # Browser session for this visit - data persists between visits
-            print("\nStarting browser session...")
+            if self.verbose:
+                print("\nStarting browser session...")
             async with async_playwright() as p:
                 # Setup browser with context
                 context = await self._setup_browser(
@@ -280,19 +301,23 @@ class WebsiteCrawler:
                 # Ensure page is ready before setting up monitor
                 await page.goto("about:blank")
                 
-
                 # Visit the homepage first
-                print("\nVisiting homepage...")
+                if self.verbose:
+                    print("\nVisiting homepage...")
                 homepage_url = f"https://{domain}"
                 try:
                     await page.goto(homepage_url, timeout=30000)
                     await page.wait_for_timeout(5000)  # Wait for 5 seconds
                 except Exception as e:
-                    print(f"Error visiting homepage: {e}")
+                    if self.verbose:
+                        print(f"Error visiting homepage: {e}")
+                    else:
+                        tqdm.write(f"Error visiting homepage: {e}")
                 
                 # Start the crawl
-                print("\nStarting URL visits...")
-                visited_in_this_cycle = []
+                if self.verbose:
+                    print("\nStarting URL visits...")
+
                 with tqdm(total=len(urls), desc=f"Visit #{visit + 1}", unit="page") as pbar:
                     for url in urls:
                         try:
@@ -309,7 +334,7 @@ class WebsiteCrawler:
                             pbar.update(1)
                             
                         except Exception as e:
-                            print(f"\nError visiting {url}: {e}")
+                            tqdm.write(f"\nError visiting {url}: {e}")
                             visited_in_this_cycle.append({"original": url, "error": str(e)})
                             pbar.update(1)
                 
@@ -317,12 +342,10 @@ class WebsiteCrawler:
                     'visit_number': visit,
                     'network': self.network_monitor.get_results()['network_data'],
                     'statistics': self.network_monitor.get_statistics(),
+                    'storage': self.network_monitor.get_results().get('storage', {}),
                     'fingerprinting': self.fp_collector._get_results_for_visit(visit),
                     'visited_urls': visited_in_this_cycle
                 })
-                
-                # Before closing the page, collect storage interactions again
-                await self.network_monitor.storage_monitor.collect_storage_interactions(page, visit)
                 
                 # Close the context at the end of this visit
                 await context.close()

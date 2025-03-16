@@ -1,5 +1,6 @@
 import os
 import json
+import csv
 
 def load_config(config_file):
     """Load configuration from a JSON file."""
@@ -52,4 +53,11 @@ def extract_javascript(json_file_path):
     with open(json_file_path, 'w') as f:
         json.dump(data, f, indent=2)
     
-    print(f"\nExtracted {len(data['scripts'])} JavaScript files") 
+    print(f"\nExtracted {len(data['scripts'])} JavaScript files")
+
+def get_all_sites(csv_path='data/study-sites.csv'):
+    """Get all sites from the CSV file as a list of (rank, domain) tuples"""
+    with open(csv_path, 'r') as f:
+        reader = csv.reader(f)
+        next(reader)  # Skip header
+        return list(reader) 

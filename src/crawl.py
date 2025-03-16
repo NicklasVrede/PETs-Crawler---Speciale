@@ -1,11 +1,24 @@
 import asyncio
+import tempfile
+import shutil
+import os
 from crawler.page_crawler import WebsiteCrawler
 from managers.crawl_data_manager import CrawlDataManager
-from utils.util import construct_paths, extract_javascript, load_config, get_profile_config
+from utils.util import construct_paths, load_config, get_profile_config, get_all_sites
+from tqdm import tqdm
 
 
-
-async def main(profile, data_dir=None):
+async def crawl_domain(profile, site_info, data_dir=None, max_pages=2, verbose=False):
+    """
+    Crawl a single domain with configurable verbosity
+    
+    Args:
+        profile: Browser profile to use
+        site_info: Tuple of (rank, domain)
+        data_dir: Custom data directory (for parallel processing)
+        max_pages: Maximum pages to crawl
+        verbose: If True, print detailed progress information
+    """
     # Load configuration
     config = load_config('config.json')
     
@@ -14,24 +27,19 @@ async def main(profile, data_dir=None):
     
     # Construct paths
     user_data_dir, full_extension_path = construct_paths(config, profile)
+    if data_dir:
+        user_data_dir = data_dir
     
-    #print the full extension path
-    print(f"Using extension path: {full_extension_path}")
-
-    #debugging:
-    #print(f"Using data directory: {user_data_dir}")
-    #print(f"Using extension path: {full_extension_path}")
-
-    # Create SiteManager (no logs_folder parameter needed anymore)
+    if verbose:
+        print(f"Using extension path: {full_extension_path}")
+        print(f"Using profile data directory: {user_data_dir}")
     
-    max_pages = 5
-
     crawl_data_manager = CrawlDataManager(profile)
-    rank, domain = crawl_data_manager.get_next_site()
+    rank, domain = site_info
     
-    # Crawl site
-    crawler = WebsiteCrawler(max_pages=max_pages)
-    site_data = await crawler.crawl_site(
+    # Crawl site - pass verbose flag to control internal printing
+    crawler = WebsiteCrawler(max_pages=max_pages, verbose=verbose)
+    await crawler.crawl_site(
         domain,
         user_data_dir=user_data_dir,
         full_extension_path=full_extension_path,
@@ -39,20 +47,29 @@ async def main(profile, data_dir=None):
         viewport=profile_config.get('viewport', {'width': 1280, 'height': 800})
     )
     
-    # Debug print
-    print(f"\nDebug: Total requests captured: {len(crawler.network_monitor.requests)}")
-        
     # Store data
+    if verbose:
+        print(f"Saving data for domain {domain}...")
+    
+    target_dir = os.path.join('data', 'crawler_data', profile)
+    os.makedirs(target_dir, exist_ok=True)
+    
     crawl_data_manager.save_crawl_data(
         domain, 
         rank, 
         crawler.network_monitor,
-        fingerprint_collector=crawler.fp_collector
+        fingerprint_collector=crawler.fp_collector,
+        verbose=verbose
     )
     
-    # Extract JavaScript from the saved data
-    json_file = crawl_data_manager.get_result_file_path(domain)
-    #extract_javascript(json_file)
+    # Always show file saved confirmation, even in non-verbose mode
+    expected_file = os.path.join(target_dir, f'{domain}.json')
+    if os.path.exists(expected_file):
+        file_size = os.path.getsize(expected_file) / 1024
+        tqdm.write(f"✓ Data saved: {expected_file} ({file_size:.2f} KB)")
+    else:
+        tqdm.write(f"✗ File not found: {expected_file}")
+
 
 if __name__ == "__main__":
     #available profiles
@@ -61,7 +78,24 @@ if __name__ == "__main__":
     print("Profile names:", list(profile_names))
 
     profile = 'i_dont_care_about_cookies'
-    asyncio.run(main(profile))
+    
+    # Get all sites to crawl
+    all_sites = get_all_sites()
+    if all_sites:
+        # Just process the first site for testing
+        site_info = all_sites[0]  # Get only the first site
+        rank, domain = site_info
+        print(f"\n{'='*50}")
+        print(f"Processing site: {domain} (rank: {rank})")
+        print(f"{'='*50}\n")
+        
+        try:
+            asyncio.run(crawl_domain(profile, site_info=site_info))
+            print(f"Completed crawling {domain}")
+        except Exception as e:
+            print(f"Error crawling {domain}: {str(e)}")
+    else:
+        print("No sites available to crawl")
 
     #Run the identify_sources script
     #identify_site_sources("data/adguard_non_headless")

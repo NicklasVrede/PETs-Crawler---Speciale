@@ -5,17 +5,19 @@ import json
 from urllib.parse import urlparse
 
 class FingerprintCollector:
-    def __init__(self):
+    def __init__(self, verbose=False):
         # Track data separately for each visit
         self.visits_data = {}
         self.current_visit = 0
+        self.verbose = verbose
         
         # Keep the script patterns global
         self.script_patterns = {}
 
     async def setup_monitoring(self, page, visit_number=0):
         """Setup monitoring before page loads"""
-        print(f"Setting up fingerprint collection for visit #{visit_number+1}...")
+        if self.verbose:
+            print(f"Setting up fingerprint collection for visit #{visit_number+1}...")
         self.current_visit = visit_number
         
         # Initialize data structure for this visit if it doesn't exist
