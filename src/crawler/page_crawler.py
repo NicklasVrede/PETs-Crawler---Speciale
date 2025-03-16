@@ -1,6 +1,7 @@
 from playwright.async_api import async_playwright, TimeoutError
 from crawler.monitors.network_monitor import NetworkMonitor
 from crawler.monitors.fingerprint_collector import FingerprintCollector
+from crawler.monitors.storage_monitor import StorageMonitor
 from pathlib import Path
 import json
 from datetime import datetime
@@ -13,14 +14,19 @@ from utils.user_simulator import UserSimulator
 import os
 
 class WebsiteCrawler:
-    def __init__(self, max_pages=20, visits=2, verbose=False):
+    def __init__(self, max_pages=20, visits=2, verbose=False, monitors=None):
         self.max_pages = max_pages
         self.visits = visits
-        self.network_monitor = NetworkMonitor(verbose=verbose)
-        self.fp_collector = FingerprintCollector(verbose=verbose)
-        self.user_simulator = UserSimulator()
-        self.base_domain = None
         self.verbose = verbose
+        self.base_domain = None
+        self.user_simulator = UserSimulator()
+        
+        # Use provided monitors or create defaults
+        self.monitors = monitors or {
+            'network': NetworkMonitor(verbose=verbose),
+            'storage': StorageMonitor(verbose=verbose),
+            'fingerprint': FingerprintCollector(verbose=verbose)
+        }
 
     async def clear_all_browser_data(self, context):
         """Clear browser data between visits"""
@@ -295,8 +301,9 @@ class WebsiteCrawler:
                 page = await context.new_page()
                 
                 # Setup monitoring
-                await self.network_monitor.setup_monitoring(page, visit)
-                await self.fp_collector.setup_monitoring(page, visit)
+                await self.monitors['network'].setup_monitoring(page, visit)
+                await self.monitors['fingerprint'].setup_monitoring(page, visit)
+                await self.monitors['storage'].setup_monitoring(page)
                 
                 # Ensure page is ready before setting up monitor
                 await page.goto("about:blank")
@@ -328,7 +335,7 @@ class WebsiteCrawler:
                             final_url = page.url
                             visited_in_this_cycle.append({"original": url, "final": final_url})
                             
-                            await self.network_monitor.storage_monitor.capture_snapshot(page, visit_number=visit)
+                            await self.monitors['storage'].capture_snapshot(page, visit_number=visit)
                             await self.user_simulator.simulate_interaction(page)
                             
                             pbar.update(1)
@@ -340,18 +347,23 @@ class WebsiteCrawler:
                 
                 visit_results.append({
                     'visit_number': visit,
-                    'network': self.network_monitor.get_results()['network_data'],
-                    'statistics': self.network_monitor.get_statistics(),
-                    'storage': self.network_monitor.get_results().get('storage', {}),
-                    'fingerprinting': self.fp_collector._get_results_for_visit(visit),
+                    'network': self.monitors['network'].get_results()['network_data'],
+                    'statistics': self.monitors['network'].get_statistics(),
+                    'storage': self.monitors['storage'].get_results(),
+                    'fingerprinting': self.monitors['fingerprint']._get_results_for_visit(visit),
                     'visited_urls': visited_in_this_cycle
                 })
                 
                 # Close the context at the end of this visit
                 await context.close()
         
-        # Remove the cookie persistence analysis - we'll do this separately
         return {
+            'domain': domain,
+            'timestamp': datetime.now().isoformat(),
             'visits': visit_results,
-            'fingerprinting_summary': self.fp_collector._get_combined_results()
+            'network_data': self.monitors['network'].get_network_data(),
+            'statistics': self.monitors['network'].get_statistics(),
+            'storage': self.monitors['storage'].get_results(),
+            'fingerprinting': self.monitors['fingerprint'].get_fingerprinting_data(),
+            'cookies': self.monitors['network'].get_cookies()
         }

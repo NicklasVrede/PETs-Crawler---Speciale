@@ -3,6 +3,7 @@ from typing import Dict, List, Set, Counter
 from collections import defaultdict, Counter
 import json
 from urllib.parse import urlparse
+from pathlib import Path
 
 class FingerprintCollector:
     def __init__(self, verbose=False):
@@ -13,6 +14,11 @@ class FingerprintCollector:
         
         # Keep the script patterns global
         self.script_patterns = {}
+        
+        # Load the JavaScript file
+        script_path = Path(__file__).parent / "fingerprint_collector.js"
+        with open(script_path, 'r') as f:
+            self.monitor_js = f.read()
 
     async def setup_monitoring(self, page, visit_number=0):
         """Setup monitoring before page loads"""
@@ -31,119 +37,11 @@ class FingerprintCollector:
                 'category_counts': Counter()
             }
 
+        # Replace the visit number placeholder in the JavaScript
+        js_code = self.monitor_js.replace('VISIT_NUMBER', str(visit_number))
+
         # Inject our monitoring code
-        await page.add_init_script("""
-            window.currentPageIndex = 0;  // Default to 0 for homepage
-            window.currentVisitNumber = """ + str(visit_number) + """;  // Set current visit number
-            
-            window.fpCollector = {
-                calls: new Set(),
-                scriptSources: new Map(),
-                
-                // Track script sources
-                getScriptSource() {
-                    try {
-                        const error = new Error();
-                        const stack = error.stack || '';
-                        // Look for full URLs in the stack trace
-                        const urlMatch = stack.match(/at (?:Object\\.|)(?:https?:\\/\\/[^\\s]+|[^\\s:]+)/);
-                        if (urlMatch) {
-                            // Extract just the URL or script name
-                            const source = urlMatch[0].replace('at Object.', '').replace('at ', '');
-                            return source;
-                        }
-                        // If we can't find a URL, try to get the script name
-                        const currentScript = document.currentScript;
-                        if (currentScript && currentScript.src) {
-                            return currentScript.src;
-                        }
-                    } catch (e) {
-                        console.error('Error getting script source:', e);
-                    }
-                    return 'unknown source';
-                },
-
-                // Report API usage to Python
-                report(category, api, args = null) {
-                    const source = this.getScriptSource();
-                    window.reportFPCall({
-                        category,
-                        api,
-                        args: args ? JSON.stringify(args) : null,
-                        source,
-                        timestamp: Date.now(),
-                        url: document.location.href,
-                        pageIndex: window.currentPageIndex || 0,
-                        visit: window.currentVisitNumber
-                    });
-                }
-            };
-
-            // Canvas fingerprinting
-            const originalGetContext = HTMLCanvasElement.prototype.getContext;
-            HTMLCanvasElement.prototype.getContext = function() {
-                fpCollector.report('canvas', 'getContext', Array.from(arguments));
-                return originalGetContext.apply(this, arguments);
-            };
-
-            const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
-            HTMLCanvasElement.prototype.toDataURL = function() {
-                fpCollector.report('canvas', 'toDataURL', Array.from(arguments));
-                return originalToDataURL.apply(this, arguments);
-            };
-
-            // WebGL fingerprinting
-            if (WebGLRenderingContext) {
-                const originalGetParameter = WebGLRenderingContext.prototype.getParameter;
-                WebGLRenderingContext.prototype.getParameter = function(parameter) {
-                    fpCollector.report('webgl', 'getParameter', parameter);
-                    return originalGetParameter.apply(this, parameter);
-                };
-            }
-
-            // Font fingerprinting
-            if (document.fonts) {
-                const originalCheck = document.fonts.check;
-                document.fonts.check = function() {
-                    fpCollector.report('fonts', 'check', Array.from(arguments));
-                    return originalCheck.apply(this, arguments);
-                };
-            }
-
-            // Hardware fingerprinting
-            for (const prop of ['hardwareConcurrency', 'deviceMemory', 'platform']) {
-                if (Navigator.prototype.hasOwnProperty(prop)) {
-                    const descriptor = Object.getOwnPropertyDescriptor(Navigator.prototype, prop);
-                    if (descriptor && descriptor.get) {
-                        Object.defineProperty(Navigator.prototype, prop, {
-                            get: function() {
-                                fpCollector.report('hardware', prop);
-                                return descriptor.get.call(this);
-                            }
-                        });
-                    }
-                }
-            }
-
-            // Audio fingerprinting
-            if (window.AudioContext || window.webkitAudioContext) {
-                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-                const originalCreateOscillator = AudioContextClass.prototype.createOscillator;
-                AudioContextClass.prototype.createOscillator = function() {
-                    fpCollector.report('audio', 'createOscillator');
-                    return originalCreateOscillator.apply(this, arguments);
-                };
-            }
-
-            // WebRTC fingerprinting
-            if (window.RTCPeerConnection) {
-                const originalRTCPC = window.RTCPeerConnection;
-                window.RTCPeerConnection = function() {
-                    fpCollector.report('webrtc', 'RTCPeerConnection', Array.from(arguments));
-                    return new originalRTCPC(...arguments);
-                };
-            }
-        """)
+        await page.add_init_script(js_code)
 
         # Setup callback from JavaScript
         await page.expose_function('reportFPCall', self._handle_fp_call)

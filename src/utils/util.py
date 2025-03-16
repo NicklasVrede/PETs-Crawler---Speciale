@@ -1,6 +1,8 @@
 import os
 import json
 import csv
+import tempfile
+import shutil
 
 def load_config(config_file):
     """Load configuration from a JSON file."""
@@ -60,4 +62,47 @@ def get_all_sites(csv_path='data/study-sites.csv'):
     with open(csv_path, 'r') as f:
         reader = csv.reader(f)
         next(reader)  # Skip header
-        return list(reader) 
+        return list(reader)
+
+def create_temp_profile_copy(original_profile_dir, verbose=False):
+    """
+    Creates a temporary copy of a browser profile for parallel execution
+    
+    Args:
+        original_profile_dir: Path to the original profile directory
+        verbose: Whether to print status messages
+        
+    Returns:
+        Path to the temporary profile directory
+    """
+    # Extract profile name from path for the temp directory prefix
+    profile_name = os.path.basename(original_profile_dir)
+    
+    # Create a temporary directory
+    temp_profile_dir = tempfile.mkdtemp(prefix=f"profile_{profile_name}_")
+    
+    if verbose:
+        print(f"Creating temporary profile directory: {temp_profile_dir}")
+    
+    try:
+        # Copy the original profile to the temporary directory if it exists
+        if os.path.exists(original_profile_dir):
+            # Only copy if the source directory has content
+            if os.listdir(original_profile_dir):
+                if verbose:
+                    print(f"Copying profile from {original_profile_dir} to {temp_profile_dir}")
+                shutil.copytree(original_profile_dir, temp_profile_dir, dirs_exist_ok=True)
+            else:
+                if verbose:
+                    print(f"Source profile directory {original_profile_dir} is empty, using empty temp directory")
+        else:
+            if verbose:
+                print(f"Source profile directory {original_profile_dir} does not exist, using empty temp directory")
+        
+        return temp_profile_dir
+        
+    except Exception as e:
+        # Clean up on error
+        if os.path.exists(temp_profile_dir):
+            shutil.rmtree(temp_profile_dir, ignore_errors=True)
+        raise Exception(f"Failed to create temporary profile copy: {str(e)}") 

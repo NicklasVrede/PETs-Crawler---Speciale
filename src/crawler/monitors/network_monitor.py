@@ -3,13 +3,11 @@ from urllib.parse import urlparse, parse_qs
 import json
 from typing import Dict, Set, List
 from collections import defaultdict
-from .storage_monitor import StorageMonitor  # Import the new class
 
 class NetworkMonitor:
     def __init__(self, verbose=False):
         self.requests = []
         self.domains_contacted = set()
-        self.storage_monitor = StorageMonitor(verbose=verbose)  # Pass verbose to StorageMonitor
         self.cookies_by_visit = {}
         self.verbose = verbose
         
@@ -48,7 +46,7 @@ class NetworkMonitor:
 
     def get_storage_data(self):
         """Get storage monitoring data"""
-        return self.storage_monitor.get_results()
+        return {}
 
     def get_network_data(self):
         """Get network request data"""
