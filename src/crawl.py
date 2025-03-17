@@ -31,7 +31,7 @@ async def crawl_domain(profile, site_info, data_dir=None, max_pages=2, verbose=F
     # Create a temporary copy of the profile for parallel execution
     temp_profile_dir = None
     try:
-        # Use the utility function to create a temporary profile copy
+        # Make temp profile copy to allow for parallel execution
         temp_profile_dir = create_temp_profile_copy(user_data_dir, verbose)
         
         # Use provided data_dir if specified, otherwise use the temp profile
@@ -46,7 +46,7 @@ async def crawl_domain(profile, site_info, data_dir=None, max_pages=2, verbose=F
         
         # Crawl site - pass verbose flag to control internal printing
         crawler = WebsiteCrawler(max_pages=max_pages, verbose=verbose)
-        result = await crawler.crawl_site(
+        crawl_result = await crawler.crawl_site(
             domain,
             user_data_dir=crawl_user_data_dir,
             full_extension_path=full_extension_path,
@@ -61,16 +61,14 @@ async def crawl_domain(profile, site_info, data_dir=None, max_pages=2, verbose=F
         target_dir = os.path.join('data', 'crawler_data', profile)
         os.makedirs(target_dir, exist_ok=True)
         
-        crawl_data_manager.save_crawl_data(domain, rank, result, verbose=verbose)
-        
-        # Always show file saved confirmation, even in non-verbose mode
-        expected_file = os.path.join(target_dir, f'{domain}.json')
-        if os.path.exists(expected_file):
-            file_size = os.path.getsize(expected_file) / 1024
-            tqdm.write(f"✓ Data saved: {expected_file} ({file_size:.2f} KB)")
-        else:
-            tqdm.write(f"✗ File not found: {expected_file}")
-            
+        crawl_data_manager.save_crawl_data(
+            domain, 
+            rank, 
+            crawl_result,
+            verbose=verbose
+        )
+
+
     finally:
         # Clean up temporary directory
         if temp_profile_dir and os.path.exists(temp_profile_dir):
@@ -87,16 +85,19 @@ if __name__ == "__main__":
 
     profile = 'i_dont_care_about_cookies'
     
+    verbose = False
     # Get all sites to crawl
     all_sites = get_all_sites()
     if all_sites:
         # Just process the first site for testing
         site_info = all_sites[0]  # Get only the first site
         rank, domain = site_info
-        print(f"\n{'='*50}")
-        print(f"Processing site: {domain} (rank: {rank})")
-        print(f"{'='*50}\n")
-        
+
+        if verbose:
+            print(f"\n{'='*50}")
+            print(f"Processing site: {domain} (rank: {rank})")
+            print(f"{'='*50}\n")
+            
         try:
             asyncio.run(crawl_domain(profile, site_info=site_info))
             print(f"Completed crawling {domain}")

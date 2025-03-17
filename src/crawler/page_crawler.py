@@ -248,9 +248,7 @@ class WebsiteCrawler:
             return {'visits': [], 'fingerprinting': {}}
         
         if self.verbose:
-            print(f"Loaded {len(urls)} pre-collected URLs for {domain}")
-        else:
-            tqdm.write(f"Loaded {len(urls)} URLs for {domain}")
+            tqdm.write(f"Loaded {len(urls)} pre-collected URLs for {domain}")
         
         # Initial browser setup - we only clear data once at the beginning
         if self.verbose:
@@ -277,55 +275,57 @@ class WebsiteCrawler:
             # Close the context after clearing data
             await context.close()
         
-        # Always show progress with tqdm regardless of verbose setting
-        for visit in range(self.visits):
-            visited_in_this_cycle = []
-            
-            if self.verbose:
-                print(f"\n{'='*50}")
-                print(f"Starting visit {visit + 1} of {self.visits}")
-                print(f"{'='*50}")
-            else:
-                tqdm.write(f"Starting visit {visit + 1} of {self.visits}")
-            
-            # Browser session for this visit - data persists between visits
-            if self.verbose:
-                print("\nStarting browser session...")
-            async with async_playwright() as p:
-                # Setup browser with context
-                context = await self._setup_browser(
-                    p, user_data_dir, full_extension_path, headless, viewport
-                )
+        # Calculate total pages to visit across all visits
+        total_pages = len(urls) * self.visits
+        
+        # Progress bar
+        with tqdm(total=total_pages, desc=f"Visiting {domain}", unit="page") as pbar:
+            for visit in range(self.visits):
+                visited_in_this_cycle = []
                 
-                # Create a new page for this visit
-                page = await context.new_page()
+                # Update progress bar description to include current visit
+                pbar.set_description(f"Visiting {domain}, Visit #{visit + 1}, Subdomains")
                 
-                # Setup monitoring
-                await self.monitors['network'].setup_monitoring(page, visit)
-                await self.monitors['fingerprint'].setup_monitoring(page, visit)
-                await self.monitors['storage'].setup_monitoring(page)
-                
-                # Ensure page is ready before setting up monitor
-                await page.goto("about:blank")
-                
-                # Visit the homepage first
                 if self.verbose:
-                    print("\nVisiting homepage...")
-                homepage_url = f"https://{domain}"
-                try:
-                    await page.goto(homepage_url, timeout=30000)
-                    await page.wait_for_timeout(5000)  # Wait for 5 seconds
-                except Exception as e:
-                    if self.verbose:
-                        print(f"Error visiting homepage: {e}")
-                    else:
-                        tqdm.write(f"Error visiting homepage: {e}")
-                
-                # Start the crawl
-                if self.verbose:
-                    print("\nStarting URL visits...")
+                    tqdm.write(f"\n{'='*50}")
+                    tqdm.write(f"Starting visit {visit + 1} of {self.visits}")
+                    tqdm.write(f"{'='*50}")
+                    print("\nStarting browser session...")
 
-                with tqdm(total=len(urls), desc=f"Visit #{visit + 1}", unit="page") as pbar:
+                async with async_playwright() as p:
+                    # Setup browser with context
+                    context = await self._setup_browser(
+                        p, user_data_dir, full_extension_path, headless, viewport
+                    )
+                    
+                    # Create a new page for this visit
+                    page = await context.new_page()
+                    
+                    # Setup monitoring
+                    await self.monitors['network'].setup_monitoring(page, visit)
+                    await self.monitors['fingerprint'].setup_monitoring(page, visit)
+                    await self.monitors['storage'].setup_monitoring(page)
+                    
+                    # Ensure page is ready before setting up monitor
+                    await page.goto("about:blank")
+                    
+                    # Visit the homepage first
+                    if self.verbose:
+                        print("\nVisiting homepage...")
+                    homepage_url = f"https://{domain}"
+                    try:
+                        await page.goto(homepage_url, timeout=30000)
+                        await page.wait_for_timeout(5000)  # Wait for 5 seconds
+                    except Exception as e:
+                        if self.verbose:
+                            print(f"Error visiting homepage: {e}")
+                        else:
+                            tqdm.write(f"Error visiting homepage: {e}")
+                    
+                    # Start the crawl
+                    if self.verbose:
+                        print("\nStarting URL visits...")
+
                     for url in urls:
                         try:
                             await page.goto(url, timeout=30000)
@@ -338,24 +338,25 @@ class WebsiteCrawler:
                             await self.monitors['storage'].capture_snapshot(page, visit_number=visit)
                             await self.user_simulator.simulate_interaction(page)
                             
+                            # Update the single progress bar
                             pbar.update(1)
                             
                         except Exception as e:
                             tqdm.write(f"\nError visiting {url}: {e}")
                             visited_in_this_cycle.append({"original": url, "error": str(e)})
                             pbar.update(1)
-                
-                visit_results.append({
-                    'visit_number': visit,
-                    'network': self.monitors['network'].get_results()['network_data'],
-                    'statistics': self.monitors['network'].get_statistics(),
-                    'storage': self.monitors['storage'].get_results(),
-                    'fingerprinting': self.monitors['fingerprint']._get_results_for_visit(visit),
-                    'visited_urls': visited_in_this_cycle
-                })
-                
-                # Close the context at the end of this visit
-                await context.close()
+                    
+                    visit_results.append({
+                        'visit_number': visit,
+                        'network': self.monitors['network'].get_results()['network_data'],
+                        'statistics': self.monitors['network'].get_statistics(),
+                        'storage': self.monitors['storage'].get_results(),
+                        'fingerprinting': self.monitors['fingerprint']._get_results_for_visit(visit),
+                        'visited_urls': visited_in_this_cycle
+                    })
+                    
+                    # Close the context at the end of this visit
+                    await context.close()
         
         return {
             'domain': domain,
