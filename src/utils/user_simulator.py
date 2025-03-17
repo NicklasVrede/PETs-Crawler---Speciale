@@ -1,8 +1,6 @@
 import random
 import asyncio
 from playwright.async_api import Page
-from urllib.parse import urlparse
-from tqdm import tqdm
 
 class UserSimulator:
     def __init__(self, verbose=False):
@@ -12,97 +10,25 @@ class UserSimulator:
         self.max_click_attempts = 1
         self.verbose = verbose
 
-    async def simulate_interaction(self, page, base_domain=None):
-        """Simulate natural user behavior on the page with shorter, more variable scrolling"""
+    async def simulate_interaction(self, page: Page):
+        """Simulate realistic user interaction on the page"""
         try:
-            # Brief initial wait
-            await asyncio.sleep(random.uniform(0.05, 0.15))
+            # Ensure page is ready
+            await page.wait_for_load_state('domcontentloaded')
             
-            # Get total scroll height and start scrolling quickly
-            max_scroll = await page.evaluate('document.body.scrollHeight')
-            scroll_amount = 0
-            
-            # Variable scroll depth strategy
-            current_url = page.url
-            
-            # Extract domain for homepage check if we have it
-            parsed_url = urlparse(current_url)
-            current_domain = parsed_url.netloc.lower().replace('www.', '')
-            
-            deep_scroll_chance = 0.1  # 10% chance for deep scroll
-            is_homepage = base_domain and current_domain == base_domain and parsed_url.path in ['/', '']
-            
-            if is_homepage:
-                # More thorough for homepage
-                scroll_percentage = random.uniform(0.3, 0.8)
-            elif random.random() < deep_scroll_chance:
-                # Occasional deep scroll
-                scroll_percentage = random.uniform(0.5, 1.0)
-            else:
-                # Default quick scroll for most pages
-                scroll_percentage = random.uniform(0.1, 0.4)
-            
-            target_scroll = int(max_scroll * scroll_percentage)
-            
-            if self.verbose:
-                tqdm.write(f"Scrolling {int(scroll_percentage * 100)}% of page ({target_scroll}px)")
-            
-            # Get viewport dimensions
-            viewport = page.viewport_size
-            middle_x = viewport['width'] // 2
-            middle_y = viewport['height'] // 2
-            
-            # Quick mouse movement
-            await page.mouse.move(middle_x, middle_y, steps=2)
-            
-            # Faster scrolling with fewer pauses
-            scroll_speeds = ['fast', 'medium', 'slow']
-            scroll_probabilities = [0.7, 0.2, 0.1]
-            scroll_speed = random.choices(scroll_speeds, weights=scroll_probabilities, k=1)[0]
-            
-            # Adjust scroll parameters based on speed
-            if scroll_speed == 'fast':
-                scroll_increment = random.randint(100, 200)
-                scroll_pause = 0.05
-            elif scroll_speed == 'medium':
-                scroll_increment = random.randint(50, 100)
-                scroll_pause = 0.1
-            else:  # slow
-                scroll_increment = random.randint(30, 60)
-                scroll_pause = 0.2
-            
-            # Scroll down
-            while scroll_amount < target_scroll:
-                # Calculate next scroll increment
-                next_increment = min(scroll_increment, target_scroll - scroll_amount)
-                if next_increment <= 0:
-                    break
-                    
-                # Scroll
-                await page.mouse.wheel(0, next_increment)
-                scroll_amount += next_increment
-                
-                # Brief pause
-                await asyncio.sleep(scroll_pause)
-                
-                # Occasionally move mouse
-                if random.random() > 0.85:
-                    await page.mouse.move(
-                        middle_x + random.randint(-200, 200),
-                        middle_y + random.randint(-100, 100),
-                        steps=2
-                    )
-            
-            # Brief pause at end
-            await asyncio.sleep(0.1)
-            
-            # Only 20% chance to scroll back to top (saves time)
-            if random.random() < 0.2:
-                await page.evaluate("window.scrollTo({top: 0, behavior: 'smooth'});")
-                await asyncio.sleep(0.2)
-            
+            # Short initial delay
+            await asyncio.sleep(random.uniform(0.3, 0.7))
+
+            # Always try to scroll at least once
+            await self._perform_scrolling(page)
+
+            # Maybe click something (with shorter timeout)
+            if random.random() < self.click_probability:
+                await self._attempt_clicking(page)
+
         except Exception as e:
-            tqdm.write(f"Scroll error: {str(e)}")
+            if self.verbose:
+                print(f"Error during user simulation: {e}")
 
     async def _move_mouse(self, page: Page):
         """Move mouse to a position within the viewport"""
