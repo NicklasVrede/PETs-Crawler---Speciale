@@ -13,67 +13,71 @@ class UserSimulator:
         self.verbose = verbose
 
     async def simulate_interaction(self, page, base_domain=None):
-        """Simulate natural user behavior on the page with shorter, more variable scrolling"""
+        """Simulate natural user behavior on the page with balanced adaptive scrolling"""
         try:
-            # Brief initial wait
-            await asyncio.sleep(random.uniform(0.05, 0.15))
+            # Reasonable initial wait - not too long, not too short
+            initial_wait = random.uniform(0.5, 1.0)  # Reduced from 1.0-2.0
+            await asyncio.sleep(initial_wait)
             
-            # Get total scroll height and start scrolling quickly
-            max_scroll = await page.evaluate('document.body.scrollHeight')
+            # Get total scroll height and content metrics
+            scroll_metrics = await page.evaluate('''() => {
+                return {
+                    scrollHeight: document.body.scrollHeight,
+                    textDensity: document.body.innerText.length / (document.body.scrollHeight || 1),
+                    imageCount: document.querySelectorAll('img').length,
+                    isArticle: !!document.querySelector('article') || 
+                               document.querySelectorAll('p').length > 10
+                }
+            }''')
+            
+            max_scroll = scroll_metrics['scrollHeight']
             scroll_amount = 0
             
-            # Variable scroll depth strategy
+            # Extract domain for homepage check
             current_url = page.url
-            
-            # Extract domain for homepage check if we have it
             parsed_url = urlparse(current_url)
             current_domain = parsed_url.netloc.lower().replace('www.', '')
             
-            deep_scroll_chance = 0.1  # 10% chance for deep scroll
+            # Determine scroll depth based on content type
+            is_article = scroll_metrics.get('isArticle', False)
+            is_image_heavy = scroll_metrics.get('imageCount', 0) > 8
             is_homepage = base_domain and current_domain == base_domain and parsed_url.path in ['/', '']
             
+            # Determine scroll percentage - keep this part adaptive
             if is_homepage:
-                # More thorough for homepage
-                scroll_percentage = random.uniform(0.3, 0.8)
-            elif random.random() < deep_scroll_chance:
-                # Occasional deep scroll
-                scroll_percentage = random.uniform(0.5, 1.0)
+                scroll_percentage = random.uniform(0.4, 0.7)  # Slightly reduced
+            elif is_article:
+                scroll_percentage = random.uniform(0.6, 0.8)  # Slightly reduced
             else:
-                # Default quick scroll for most pages
-                scroll_percentage = random.uniform(0.1, 0.4)
+                scroll_percentage = random.uniform(0.3, 0.5)  # Slightly reduced
             
             target_scroll = int(max_scroll * scroll_percentage)
             
             if self.verbose:
                 tqdm.write(f"Scrolling {int(scroll_percentage * 100)}% of page ({target_scroll}px)")
             
-            # Get viewport dimensions
+            # Quick mouse movement
             viewport = page.viewport_size
             middle_x = viewport['width'] // 2
             middle_y = viewport['height'] // 2
-            
-            # Quick mouse movement
             await page.mouse.move(middle_x, middle_y, steps=2)
             
-            # Faster scrolling with fewer pauses
-            scroll_speeds = ['fast', 'medium', 'slow']
-            scroll_probabilities = [0.7, 0.2, 0.1]
-            scroll_speed = random.choices(scroll_speeds, weights=scroll_probabilities, k=1)[0]
-            
-            # Adjust scroll parameters based on speed
-            if scroll_speed == 'fast':
-                scroll_increment = random.randint(100, 200)
-                scroll_pause = 0.05
-            elif scroll_speed == 'medium':
-                scroll_increment = random.randint(50, 100)
-                scroll_pause = 0.1
-            else:  # slow
-                scroll_increment = random.randint(30, 60)
-                scroll_pause = 0.2
+            # Faster adaptive scrolling based on content
+            if is_article:
+                # Medium speed for articles
+                scroll_increment = random.randint(100, 150)  # Increased
+                scroll_pause = random.uniform(0.1, 0.2)  # Decreased
+            elif is_image_heavy:
+                # Medium-fast for image galleries
+                scroll_increment = random.randint(120, 200)  # Increased
+                scroll_pause = random.uniform(0.08, 0.15)  # Decreased
+            else:
+                # Fast for general browsing
+                scroll_increment = random.randint(150, 250)  # Increased
+                scroll_pause = random.uniform(0.05, 0.1)  # Decreased
             
             # Scroll down
             while scroll_amount < target_scroll:
-                # Calculate next scroll increment
                 next_increment = min(scroll_increment, target_scroll - scroll_amount)
                 if next_increment <= 0:
                     break
@@ -82,21 +86,25 @@ class UserSimulator:
                 await page.mouse.wheel(0, next_increment)
                 scroll_amount += next_increment
                 
-                # Brief pause
-                await asyncio.sleep(scroll_pause)
+                # Brief pause with less variation
+                await asyncio.sleep(scroll_pause * random.uniform(0.9, 1.1))
                 
-                # Occasionally move mouse
-                if random.random() > 0.85:
+                # Reduced chance of mouse movement (70% → 30%)
+                if random.random() > 0.7:
                     await page.mouse.move(
                         middle_x + random.randint(-200, 200),
                         middle_y + random.randint(-100, 100),
                         steps=2
                     )
+                    
+                # Reduced chance and duration of reading pauses (10% → 5%)
+                if random.random() > 0.95:
+                    await asyncio.sleep(random.uniform(0.3, 0.6))  # Shorter pauses
             
-            # Brief pause at end
-            await asyncio.sleep(0.1)
+            # Shorter pause at end
+            await asyncio.sleep(random.uniform(0.2, 0.5))  # Reduced
             
-            # Only 20% chance to scroll back to top (saves time)
+            # Reduce chance to scroll back to top (30% → 20%)
             if random.random() < 0.2:
                 await page.evaluate("window.scrollTo({top: 0, behavior: 'smooth'});")
                 await asyncio.sleep(0.2)
