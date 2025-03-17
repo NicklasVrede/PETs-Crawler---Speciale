@@ -59,3 +59,5 @@ extracted_scripts/
 
 #ignore all extensions
 extensions/
+__pycache__/
+*.pyc

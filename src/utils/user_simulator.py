@@ -1,8 +1,6 @@
 import random
 import asyncio
 from playwright.async_api import Page
-from urllib.parse import urlparse
-from tqdm import tqdm
 
 class UserSimulator:
     def __init__(self, verbose=False):
@@ -110,7 +108,8 @@ class UserSimulator:
                 await asyncio.sleep(0.2)
             
         except Exception as e:
-            tqdm.write(f"Scroll error: {str(e)}")
+            if self.verbose:
+                print(f"Error during user simulation: {e}")
 
     async def _move_mouse(self, page: Page):
         """Move mouse to a position within the viewport"""

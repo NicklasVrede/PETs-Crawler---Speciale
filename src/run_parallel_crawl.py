@@ -5,8 +5,6 @@ Run multiple crawls in parallel
 import asyncio
 import os
 import time
-import shutil
-import random
 from crawl_seq import crawl_domain
 from utils.util import get_all_sites
 from tqdm import tqdm
@@ -19,7 +17,7 @@ async def crawl_all_domains(profile, site_list, max_parallel=3, max_pages=2, ver
         profile: Browser profile to use
         site_list: List of (rank, domain) tuples
         max_parallel: Maximum number of parallel crawls
-        max_pages: Maximum pages per domain
+        max_pages: Maximum number of pages per domain
         verbose: Enable verbose output
     """
     # Create semaphore to limit concurrent tasks
@@ -32,35 +30,16 @@ async def crawl_all_domains(profile, site_list, max_parallel=3, max_pages=2, ver
     # Track timing
     start_time = time.time()
     
-    # Temp directory base path
-    temp_base_dir = os.path.join("data", "temp_profiles")
-    os.makedirs(temp_base_dir, exist_ok=True)
-    
     async def crawl_with_semaphore(site_info):
         """Wrapper to manage semaphore and update progress"""
         async with semaphore:
-            # Get site info
+            # Create a unique data directory for this crawl
             rank, domain = site_info
-            
-            # Add a small random delay between browser launches to reduce resource contention
-            await asyncio.sleep(random.uniform(0.5, 2.0))
-            
-            # Create a unique data directory for this crawl - without timestamp
-            domain_safe = domain.lower().replace('.', '_')
-            temp_dir = os.path.join(temp_base_dir, f"profile_{domain_safe}")
-            
-            # create the directory
-            os.makedirs(temp_dir, exist_ok=True)
+            data_dir = f"temp_profile_{domain.lower().replace('.', '_')}"
             
             try:
                 # Actually do the crawl
-                await crawl_domain(
-                    profile, 
-                    site_info, 
-                    data_dir=temp_dir,
-                    max_pages=max_pages, 
-                    verbose=False
-                )
+                await crawl_domain(profile, site_info, data_dir=data_dir, max_pages=max_pages, verbose=verbose)
                 
                 # Update elapsed time info in progress bar
                 elapsed = time.time() - start_time
@@ -73,22 +52,18 @@ async def crawl_all_domains(profile, site_list, max_parallel=3, max_pages=2, ver
                 
             except Exception as e:
                 tqdm.write(f"Error crawling {domain}: {str(e)}")
-            finally:
-                # Update progress counter
-                domain_progress.update(1)
-                
-                # Add a small delay after finishing to let system resources recover
-                await asyncio.sleep(0.5)
+            
+            # Update progress counter
+            domain_progress.update(1)
     
-    try:
-        # Create tasks for all domains
-        tasks = [crawl_with_semaphore(site_info) for site_info in site_list]
-        
-        # Run all tasks
-        await asyncio.gather(*tasks)
-    finally:
-        # Close the progress bar
-        domain_progress.close()
+    # Create tasks for all domains
+    tasks = [crawl_with_semaphore(site_info) for site_info in site_list]
+    
+    # Run all tasks
+    await asyncio.gather(*tasks)
+    
+    # Close the progress bar
+    domain_progress.close()
     
     # Final report
     total_time = time.time() - start_time
@@ -101,13 +76,12 @@ def main():
     parallel = 8  
     max_pages = 20
     start_index = 0
-    count = None  # Set to None to crawl all sites
+    count = 100  # Set to None to crawl all sites
     csv_file = "data/study-sites.csv"
     verbose = False
     
     # Get list of sites
-    filename = os.path.basename(__file__)
-    tqdm.write(f"[{filename}] Loading sites from {csv_file}...")
+    tqdm.write(f"Loading sites from {csv_file}...")
     all_sites = get_all_sites(csv_file)
     
     # Determine which sites to crawl
