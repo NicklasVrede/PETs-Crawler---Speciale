@@ -191,14 +191,19 @@ class WebsiteCrawler:
                     # Initialize list to keep track of visited URLs in this cycle
                     visited_in_this_cycle = []
                     
-                    # Reset monitors for this visit
-                    for monitor in self.monitors.values():
-                        if hasattr(monitor, 'reset'):
-                            monitor.reset()
+                    # Reset monitors for each visit
+                    self.monitors['network'] = NetworkMonitor(verbose=self.verbose)
+                    self.monitors['storage'] = StorageMonitor(verbose=self.verbose)
+                    self.monitors['fingerprint'] = FingerprintCollector(verbose=self.verbose)
                     
                     # Update progress bar description to show current visit
                     if pbar:
                         pbar.set_description(f"Visiting {domain} (visit {visit}/{self.visits})")
+                    
+                    # After creating the context but before navigating,
+                    # explicitly set up network monitoring:
+                    for page in context.pages:
+                        await self.monitors['network'].setup_monitoring(page, visit_number=visit)
                     
                     # Visit each URL in the list
                     for url in urls:
@@ -265,10 +270,12 @@ class WebsiteCrawler:
                     
                     visit_results.append({
                         'visit_number': visit,
-                        'network': self.monitors['network'].get_results()['network_data'],
+                        'network': self.monitors['network'].get_network_data(),
                         'statistics': self.monitors['network'].get_statistics(),
                         'storage': self.monitors['storage'].get_results(),
-                        'fingerprinting': self.monitors['fingerprint']._get_results_for_visit(visit),
+                        'fingerprinting': self.monitors['fingerprint'].get_results_for_visit(visit)
+                        if hasattr(self.monitors['fingerprint'], 'get_results_for_visit') 
+                        else self.monitors['fingerprint'].get_results(),
                         'visited_urls': visited_in_this_cycle
                     })
                     
