@@ -14,15 +14,16 @@ from utils.user_simulator import UserSimulator
 import os
 
 class WebsiteCrawler:
-    def __init__(self, max_pages=20, visits=2, verbose=False, monitors=None):
+    def __init__(self, max_pages=20, visits=2, verbose=False, show_progress=False):
         self.max_pages = max_pages
         self.visits = visits
         self.verbose = verbose
         self.base_domain = None
-        self.user_simulator = UserSimulator()
+        self.user_simulator = UserSimulator(verbose=verbose)
+        self.show_progress = show_progress
         
-        # Use provided monitors or create defaults
-        self.monitors = monitors or {
+        # Initialize monitors
+        self.monitors = {
             'network': NetworkMonitor(verbose=verbose),
             'storage': StorageMonitor(verbose=verbose),
             'fingerprint': FingerprintCollector(verbose=verbose)
@@ -191,52 +192,55 @@ class WebsiteCrawler:
         except Exception as e:
             tqdm.write(f"Scroll error: {str(e)}")
 
-    async def _setup_browser(self, p, user_data_dir, full_extension_path, headless, viewport):
-        """Setup browser with context"""
-        return await p.chromium.launch_persistent_context(
-            user_data_dir=user_data_dir,
-            headless=headless,
-            viewport=viewport or {'width': 1280, 'height': 800},
-            args=[
-                f'--disable-extensions-except={full_extension_path}',
-                f'--load-extension={full_extension_path}'
-            ]
-        )
-
-    async def _clear_browser_data(self, context):
-        """Clear browser data"""
-        await context.clear_cookies()
-        await context.clear_permissions()
+    async def launch_browser(self, user_data_dir=None, full_extension_path=None, headless=False):
+        """Launch a browser with the specified settings"""
+        playwright = await async_playwright().start()
         
-        # Use page-level JavaScript to clear storage with error handling
-        page = context.pages[0] if context.pages else None
-        if page:
-            try:
-                # Use a safer approach with try/catch inside the JS
-                await page.evaluate("""() => {
-                    try {
-                        if (window.localStorage) {
-                            localStorage.clear();
-                            console.log('LocalStorage cleared');
-                        }
-                        if (window.sessionStorage) {
-                            sessionStorage.clear();
-                            console.log('SessionStorage cleared');
-                        }
-                        return true;
-                    } catch (e) {
-                        console.log('Storage clearing error (expected on blank pages):', e);
-                        return false;
-                    }
-                }""")
-                await asyncio.sleep(1)
-            except Exception as e:
-                print(f"Note: Could not clear page storage: {e}")
+        # Prepare browser arguments for extensions if needed
+        browser_args = []
+        if full_extension_path:
+            browser_args.append(f"--disable-extensions-except={full_extension_path}")
+            browser_args.append(f"--load-extension={full_extension_path}")
+        
+        # Different launch method based on whether we need a user data directory
+        if user_data_dir:
+            # Use launch_persistent_context when a user data directory is specified
+            browser_context = await playwright.chromium.launch_persistent_context(
+                user_data_dir=user_data_dir,
+                headless=headless,
+                args=browser_args
+            )
+            # Store reference to the playwright instance
+            browser_context._playwright = playwright
+            # For consistent API, return an object with a similar structure to what we'd get from launch()
+            # This creates a browser-like object with a new_context method that just returns the persistent context
+            class BrowserWrapper:
+                def __init__(self, context, playwright):
+                    self.context = context
+                    self._playwright = playwright
+                    
+                async def close(self):
+                    await self.context.close()
+                    
+                async def new_context(self, **kwargs):
+                    # Just return the existing context since we're using a persistent context
+                    return self.context
+            
+            return BrowserWrapper(browser_context, playwright)
+        else:
+            # Standard launch for cases without a user data directory
+            browser = await playwright.chromium.launch(
+                headless=headless,
+                args=browser_args
+            )
+            browser._playwright = playwright
+            return browser
 
     async def crawl_site(self, domain, user_data_dir=None, full_extension_path=None, headless=False, viewport=None):
         """Crawl a website multiple times to analyze cookie persistence"""
         self.base_domain = domain.lower().replace('www.', '')
         visit_results = []
+        browser = None
         
         # Load pre-collected URLs
         if self.verbose:
@@ -250,101 +254,105 @@ class WebsiteCrawler:
         if self.verbose:
             tqdm.write(f"Loaded {len(urls)} pre-collected URLs for {domain}")
         
-        # Initial browser setup - we only clear data once at the beginning
-        if self.verbose:
-            print(f"\n{'='*50}")
-            print(f"Initial browser setup")
-            print(f"{'='*50}")
-        
-        # Clear data only once at the start of the entire crawling process
-        if self.verbose:
-            print("\nInitial browser session to clear data and visit homepage...")
-        async with async_playwright() as p:
-            # Setup browser with context
-            context = await self._setup_browser(
-                p, user_data_dir, full_extension_path, headless, viewport
-            )
+        try:
+            # Calculate total pages to visit across all visits
+            total_pages = len(urls) * self.visits
             
-            # Clear all browser data to start fresh
-            if self.verbose:
-                print("\nClearing browser data...")
-            await self._clear_browser_data(context)
-            if self.verbose:
-                print("✓ Browser data cleared")
+            # Create progress bar if show_progress is True
+            pbar = None
+            if self.show_progress:
+                pbar = tqdm(total=total_pages, desc=f"Visiting {domain}", unit="page")
             
-            # Close the context after clearing data
-            await context.close()
-        
-        # Calculate total pages to visit across all visits
-        total_pages = len(urls) * self.visits
-        
-        # Progress bar
-        with tqdm(total=total_pages, desc=f"Visiting {domain}", unit="page") as pbar:
-            for visit in range(self.visits):
-                visited_in_this_cycle = []
-                
-                # Update progress bar description to include current visit
-                pbar.set_description(f"Visiting {domain}, Visit #{visit + 1}, Subdomains")
-                
-                if self.verbose:
-                    tqdm.write(f"\n{'='*50}")
-                    tqdm.write(f"Starting visit {visit + 1} of {self.visits}")
-                    tqdm.write(f"{'='*50}")
-                    print("\nStarting browser session...")
-
-                async with async_playwright() as p:
-                    # Setup browser with context
-                    context = await self._setup_browser(
-                        p, user_data_dir, full_extension_path, headless, viewport
+            # Multiple visits to analyze cookie persistence
+            for visit in range(1, self.visits + 1):
+                # Launch the browser for each visit
+                try:
+                    # Use our helper function to launch the browser
+                    browser = await self.launch_browser(
+                        user_data_dir=user_data_dir,
+                        full_extension_path=full_extension_path,
+                        headless=headless
                     )
                     
-                    # Create a new page for this visit
-                    page = await context.new_page()
+                    # Create a new context with the desired viewport
+                    context = await browser.new_context(
+                        viewport=viewport or {"width": 1280, "height": 800}
+                    )
                     
-                    # Setup monitoring
-                    await self.monitors['network'].setup_monitoring(page, visit)
-                    await self.monitors['fingerprint'].setup_monitoring(page, visit)
-                    await self.monitors['storage'].setup_monitoring(page)
+                    # Initialize list to keep track of visited URLs in this cycle
+                    visited_in_this_cycle = []
                     
-                    # Ensure page is ready before setting up monitor
-                    await page.goto("about:blank")
+                    # Reset monitors for this visit
+                    for monitor in self.monitors.values():
+                        if hasattr(monitor, 'reset'):
+                            monitor.reset()
                     
-                    # Visit the homepage first
-                    if self.verbose:
-                        print("\nVisiting homepage...")
-                    homepage_url = f"https://{domain}"
-                    try:
-                        await page.goto(homepage_url, timeout=30000)
-                        await page.wait_for_timeout(5000)  # Wait for 5 seconds
-                    except Exception as e:
-                        if self.verbose:
-                            print(f"Error visiting homepage: {e}")
-                        else:
-                            tqdm.write(f"Error visiting homepage: {e}")
+                    # Update progress bar description to show current visit
+                    if pbar:
+                        pbar.set_description(f"Visiting {domain} (visit {visit}/{self.visits})")
                     
-                    # Start the crawl
-                    if self.verbose:
-                        print("\nStarting URL visits...")
-
+                    # Visit each URL in the list
                     for url in urls:
                         try:
-                            await page.goto(url, timeout=30000)
-                            await page.wait_for_load_state('domcontentloaded')
-                            await page.wait_for_timeout(random.uniform(1000, 2000))  # Random wait 1-2 seconds
+                            # Create a new page
+                            page = await context.new_page()
                             
-                            final_url = page.url
-                            visited_in_this_cycle.append({"original": url, "final": final_url})
-                            
-                            await self.monitors['storage'].capture_snapshot(page, visit_number=visit)
-                            await self.user_simulator.simulate_interaction(page)
-                            
-                            # Update the single progress bar
-                            pbar.update(1)
+                            try:
+                                # Set up page monitors - properly handle different monitor interfaces
+                                for name, monitor in self.monitors.items():
+                                    if name == 'storage':
+                                        # For storage monitor, pass the visit number to capture_snapshot
+                                        # but not to setup_monitoring
+                                        if hasattr(monitor, 'setup_monitoring'):
+                                            await monitor.setup_monitoring(page)
+                                    elif name == 'fingerprint':
+                                        # For fingerprint monitor, it needs the visit for setup
+                                        if hasattr(monitor, 'setup_monitoring'):
+                                            await monitor.setup_monitoring(page, visit)
+                                    elif hasattr(monitor, 'setup_page'):
+                                        await monitor.setup_page(page, self.base_domain)
+                                
+                                # Go to the URL with a timeout
+                                try:
+                                    response = await page.goto(
+                                        url,
+                                        timeout=30000,
+                                        wait_until="domcontentloaded"
+                                    )
+                                except Exception as e:
+                                    tqdm.write(f"\nError navigating to {url}: {e}")
+                                    visited_in_this_cycle.append({"original": url, "error": str(e)})
+                                    if pbar:
+                                        pbar.update(1)
+                                    await page.close()
+                                    continue
+                                
+                                # Record the final URL (after redirects)
+                                final_url = page.url
+                                visited_in_this_cycle.append({"original": url, "final": final_url})
+                                
+                                # Storage monitor needs the visit number during capture
+                                await self.monitors['storage'].capture_snapshot(page, visit_number=visit)
+                                await self.user_simulator.simulate_interaction(page)
+                                
+                                # Update progress bar if it exists
+                                if pbar:
+                                    pbar.update(1)
+                                    
+                            finally:
+                                # Make sure page is closed
+                                try:
+                                    await page.close()
+                                except Exception:
+                                    # Page might already be closed, ignore errors
+                                    pass
                             
                         except Exception as e:
-                            tqdm.write(f"\nError visiting {url}: {e}")
+                            tqdm.write(f"\nError handling page for {url}: {e}")
                             visited_in_this_cycle.append({"original": url, "error": str(e)})
-                            pbar.update(1)
+                            # Update progress bar if it exists
+                            if pbar:
+                                pbar.update(1)
                     
                     visit_results.append({
                         'visit_number': visit,
@@ -357,6 +365,39 @@ class WebsiteCrawler:
                     
                     # Close the context at the end of this visit
                     await context.close()
+                    
+                except Exception as e:
+                    tqdm.write(f"\nError during visit {visit}: {e}")
+                finally:
+                    # Make sure browser is closed
+                    if browser:
+                        try:
+                            # Close the playwright instance too
+                            playwright = getattr(browser, '_playwright', None)
+                            await browser.close()
+                            if playwright:
+                                await playwright.stop()
+                        except Exception as e:
+                            # Browser might already be closed, ignore errors
+                            if self.verbose:
+                                print(f"Error closing browser: {e}")
+                    browser = None
+        
+        finally:
+            # Close progress bar if it exists
+            if pbar:
+                pbar.close()
+            
+            # Make sure browser is closed (redundant but safe)
+            if browser:
+                try:
+                    playwright = getattr(browser, '_playwright', None)
+                    await browser.close()
+                    if playwright:
+                        await playwright.stop()
+                except Exception:
+                    # Ignore errors during final cleanup
+                    pass
         
         return {
             'domain': domain,

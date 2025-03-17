@@ -3,11 +3,12 @@ import asyncio
 from playwright.async_api import Page
 
 class UserSimulator:
-    def __init__(self):
+    def __init__(self, verbose=False):
         self.scroll_probability = 0.7
         self.click_probability = 0.3
         self.max_scroll_attempts = 2
         self.max_click_attempts = 1
+        self.verbose = verbose
 
     async def simulate_interaction(self, page: Page):
         """Simulate realistic user interaction on the page"""
@@ -26,7 +27,8 @@ class UserSimulator:
                 await self._attempt_clicking(page)
 
         except Exception as e:
-            print(f"Error during user simulation: {e}")
+            if self.verbose:
+                print(f"Error during user simulation: {e}")
 
     async def _move_mouse(self, page: Page):
         """Move mouse to a position within the viewport"""
@@ -54,7 +56,8 @@ class UserSimulator:
             await asyncio.sleep(random.uniform(0.1, 0.3))
             
         except Exception as e:
-            print(f"Error during mouse movement: {e}")
+            if self.verbose:
+                print(f"Error during mouse movement: {e}")
 
     async def _perform_scrolling(self, page: Page):
         """Perform some scrolling actions"""
@@ -75,7 +78,8 @@ class UserSimulator:
             }''')
             
             if metrics['availableScroll'] <= 0:
-                print("Page too short to scroll")
+                if self.verbose:
+                    print("Page too short to scroll")
                 return
 
             # Calculate target scroll position (between 30% and 70% of available scroll)
@@ -105,7 +109,8 @@ class UserSimulator:
                 current_position = next_position
 
         except Exception as e:
-            print(f"Error during scrolling: {e}")
+            if self.verbose:
+                print(f"Error during scrolling: {e}")
 
     async def _attempt_clicking(self, page: Page):
         """Attempt to click on some safe elements"""
@@ -133,4 +138,5 @@ class UserSimulator:
                     continue
 
         except Exception as e:
-            print(f"Error during clicking: {e}") 
+            if self.verbose:
+                print(f"Error during clicking: {e}") 

@@ -64,22 +64,37 @@ def get_all_sites(csv_path='data/study-sites.csv'):
         next(reader)  # Skip header
         return list(reader)
 
-def create_temp_profile_copy(original_profile_dir, verbose=False):
+def create_temp_profile_copy(original_profile_dir, verbose=False, domain=None):
     """
     Creates a temporary copy of a browser profile for parallel execution
     
     Args:
         original_profile_dir: Path to the original profile directory
         verbose: Whether to print status messages
+        domain: Optional domain name to include in the temp directory name
         
     Returns:
         Path to the temporary profile directory
     """
+    # Create a base directory for all temporary profiles
+    temp_base_dir = os.path.join("data", "temp_profiles")
+    os.makedirs(temp_base_dir, exist_ok=True)
+    
     # Extract profile name from path for the temp directory prefix
     profile_name = os.path.basename(original_profile_dir)
     
-    # Create a temporary directory
-    temp_profile_dir = tempfile.mkdtemp(prefix=f"profile_{profile_name}_")
+    # Use domain in the directory name if provided
+    domain_part = f"_{domain.replace('.', '_')}" if domain else ""
+    temp_dir_name = f"temp_profile{domain_part}"
+    
+    # Create full path for the temporary directory
+    temp_profile_dir = os.path.join(temp_base_dir, temp_dir_name)
+    
+    # Remove existing directory if it exists
+    if os.path.exists(temp_profile_dir):
+        if verbose:
+            print(f"Removing existing temporary profile directory: {temp_profile_dir}")
+        shutil.rmtree(temp_profile_dir, ignore_errors=True)
     
     if verbose:
         print(f"Creating temporary profile directory: {temp_profile_dir}")
@@ -94,10 +109,12 @@ def create_temp_profile_copy(original_profile_dir, verbose=False):
                 shutil.copytree(original_profile_dir, temp_profile_dir, dirs_exist_ok=True)
             else:
                 if verbose:
-                    print(f"Source profile directory {original_profile_dir} is empty, using empty temp directory")
+                    print(f"Source profile directory {original_profile_dir} is empty, creating empty temp directory")
+                os.makedirs(temp_profile_dir, exist_ok=True)
         else:
             if verbose:
-                print(f"Source profile directory {original_profile_dir} does not exist, using empty temp directory")
+                print(f"Source profile directory {original_profile_dir} does not exist, creating empty temp directory")
+            os.makedirs(temp_profile_dir, exist_ok=True)
         
         return temp_profile_dir
         

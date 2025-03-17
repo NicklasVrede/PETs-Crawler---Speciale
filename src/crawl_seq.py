@@ -8,7 +8,7 @@ from utils.util import (construct_paths, load_config, get_profile_config,
 from tqdm import tqdm
 
 
-async def crawl_domain(profile, site_info, data_dir=None, max_pages=2, verbose=False):
+async def crawl_domain(profile, site_info, data_dir=None, max_pages=2, verbose=False, show_progress=False):
     """
     Crawl a single domain with configurable verbosity
     
@@ -32,7 +32,8 @@ async def crawl_domain(profile, site_info, data_dir=None, max_pages=2, verbose=F
     temp_profile_dir = None
     try:
         # Make temp profile copy to allow for parallel execution
-        temp_profile_dir = create_temp_profile_copy(user_data_dir, verbose)
+        rank, domain = site_info
+        temp_profile_dir = create_temp_profile_copy(user_data_dir, verbose, domain)
         
         # Use provided data_dir if specified, otherwise use the temp profile
         crawl_user_data_dir = data_dir if data_dir else temp_profile_dir
@@ -42,10 +43,9 @@ async def crawl_domain(profile, site_info, data_dir=None, max_pages=2, verbose=F
             print(f"Using profile data directory: {crawl_user_data_dir}")
         
         crawl_data_manager = CrawlDataManager(profile)
-        rank, domain = site_info
         
         # Crawl site - pass verbose flag to control internal printing
-        crawler = WebsiteCrawler(max_pages=max_pages, verbose=verbose)
+        crawler = WebsiteCrawler(max_pages=max_pages, verbose=verbose, show_progress=show_progress)
         crawl_result = await crawler.crawl_site(
             domain,
             user_data_dir=crawl_user_data_dir,
@@ -67,8 +67,6 @@ async def crawl_domain(profile, site_info, data_dir=None, max_pages=2, verbose=F
             crawl_result,
             verbose=verbose
         )
-
-
     finally:
         # Clean up temporary directory
         if temp_profile_dir and os.path.exists(temp_profile_dir):
@@ -86,6 +84,8 @@ if __name__ == "__main__":
     profile = 'i_dont_care_about_cookies'
     
     verbose = False
+    show_progress = False #bool for individual progress bar for domains.
+    
     # Get all sites to crawl
     all_sites = get_all_sites()
     if all_sites:
@@ -99,7 +99,7 @@ if __name__ == "__main__":
             print(f"{'='*50}\n")
             
         try:
-            asyncio.run(crawl_domain(profile, site_info=site_info))
+            asyncio.run(crawl_domain(profile, site_info=site_info, show_progress=True))
             print(f"Completed crawling {domain}")
         except Exception as e:
             print(f"Error crawling {domain}: {str(e)}")
