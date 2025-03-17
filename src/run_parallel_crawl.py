@@ -73,7 +73,7 @@ def main():
     """Main function with hard-coded parameters"""
     # Set your parameters directly here
     profile = "i_dont_care_about_cookies"
-    parallel = 10
+    parallel = 8  
     max_pages = 20
     start_index = 0
     count = 100  # Set to None to crawl all sites
