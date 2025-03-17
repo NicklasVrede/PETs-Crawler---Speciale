@@ -3,6 +3,7 @@ import json
 import csv
 import tempfile
 import shutil
+import time
 
 def load_config(config_file):
     """Load configuration from a JSON file."""
@@ -64,62 +65,47 @@ def get_all_sites(csv_path='data/study-sites.csv'):
         next(reader)  # Skip header
         return list(reader)
 
-def create_temp_profile_copy(original_profile_dir, verbose=False, domain=None):
+
+def create_temp_profile_copy(original_profile_dir, extension_path, domain=None):
     """
-    Creates a temporary copy of a browser profile for parallel execution
+    Creates a minimal copy of a browser profile with just extension data
     
     Args:
         original_profile_dir: Path to the original profile directory
-        verbose: Whether to print status messages
-        domain: Optional domain name to include in the temp directory name
+        extension_path: Path to the extension
+        domain: Optional domain name for naming
         
     Returns:
         Path to the temporary profile directory
     """
-    # Create a base directory for all temporary profiles
+    # Use a static directory for all temporary profiles
     temp_base_dir = os.path.join("data", "temp_profiles")
     os.makedirs(temp_base_dir, exist_ok=True)
     
-    # Extract profile name from path for the temp directory prefix
-    profile_name = os.path.basename(original_profile_dir)
-    
-    # Use domain in the directory name if provided
+    # Create a unique name for this profile
     domain_part = f"_{domain.replace('.', '_')}" if domain else ""
-    temp_dir_name = f"temp_profile{domain_part}"
+    timestamp = int(time.time())
+    temp_dir_name = f"profile{domain_part}_{timestamp}"
     
-    # Create full path for the temporary directory
+    # Full path to the new temp profile
     temp_profile_dir = os.path.join(temp_base_dir, temp_dir_name)
     
-    # Remove existing directory if it exists
-    if os.path.exists(temp_profile_dir):
-        if verbose:
-            print(f"Removing existing temporary profile directory: {temp_profile_dir}")
-        shutil.rmtree(temp_profile_dir, ignore_errors=True)
+    # Create the directory structure
+    os.makedirs(temp_profile_dir, exist_ok=True)
     
-    if verbose:
-        print(f"Creating temporary profile directory: {temp_profile_dir}")
+    # Create extensions directory
+    ext_dir = os.path.join(temp_profile_dir, "Extensions")
+    os.makedirs(ext_dir, exist_ok=True)
     
-    try:
-        # Copy the original profile to the temporary directory if it exists
-        if os.path.exists(original_profile_dir):
-            # Only copy if the source directory has content
-            if os.listdir(original_profile_dir):
-                if verbose:
-                    print(f"Copying profile from {original_profile_dir} to {temp_profile_dir}")
-                shutil.copytree(original_profile_dir, temp_profile_dir, dirs_exist_ok=True)
-            else:
-                if verbose:
-                    print(f"Source profile directory {original_profile_dir} is empty, creating empty temp directory")
-                os.makedirs(temp_profile_dir, exist_ok=True)
+    # Copy the extension if specified
+    if extension_path and os.path.exists(extension_path):
+        extension_name = os.path.basename(extension_path)
+        target_ext_path = os.path.join(ext_dir, extension_name)
+        
+        # Copy extension files
+        if os.path.isdir(extension_path):
+            shutil.copytree(extension_path, target_ext_path)
         else:
-            if verbose:
-                print(f"Source profile directory {original_profile_dir} does not exist, creating empty temp directory")
-            os.makedirs(temp_profile_dir, exist_ok=True)
-        
-        return temp_profile_dir
-        
-    except Exception as e:
-        # Clean up on error
-        if os.path.exists(temp_profile_dir):
-            shutil.rmtree(temp_profile_dir, ignore_errors=True)
-        raise Exception(f"Failed to create temporary profile copy: {str(e)}") 
+            shutil.copy2(extension_path, target_ext_path)
+    
+    return temp_profile_dir 
