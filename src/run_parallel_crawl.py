@@ -98,16 +98,15 @@ def main():
     """Main function with hard-coded parameters"""
     # Set your parameters directly here
     profile = "i_dont_care_about_cookies"
-    parallel = 8  
+    parallel = 3  # Reduced from 5 to avoid resource issues
     max_pages = 20
     start_index = 0
-    count = None  # Set to None to crawl all sites
+    count = 100  # Set to None to crawl all sites
     csv_file = "data/study-sites.csv"
     verbose = False
     
     # Get list of sites
-    filename = os.path.basename(__file__)
-    tqdm.write(f"[{filename}] Loading sites from {csv_file}...")
+    tqdm.write(f"Loading sites from {csv_file}...")
     all_sites = get_all_sites(csv_file)
     
     # Determine which sites to crawl
