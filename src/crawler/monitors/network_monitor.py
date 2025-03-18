@@ -116,26 +116,23 @@ class NetworkMonitor:
                 "headers": dict(request.headers),
                 "timestamp": datetime.now().isoformat(),
                 "visit_number": visit_number,
+                "post_data": None,  # Default to None
                 "frame_url": request.frame.url if request.frame else None,
                 "is_navigation": request.is_navigation_request()
             }
             
-            # Handle post data - if binary, encode as base64
-            if request.post_data:
+            # Safely handle post data - don't even check if it exists directly
+            if request.method == "POST":
                 try:
-                    request_data["post_data"] = request.post_data
+                    # Try to access post_data safely
+                    post_data = request.post_data
+                    request_data["post_data"] = post_data
                 except UnicodeDecodeError:
-                    # Binary data - encode as base64
-                    try:
-                        # Get binary buffer and encode
-                        buffer = request.post_data_buffer
-                        base64_data = base64.b64encode(buffer).decode('ascii')
-                        request_data["post_data"] = f"[BASE64]{base64_data}"
-                    except:
-                        # Fallback if we can't get the buffer
-                        request_data["post_data"] = "[BINARY_DATA]"
-            else:
-                request_data["post_data"] = None
+                    # If it's binary data that can't be decoded, mark it
+                    request_data["post_data"] = "[BINARY_DATA]"
+                except Exception as e:
+                    # Other errors
+                    request_data["post_data"] = f"[ERROR: {str(e)}]"
             
             self.requests.append(request_data)
             self.domains_contacted.add(domain)

@@ -31,11 +31,11 @@ class WebsiteCrawler:
     async def clear_all_browser_data(self, context):
         """Clear browser data between visits"""
         if self.verbose:
-            print("\nClearing browser data...")
+            tqdm.write("\nClearing browser data...")
         try:
             # Clear context-level data
             if self.verbose:
-                print("Clearing context-level data...")
+                tqdm.write("Clearing context-level data...")
             await context.clear_cookies()
             await asyncio.sleep(1)
             await context.clear_permissions()
@@ -45,7 +45,7 @@ class WebsiteCrawler:
             page = context.pages[0] if context.pages else None
             if page:
                 if self.verbose:
-                    print("Clearing local and session storage...")
+                    tqdm.write("Clearing local and session storage...")
                 try:
                     # Use a safer approach with try/catch inside the JS
                     await page.evaluate("""() => {
@@ -67,20 +67,20 @@ class WebsiteCrawler:
                     await asyncio.sleep(1)
                 except Exception as e:
                     if self.verbose:
-                        print(f"Note: Could not clear page storage: {e}")
+                        tqdm.write(f"Note: Could not clear page storage: {e}")
             
             if self.verbose:
-                print("✓ Browser data cleared")
+                tqdm.write("✓ Browser data cleared")
             
         except Exception as e:
             if self.verbose:
-                print(f"Warning: Error during data clearing: {e}")
+                tqdm.write(f"Warning: Error during data clearing: {e}")
         
         await asyncio.sleep(1)  # Final wait before proceeding
 
     async def populate_cache(self, page, urls):
         """Pre-populate browser cache with resources from the target site"""
-        print("\nPre-populating cache with site resources...")
+        tqdm.write("\nPre-populating cache with site resources...")
         try:
             # Visit homepage first to cache common resources
             domain = self.base_domain
@@ -94,11 +94,11 @@ class WebsiteCrawler:
                     await page.goto(url, timeout=20000)
                     await page.wait_for_load_state('domcontentloaded')
                 except Exception as e:
-                    print(f"Error pre-caching {url}: {e}")
+                    tqdm.write(f"Error pre-caching {url}: {e}")
                 
-            print("✓ Cache populated with site resources")
+            tqdm.write("✓ Cache populated with site resources")
         except Exception as e:
-            print(f"Error during cache population: {e}")
+            tqdm.write(f"Error during cache population: {e}")
 
     async def _setup_browser(self, p, user_data_dir, full_extension_path, headless, viewport):
         """Setup browser with context"""
@@ -146,7 +146,7 @@ class WebsiteCrawler:
                 }""")
                 await asyncio.sleep(1)
             except Exception as e:
-                print(f"Note: Could not clear page storage: {e}")
+                tqdm.write(f"Note: Could not clear page storage: {e}")
 
     async def crawl_site(self, domain, user_data_dir=None, full_extension_path=None, headless=False, viewport=None):
         """Crawl a website multiple times to analyze cookie persistence"""
@@ -167,7 +167,9 @@ class WebsiteCrawler:
             # Browser session for this visit
             async with async_playwright() as p:
                 context = await self._setup_browser(p, user_data_dir, full_extension_path, headless, viewport)
-                page = await context.new_page()
+                
+                # Use the existing page instead of creating a new one
+                page = context.pages[0]  # Get the first page that's automatically created
 
                 # Setup monitoring
                 await self._setup_monitoring(page, visit)
@@ -189,26 +191,26 @@ class WebsiteCrawler:
     async def _load_pre_collected_urls(self, domain):
         """Load pre-collected URLs from a specified directory"""
         if self.verbose:
-            print("\nLoading pre-collected URLs...")
+            tqdm.write("\nLoading pre-collected URLs...")
         urls = load_site_pages(domain, input_dir="data/site_pages", count=self.max_pages)
         if not urls or len(urls) == 0:
-            print(f"ERROR: No pre-collected URLs found for {domain}")
+            tqdm.write(f"ERROR: No pre-collected URLs found for {domain}")
             return None
         if self.verbose:
-            print(f"Loaded {len(urls)} pre-collected URLs for {domain}")
+            tqdm.write(f"Loaded {len(urls)} pre-collected URLs for {domain}")
         return urls
 
     async def _initial_browser_setup(self, user_data_dir, full_extension_path, headless, viewport):
         """Perform initial browser setup and clear data"""
         if self.verbose:
-            print("\nInitial browser session to clear data and visit homepage...")
+            tqdm.write("\nInitial browser session to clear data and visit homepage...")
         async with async_playwright() as p:
             context = await self._setup_browser(p, user_data_dir, full_extension_path, headless, viewport)
             if self.verbose:
-                print("\nClearing browser data...")
+                tqdm.write("\nClearing browser data...")
             await self._clear_browser_data(context)
             if self.verbose:
-                print("✓ Browser data cleared")
+                tqdm.write("✓ Browser data cleared")
             await context.close()
 
     async def _setup_monitoring(self, page, visit):
@@ -220,14 +222,14 @@ class WebsiteCrawler:
     async def _visit_homepage(self, page, domain):
         """Visit the homepage and handle any errors"""
         if self.verbose:
-            print("\nVisiting homepage...")
+            tqdm.write("\nVisiting homepage...")
         homepage_url = f"https://{domain}"
         try:
             await page.goto(homepage_url, timeout=30000)
             await page.wait_for_timeout(5000)
         except Exception as e:
             if self.verbose:
-                print(f"Error visiting homepage: {e}")
+                tqdm.write(f"Error visiting homepage: {e}")
 
     async def _visit_urls(self, page, urls, visit):
         """Visit each URL and simulate user interaction"""
@@ -242,7 +244,7 @@ class WebsiteCrawler:
                 await self.monitors['storage'].capture_snapshot(page, visit_number=visit)
                 await self.user_simulator.simulate_interaction(page)
             except Exception as e:
-                print(f"Error visiting {url}: {e}")
+                tqdm.write(f"Error visiting {url}: {e}")
                 visited_in_this_cycle.append({"original": url, "error": str(e)})
         return visited_in_this_cycle
 

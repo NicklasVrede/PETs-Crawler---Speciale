@@ -5,7 +5,7 @@ from crawl import crawl_domain
 from utils.util import load_config, get_all_sites, construct_paths, create_temp_profile_copy
 from tqdm import tqdm
 
-async def crawl_with_profile(config, profile, sites, max_pages=2, verbose=False):
+async def crawl_with_profile(config, profile, sites, max_pages=2, verbose=False, overall_progress=None):
     """
     Crawl multiple sites with a single browser profile
     
@@ -15,6 +15,7 @@ async def crawl_with_profile(config, profile, sites, max_pages=2, verbose=False)
         sites: List of (rank, domain) tuples to crawl
         max_pages: Maximum pages to crawl per site
         verbose: If True, print detailed progress information
+        overall_progress: Overall progress bar to update
     """
     temp_profile_dir = None
     try:
@@ -55,9 +56,18 @@ async def crawl_with_profile(config, profile, sites, max_pages=2, verbose=False)
                 
                 if verbose:
                     print(f"Completed crawl of {domain} with profile {profile}")
+                
+                # Update the overall progress bar if provided
+                if overall_progress:
+                    overall_progress.update(1)
+                    
             except Exception as e:
                 print(f"Error crawling {domain} with profile {profile}: {str(e)}")
                 # Continue with the next site even if this one fails
+                
+                # Still update the overall progress bar for failed crawls
+                if overall_progress:
+                    overall_progress.update(1)
     finally:
         # Cleanup temporary profile directory
         if temp_profile_dir and os.path.exists(temp_profile_dir):
@@ -81,29 +91,29 @@ async def crawl_sites_parallel(config, profiles, sites, max_concurrent=3, max_pa
     # Create semaphore to limit concurrent crawls
     semaphore = asyncio.Semaphore(max_concurrent)
     
-    async def profile_crawl_with_semaphore(profile):
-        """Wrapper to handle semaphore for each profile crawl"""
-        async with semaphore:
-            await crawl_with_profile(
-                config=config,
-                profile=profile,
-                sites=sites,
-                max_pages=max_pages,
-                verbose=verbose
-            )
+    # Calculate total number of crawls (profiles × sites)
+    total_crawls = len(profiles) * len(sites)
     
-    # Create tasks for all profiles
-    tasks = [profile_crawl_with_semaphore(profile) for profile in profiles]
-    
-    # Use tqdm to show progress
-    with tqdm(total=len(profiles), desc="Crawling with different profiles", unit="profile") as pbar:
-        # Wrap each task to update the progress bar
-        async def wrap_task(task):
-            await task
-            pbar.update(1)
+    # Create overall progress bar for all sites
+    with tqdm(total=total_crawls, desc="Overall crawl progress", unit="site") as overall_pbar:
+        
+        async def profile_crawl_with_semaphore(profile):
+            """Wrapper to handle semaphore for each profile crawl"""
+            async with semaphore:
+                await crawl_with_profile(
+                    config=config,
+                    profile=profile,
+                    sites=sites,
+                    max_pages=max_pages,
+                    verbose=verbose,
+                    overall_progress=overall_pbar
+                )
+        
+        # Create tasks for all profiles
+        tasks = [profile_crawl_with_semaphore(profile) for profile in profiles]
         
         # Run all tasks
-        await asyncio.gather(*(wrap_task(task) for task in tasks))
+        await asyncio.gather(*tasks)
 
 if __name__ == "__main__":
     # Load configuration
@@ -119,8 +129,11 @@ if __name__ == "__main__":
         print("No sites available to crawl")
         exit(1)
     
-    print(f"\nStarting parallel crawl of {len(sites)} sites")
-    print(f"Using {len(profiles)} different browser profiles")
+    # Calculate total sites to crawl
+    total_sites = len(profiles) * len(sites)
+    
+    print(f"\nStarting parallel crawl of {len(sites)} sites with {len(profiles)} profiles")
+    print(f"Total site visits to perform: {total_sites}")
     
     # Run the parallel crawl
     asyncio.run(crawl_sites_parallel(
