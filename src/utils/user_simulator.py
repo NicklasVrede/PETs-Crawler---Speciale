@@ -75,7 +75,7 @@ class UserSimulator:
             }''')
             
             if metrics['availableScroll'] <= 0:
-                print("Page too short to scroll")
+                #print("Page too short to scroll")
                 return
 
             # Calculate target scroll position (between 30% and 70% of available scroll)

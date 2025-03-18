@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from urllib.parse import urlparse, parse_qs
 import json
+import base64
 from typing import Dict, Set, List
 from collections import defaultdict
 
@@ -109,16 +110,32 @@ class NetworkMonitor:
             request_data = {
                 "url": url,
                 "domain": domain,
-                "type": request.resource_type,  # Changed from 'unknown' to actual resource_type
+                "type": request.resource_type,
                 "resource_type": request.resource_type,
                 "method": request.method,
                 "headers": dict(request.headers),
                 "timestamp": datetime.now().isoformat(),
                 "visit_number": visit_number,
-                "post_data": request.post_data,
                 "frame_url": request.frame.url if request.frame else None,
                 "is_navigation": request.is_navigation_request()
             }
+            
+            # Handle post data - if binary, encode as base64
+            if request.post_data:
+                try:
+                    request_data["post_data"] = request.post_data
+                except UnicodeDecodeError:
+                    # Binary data - encode as base64
+                    try:
+                        # Get binary buffer and encode
+                        buffer = request.post_data_buffer
+                        base64_data = base64.b64encode(buffer).decode('ascii')
+                        request_data["post_data"] = f"[BASE64]{base64_data}"
+                    except:
+                        # Fallback if we can't get the buffer
+                        request_data["post_data"] = "[BINARY_DATA]"
+            else:
+                request_data["post_data"] = None
             
             self.requests.append(request_data)
             self.domains_contacted.add(domain)

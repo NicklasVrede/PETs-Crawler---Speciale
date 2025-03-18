@@ -102,14 +102,20 @@ class WebsiteCrawler:
 
     async def _setup_browser(self, p, user_data_dir, full_extension_path, headless, viewport):
         """Setup browser with context"""
+        browser_args = {}
+        
+        # Only add extension arguments if an extension is specified
+        if full_extension_path and full_extension_path != "no_extension":
+            browser_args["args"] = [
+                f'--disable-extensions-except={full_extension_path}',
+                f'--load-extension={full_extension_path}'
+            ]
+
         return await p.chromium.launch_persistent_context(
             user_data_dir=user_data_dir,
             headless=headless,
             viewport=viewport or {'width': 1280, 'height': 800},
-            args=[
-                f'--disable-extensions-except={full_extension_path}',
-                f'--load-extension={full_extension_path}'
-            ]
+            **browser_args
         )
 
     async def _clear_browser_data(self, context):
