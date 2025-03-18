@@ -29,7 +29,7 @@ class PageCollector:
             domain = parsed.netloc.lower().replace('www.', '')
             return domain == self.base_domain
         except Exception as e:
-            tqdm.write(f"Error parsing URL {url}: {e}")
+            print(f"Error parsing URL {url}: {e}")
             return False
 
     async def extract_links(self, page):
@@ -235,12 +235,12 @@ async def collect_site_pages(domain, max_pages=40, homepage_links=3, setup='i_do
     profile_config = get_profile_config(config, setup)
     user_data_dir, full_extension_path = construct_paths(config, setup)
     
-    #tqdm.write(f"Using extension path: {full_extension_path}")
-    #tqdm.write(f"Using user data directory: {user_data_dir}")
+    #print(f"Using extension path: {full_extension_path}")
+    #print(f"Using user data directory: {user_data_dir}")
     
     # Verify extension path exists
     if not os.path.exists(full_extension_path):
-        tqdm.write(f"ERROR: Extension path does not exist: {full_extension_path}")
+        print(f"ERROR: Extension path does not exist: {full_extension_path}")
         return []
     
     async with async_playwright() as p:
@@ -265,9 +265,9 @@ async def collect_site_pages(domain, max_pages=40, homepage_links=3, setup='i_do
             return pages
             
         except Exception as e:
-            tqdm.write(f"Failed to launch browser with extension: {e}")
+            print(f"Failed to launch browser with extension: {e}")
             # Try without extension as fallback
-            tqdm.write("Attempting to launch without extension as fallback...")
+            print("Attempting to launch without extension as fallback...")
             browser = await p.chromium.launch(headless=False)
             context = await browser.new_context()
             page = await context.new_page()
@@ -296,11 +296,11 @@ def save_site_pages(domain, pages, output_dir="data/site_pages"):
     with open(filename, 'w') as f:
         json.dump(data, f, indent=2)
     
-    tqdm.write(f"Saved {len(pages)} pages for {domain} to {filename}")
+    print(f"Saved {len(pages)} pages for {domain} to {filename}")
     return filename
 
 
-def load_site_pages(domain, input_dir="data/site_pages", count=20, verbose=False):
+def load_site_pages(domain, input_dir="data/site_pages", count=20):
     """Load collected pages from a JSON file and return the top N"""
     safe_domain = domain.replace(".", "_")
     filename = os.path.join(input_dir, f"{safe_domain}.json")
@@ -315,8 +315,7 @@ def load_site_pages(domain, input_dir="data/site_pages", count=20, verbose=False
         #print(f"Loaded top {len(pages)} pages for {domain} from {filename}")
         return pages
     except FileNotFoundError:
-        if verbose:
-            tqdm.write(f"No saved pages found for {domain}")
+        print(f"No saved pages found for {domain}")
         return None
 
 
@@ -329,30 +328,30 @@ async def collect_all_site_pages(setup='i_dont_care_about_cookies', max_pages=40
             reader = csv.DictReader(f)
             domains = [row['domain'].lower().replace('.', '_') for row in reader]
     except Exception as e:
-        tqdm.write(f"Error loading study-sites.csv: {e}")
+        print(f"Error loading study-sites.csv: {e}")
         return
 
-    tqdm.write(f"\nCollecting pages for {len(domains)} domains...")
+    print(f"\nCollecting pages for {len(domains)} domains...")
     
     for domain in domains:
         # Check if file already exists
         file_path = f"data/site_pages/{domain}.json"
         if os.path.exists(file_path):
-            tqdm.write(f"\nSkipping {domain} - already collected")
+            print(f"\nSkipping {domain} - already collected")
             continue
             
-        tqdm.write(f"\n{'='*50}")
-        tqdm.write(f"Collecting pages for {domain}...")
-        tqdm.write(f"{'='*50}")
+        print(f"\n{'='*50}")
+        print(f"Collecting pages for {domain}...")
+        print(f"{'='*50}")
         
         # Convert back to proper domain format for collection
         original_domain = domain.replace('_', '.')
         pages = await collect_site_pages(original_domain, max_pages=max_pages, homepage_links=homepage_links, setup=setup)
         if pages:
             save_site_pages(domain, pages)
-            tqdm.write(f"✓ Saved {len(pages)} pages for {domain}")
+            print(f"✓ Saved {len(pages)} pages for {domain}")
         else:
-            tqdm.write(f"✗ No pages collected for {domain}")
+            print(f"✗ No pages collected for {domain}")
 
 
 if __name__ == "__main__":

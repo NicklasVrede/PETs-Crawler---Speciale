@@ -105,14 +105,6 @@ class NetworkMonitor:
             url = request.url
             domain = self._extract_domain(url)
             
-            # Safely get post_data
-            post_data = None
-            try:
-                post_data = request.post_data
-            except UnicodeDecodeError:
-                # Handle binary data - store as base64 or indicate it's binary
-                post_data = "[binary data]"
-            
             # Record detailed request info
             request_data = {
                 "url": url,
@@ -123,7 +115,7 @@ class NetworkMonitor:
                 "headers": dict(request.headers),
                 "timestamp": datetime.now().isoformat(),
                 "visit_number": visit_number,
-                "post_data": post_data,
+                "post_data": request.post_data,
                 "frame_url": request.frame.url if request.frame else None,
                 "is_navigation": request.is_navigation_request()
             }

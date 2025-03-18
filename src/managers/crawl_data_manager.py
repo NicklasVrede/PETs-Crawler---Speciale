@@ -3,7 +3,6 @@ import os
 import json
 import csv
 from analyzers.cookie_analyzer import CookieAnalyzer
-import tqdm
 
 class CrawlDataManager:
     def __init__(self, storage_folder):
@@ -21,21 +20,11 @@ class CrawlDataManager:
         os.makedirs(crawler_data_dir, exist_ok=True)
         
         json_path = os.path.join(crawler_data_dir, f'{domain}.json')
+        self._save_to_json(site_data, json_path, verbose)
         
-        try:
-            # Save the data
-            with open(json_path, 'w', encoding='utf-8') as f:
-                json.dump(site_data, f, indent=2, default=str)
-            
-            # Report success with file size
-            file_size = os.path.getsize(json_path) / 1024
-
-            if verbose:
-                tqdm.write(f"✓ Data saved: {json_path} ({file_size:.2f} KB)")
-                self._print_statistics(site_data)
-            
-        except Exception as e:
-            tqdm.write(f"✗ Error saving data to {json_path}: {str(e)}")
+        # Print stats if verbose
+        if verbose:
+            self._print_statistics(site_data)
 
     def get_result_file_path(self, domain):
         """Get the full path to a site's crawl result file"""
