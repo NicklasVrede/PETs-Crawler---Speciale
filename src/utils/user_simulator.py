@@ -1,6 +1,7 @@
 import random
 import asyncio
 from playwright.async_api import Page
+from tqdm import tqdm
 
 class UserSimulator:
     def __init__(self):
