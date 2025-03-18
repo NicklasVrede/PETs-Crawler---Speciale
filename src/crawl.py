@@ -38,7 +38,10 @@ async def crawl_domain(profile, site_info, data_dir=None, max_pages=2, verbose=F
         crawl_user_data_dir = data_dir if data_dir else temp_profile_dir
         
         if verbose:
-            print(f"Using extension path: {full_extension_path}")
+            if profile == 'no_extensions':
+                print("No extensions mode - skipping extension path")
+            else:
+                print(f"Using extension path: {full_extension_path}")
             print(f"Using profile data directory: {crawl_user_data_dir}")
         
         crawl_data_manager = CrawlDataManager(profile)
@@ -46,10 +49,16 @@ async def crawl_domain(profile, site_info, data_dir=None, max_pages=2, verbose=F
         
         # Crawl site - pass verbose flag to control internal printing
         crawler = WebsiteCrawler(max_pages=max_pages, verbose=verbose)
+        
+        # Modify browser launch arguments based on profile
+        browser_args = {}
+        if profile != 'no_extensions' and full_extension_path:
+            browser_args['full_extension_path'] = full_extension_path
+        
         result = await crawler.crawl_site(
             domain,
             user_data_dir=crawl_user_data_dir,
-            full_extension_path=full_extension_path,
+            **browser_args,
             headless=profile_config.get('headless', False),
             viewport=profile_config.get('viewport', {'width': 1280, 'height': 800})
         )
@@ -62,14 +71,6 @@ async def crawl_domain(profile, site_info, data_dir=None, max_pages=2, verbose=F
         os.makedirs(target_dir, exist_ok=True)
         
         crawl_data_manager.save_crawl_data(domain, rank, result, verbose=verbose)
-        
-        # Always show file saved confirmation, even in non-verbose mode
-        expected_file = os.path.join(target_dir, f'{domain}.json')
-        if os.path.exists(expected_file):
-            file_size = os.path.getsize(expected_file) / 1024
-            tqdm.write(f"✓ Data saved: {expected_file} ({file_size:.2f} KB)")
-        else:
-            tqdm.write(f"✗ File not found: {expected_file}")
             
     finally:
         # Clean up temporary directory
@@ -81,11 +82,12 @@ async def crawl_domain(profile, site_info, data_dir=None, max_pages=2, verbose=F
 
 if __name__ == "__main__":
     #available profiles
+    verbose = False
     config = load_config('config.json')
     profile_names = config.get('profiles', {}).keys()
     print("Profile names:", list(profile_names))
 
-    profile = 'i_dont_care_about_cookies'
+    profile = 'consent_o_matic_opt_out'
     
     # Get all sites to crawl
     all_sites = get_all_sites()
@@ -93,9 +95,10 @@ if __name__ == "__main__":
         # Just process the first site for testing
         site_info = all_sites[0]  # Get only the first site
         rank, domain = site_info
-        print(f"\n{'='*50}")
-        print(f"Processing site: {domain} (rank: {rank})")
-        print(f"{'='*50}\n")
+        if verbose:
+            print(f"\n{'='*50}")
+            print(f"Processing site: {domain} (rank: {rank})")
+            print(f"{'='*50}\n")
         
         try:
             asyncio.run(crawl_domain(profile, site_info=site_info))

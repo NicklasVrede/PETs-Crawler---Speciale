@@ -14,16 +14,26 @@ def get_profile_config(config, setup):
     profiles = config.get('profiles', {})
     return profiles.get(setup, {})
 
-def construct_paths(config, setup):
-    """Construct user data and extension paths from config."""
-    profile_config = get_profile_config(config, setup)
+def construct_paths(config, profile):
+    """
+    Construct full paths for user data and extension directories
     
-    base_path = config.get('base_path', '')
-    profile_path = profile_config.get('profile_path', '')
+    Args:
+        config: Configuration dictionary
+        profile: Profile name to construct paths for
+        
+    Returns:
+        Tuple of (user_data_dir, full_extension_path)
+    """
+    base_path = config.get('base_path')
+    profile_config = config.get('profiles', {}).get(profile, {})
+    
+    # Construct user data directory path
+    user_data_dir = os.path.join(base_path, profile_config.get('profile_path', ''))
+    
+    # Construct full extension path by joining base path with extension path
     extension_path = profile_config.get('extension_path', '')
-    
-    user_data_dir = os.path.join(base_path, profile_path)
-    full_extension_path = os.path.join(user_data_dir, extension_path)
+    full_extension_path = os.path.join(base_path, profile_config.get('profile_path', ''), extension_path) if extension_path else None
     
     return user_data_dir, full_extension_path
 

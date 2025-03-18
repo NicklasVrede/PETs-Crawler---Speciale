@@ -312,7 +312,7 @@ def load_site_pages(domain, input_dir="data/site_pages", count=20):
         # Get the URLs, limited to count
         pages = data['pages'][:count]
         
-        print(f"Loaded top {len(pages)} pages for {domain} from {filename}")
+        #print(f"Loaded top {len(pages)} pages for {domain} from {filename}")
         return pages
     except FileNotFoundError:
         print(f"No saved pages found for {domain}")

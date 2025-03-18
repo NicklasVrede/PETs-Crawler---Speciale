@@ -15,15 +15,7 @@ class CrawlDataManager:
         if verbose:
             print(f"Data saved to: {filename}")
 
-    def save_crawl_data(self, domain, rank, crawl_result, verbose=False):
-        """Save crawl data from a consolidated result object"""
-        site_data = {
-            'domain': domain,
-            'rank': rank,
-            'timestamp': datetime.now(),
-            **crawl_result
-        }
-        
+    def save_crawl_data(self, domain, rank, site_data, verbose=False):
         crawler_data_dir = os.path.join('data', 'crawler_data', self.storage_folder)
         os.makedirs(crawler_data_dir, exist_ok=True)
         

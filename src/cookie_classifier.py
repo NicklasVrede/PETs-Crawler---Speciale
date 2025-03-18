@@ -2,7 +2,7 @@ import os
 import json
 from datetime import datetime
 from tqdm import tqdm
-from managers.cookie_manager import analyze_cookie, cookie_db  # Added cookie_db import
+from managers.cookie_manager import analyze_cookie, cookie_db
 from collections import Counter
 import sys
 
@@ -54,6 +54,12 @@ def classify_site_cookies(data_dir):
                 cookie_name = cookie.get('name', '')
                 cookie_domain = cookie.get('domain', '')
                 
+                # Normalize the domain by removing leading dot and www
+                if cookie_domain:
+                    cookie_domain = cookie_domain.lstrip('.')
+                    if cookie_domain.startswith('www.'):
+                        cookie_domain = cookie_domain[4:]
+                
                 # Skip if we've already analyzed this cookie
                 cookie_key = f"{cookie_name}:{cookie_domain}"
                 if cookie_key in unique_cookies:
@@ -61,24 +67,24 @@ def classify_site_cookies(data_dir):
                 unique_cookies.add(cookie_key)
                 
                 # Get cookie analysis
-                analysis = analyze_cookie(cookie_name, cookie_domain)
+                analysis = analyze_cookie(cookie_name)
                 
                 if analysis:
                     stats['identified_cookies'] += 1
-                    stats['categories'][analysis['category']] += 1
-                    stats['providers'][analysis['provider']] += 1
+                    stats['categories'][analysis.get('category', 'unknown')] += 1
                     
-                    if analysis['is_wildcard']:
-                        stats['wildcard_matches'] += 1
+                    # Use the normalized domain as the provider
+                    provider = cookie_domain if cookie_domain else 'unknown'
+                    stats['providers'][provider] += 1
                     
                     # Store detailed cookie info
                     cookie_info = {
                         'name': cookie_name,
                         'domain': cookie_domain,
-                        'category': analysis['category'],
-                        'provider': analysis['provider'],
-                        'description': analysis['description'],
-                        'is_wildcard_match': analysis['is_wildcard']
+                        'category': analysis.get('category', 'unknown'),
+                        'provider': provider,
+                        'description': analysis.get('description', ''),
+                        'is_wildcard_match': analysis.get('is_wildcard', False)
                     }
                     stats['cookies'].append(cookie_info)
                 else:
@@ -87,7 +93,7 @@ def classify_site_cookies(data_dir):
                         'name': cookie_name,
                         'domain': cookie_domain,
                         'category': 'unknown',
-                        'provider': 'unknown',
+                        'provider': cookie_domain if cookie_domain else 'unknown',
                         'description': 'Cookie not found in database',
                         'is_wildcard_match': False
                     }
@@ -132,7 +138,7 @@ def classify_site_cookies(data_dir):
             for cookie in all_cookies:
                 cookie_name = cookie.get('name', '')
                 cookie_domain = cookie.get('domain', '')
-                analysis = analyze_cookie(cookie_name, cookie_domain)
+                analysis = analyze_cookie(cookie_name)
                 tqdm.write(f"\nAnalyzing cookie: {cookie_name} on {cookie_domain}")
                 tqdm.write(f"Analysis result: {analysis}")
             

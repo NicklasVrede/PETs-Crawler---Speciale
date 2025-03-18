@@ -100,97 +100,6 @@ class WebsiteCrawler:
         except Exception as e:
             print(f"Error during cache population: {e}")
 
-    async def simulate_user_interaction(self, page):
-        """Simulate natural user behavior on the page with shorter, more variable scrolling"""
-        try:
-            # Brief initial wait
-            await asyncio.sleep(random.uniform(0.05, 0.15))
-            
-            # Get total scroll height and start scrolling quickly
-            max_scroll = await page.evaluate('document.body.scrollHeight')
-            scroll_amount = 0
-            
-            # Variable scroll depth strategy
-            current_url = page.url
-            
-            # Extract domain for homepage check if we have it
-            parsed_url = urlparse(current_url)
-            current_domain = parsed_url.netloc.lower().replace('www.', '')
-            
-            deep_scroll_chance = 0.1  # 10% chance for deep scroll
-            is_homepage = self.base_domain and current_domain == self.base_domain and parsed_url.path in ['/', '']
-            
-            if is_homepage:
-                # More thorough for homepage
-                scroll_percentage = random.uniform(0.3, 0.8)
-            elif random.random() < deep_scroll_chance:
-                # Occasional deep scroll
-                scroll_percentage = random.uniform(0.5, 1.0)
-            else:
-                # Default quick scroll for most pages
-                scroll_percentage = random.uniform(0.1, 0.4)
-            
-            target_scroll = int(max_scroll * scroll_percentage)
-            
-            #tqdm.write(f"Scrolling {int(scroll_percentage * 100)}% of page ({target_scroll}px)")
-            
-            # Get viewport dimensions
-            viewport = page.viewport_size
-            middle_x = viewport['width'] // 2
-            middle_y = viewport['height'] // 2
-            
-            # Quick mouse movement
-            await page.mouse.move(middle_x, middle_y, steps=2)
-            
-            # Faster scrolling with fewer pauses
-            scroll_speeds = ['fast', 'medium', 'slow']
-            scroll_probabilities = [0.7, 0.2, 0.1]
-            scroll_speed = random.choices(scroll_speeds, weights=scroll_probabilities, k=1)[0]
-            
-            # Adjust scroll parameters based on speed
-            if scroll_speed == 'fast':
-                scroll_increment = random.randint(100, 200)
-                scroll_pause = 0.05
-            elif scroll_speed == 'medium':
-                scroll_increment = random.randint(50, 100)
-                scroll_pause = 0.1
-            else:  # slow
-                scroll_increment = random.randint(30, 60)
-                scroll_pause = 0.2
-            
-            # Scroll down
-            while scroll_amount < target_scroll:
-                # Calculate next scroll increment
-                next_increment = min(scroll_increment, target_scroll - scroll_amount)
-                if next_increment <= 0:
-                    break
-                    
-                # Scroll
-                await page.mouse.wheel(0, next_increment)
-                scroll_amount += next_increment
-                
-                # Brief pause
-                await asyncio.sleep(scroll_pause)
-                
-                # Occasionally move mouse
-                if random.random() > 0.85:
-                    await page.mouse.move(
-                        middle_x + random.randint(-200, 200),
-                        middle_y + random.randint(-100, 100),
-                        steps=2
-                    )
-            
-            # Brief pause at end
-            await asyncio.sleep(0.1)
-            
-            # Only 20% chance to scroll back to top (saves time)
-            if random.random() < 0.2:
-                await page.evaluate("window.scrollTo({top: 0, behavior: 'smooth'});")
-                await asyncio.sleep(0.2)
-            
-        except Exception as e:
-            tqdm.write(f"Scroll error: {str(e)}")
-
     async def _setup_browser(self, p, user_data_dir, full_extension_path, headless, viewport):
         """Setup browser with context"""
         return await p.chromium.launch_persistent_context(
@@ -237,127 +146,114 @@ class WebsiteCrawler:
         """Crawl a website multiple times to analyze cookie persistence"""
         self.base_domain = domain.lower().replace('www.', '')
         visit_results = []
-        
+
         # Load pre-collected URLs
+        urls = await self._load_pre_collected_urls(domain)
+        if not urls:
+            return {'visits': [], 'fingerprinting': {}}
+
+        # Initial browser setup
+        await self._initial_browser_setup(user_data_dir, full_extension_path, headless, viewport)
+
+        for visit in range(self.visits):
+            visited_in_this_cycle = []
+
+            # Browser session for this visit
+            async with async_playwright() as p:
+                context = await self._setup_browser(p, user_data_dir, full_extension_path, headless, viewport)
+                page = await context.new_page()
+
+                # Setup monitoring
+                await self._setup_monitoring(page, visit)
+
+                # Visit the homepage
+                await self._visit_homepage(page, domain)
+
+                # Visit URLs
+                visited_in_this_cycle = await self._visit_urls(page, urls, visit)
+
+                # Collect visit results
+                visit_results.append(await self._collect_visit_results(visit, visited_in_this_cycle))
+
+                await context.close()
+
+        # Construct and save the final data structure
+        return await self._construct_final_data(domain, visit_results)
+
+    async def _load_pre_collected_urls(self, domain):
+        """Load pre-collected URLs from a specified directory"""
         if self.verbose:
             print("\nLoading pre-collected URLs...")
         urls = load_site_pages(domain, input_dir="data/site_pages", count=self.max_pages)
-        
         if not urls or len(urls) == 0:
-            tqdm.write(f"ERROR: No pre-collected URLs found for {domain}")
-            return {'visits': [], 'fingerprinting': {}}
-        
+            print(f"ERROR: No pre-collected URLs found for {domain}")
+            return None
         if self.verbose:
             print(f"Loaded {len(urls)} pre-collected URLs for {domain}")
-        else:
-            tqdm.write(f"Loaded {len(urls)} URLs for {domain}")
-        
-        # Initial browser setup - we only clear data once at the beginning
-        if self.verbose:
-            print(f"\n{'='*50}")
-            print(f"Initial browser setup")
-            print(f"{'='*50}")
-        
-        # Clear data only once at the start of the entire crawling process
+        return urls
+
+    async def _initial_browser_setup(self, user_data_dir, full_extension_path, headless, viewport):
+        """Perform initial browser setup and clear data"""
         if self.verbose:
             print("\nInitial browser session to clear data and visit homepage...")
         async with async_playwright() as p:
-            # Setup browser with context
-            context = await self._setup_browser(
-                p, user_data_dir, full_extension_path, headless, viewport
-            )
-            
-            # Clear all browser data to start fresh
+            context = await self._setup_browser(p, user_data_dir, full_extension_path, headless, viewport)
             if self.verbose:
                 print("\nClearing browser data...")
             await self._clear_browser_data(context)
             if self.verbose:
                 print("✓ Browser data cleared")
-            
-            # Close the context after clearing data
             await context.close()
-        
-        # Always show progress with tqdm regardless of verbose setting
-        for visit in range(self.visits):
-            visited_in_this_cycle = []
-            
-            if self.verbose:
-                print(f"\n{'='*50}")
-                print(f"Starting visit {visit + 1} of {self.visits}")
-                print(f"{'='*50}")
-            else:
-                tqdm.write(f"Starting visit {visit + 1} of {self.visits}")
-            
-            # Browser session for this visit - data persists between visits
-            if self.verbose:
-                print("\nStarting browser session...")
-            async with async_playwright() as p:
-                # Setup browser with context
-                context = await self._setup_browser(
-                    p, user_data_dir, full_extension_path, headless, viewport
-                )
-                
-                # Create a new page for this visit
-                page = await context.new_page()
-                
-                # Setup monitoring
-                await self.monitors['network'].setup_monitoring(page, visit)
-                await self.monitors['fingerprint'].setup_monitoring(page, visit)
-                await self.monitors['storage'].setup_monitoring(page)
-                
-                # Ensure page is ready before setting up monitor
-                await page.goto("about:blank")
-                
-                # Visit the homepage first
-                if self.verbose:
-                    print("\nVisiting homepage...")
-                homepage_url = f"https://{domain}"
-                try:
-                    await page.goto(homepage_url, timeout=30000)
-                    await page.wait_for_timeout(5000)  # Wait for 5 seconds
-                except Exception as e:
-                    if self.verbose:
-                        print(f"Error visiting homepage: {e}")
-                    else:
-                        tqdm.write(f"Error visiting homepage: {e}")
-                
-                # Start the crawl
-                if self.verbose:
-                    print("\nStarting URL visits...")
 
-                with tqdm(total=len(urls), desc=f"Visit #{visit + 1}", unit="page") as pbar:
-                    for url in urls:
-                        try:
-                            await page.goto(url, timeout=30000)
-                            await page.wait_for_load_state('domcontentloaded')
-                            await page.wait_for_timeout(random.uniform(1000, 2000))  # Random wait 1-2 seconds
-                            
-                            final_url = page.url
-                            visited_in_this_cycle.append({"original": url, "final": final_url})
-                            
-                            await self.monitors['storage'].capture_snapshot(page, visit_number=visit)
-                            await self.user_simulator.simulate_interaction(page)
-                            
-                            pbar.update(1)
-                            
-                        except Exception as e:
-                            tqdm.write(f"\nError visiting {url}: {e}")
-                            visited_in_this_cycle.append({"original": url, "error": str(e)})
-                            pbar.update(1)
-                
-                visit_results.append({
-                    'visit_number': visit,
-                    'network': self.monitors['network'].get_results()['network_data'],
-                    'statistics': self.monitors['network'].get_statistics(),
-                    'storage': self.monitors['storage'].get_results(),
-                    'fingerprinting': self.monitors['fingerprint']._get_results_for_visit(visit),
-                    'visited_urls': visited_in_this_cycle
-                })
-                
-                # Close the context at the end of this visit
-                await context.close()
-        
+    async def _setup_monitoring(self, page, visit):
+        """Setup network, fingerprint, and storage monitoring"""
+        await self.monitors['network'].setup_monitoring(page, visit)
+        await self.monitors['fingerprint'].setup_monitoring(page, visit)
+        await self.monitors['storage'].setup_monitoring(page)
+
+    async def _visit_homepage(self, page, domain):
+        """Visit the homepage and handle any errors"""
+        if self.verbose:
+            print("\nVisiting homepage...")
+        homepage_url = f"https://{domain}"
+        try:
+            await page.goto(homepage_url, timeout=30000)
+            await page.wait_for_timeout(5000)
+        except Exception as e:
+            if self.verbose:
+                print(f"Error visiting homepage: {e}")
+
+    async def _visit_urls(self, page, urls, visit):
+        """Visit each URL and simulate user interaction"""
+        visited_in_this_cycle = []
+        for url in urls:
+            try:
+                await page.goto(url, timeout=30000)
+                await page.wait_for_load_state('domcontentloaded')
+                await page.wait_for_timeout(random.uniform(1000, 2000))
+                final_url = page.url
+                visited_in_this_cycle.append({"original": url, "final": final_url})
+                await self.monitors['storage'].capture_snapshot(page, visit_number=visit)
+                await self.user_simulator.simulate_interaction(page)
+            except Exception as e:
+                print(f"Error visiting {url}: {e}")
+                visited_in_this_cycle.append({"original": url, "error": str(e)})
+        return visited_in_this_cycle
+
+    async def _collect_visit_results(self, visit, visited_in_this_cycle):
+        """Collect and structure the results of each visit"""
         return {
+            'visit_number': visit,
+            'network': self.monitors['network'].get_results()['network_data'],
+            'statistics': self.monitors['network'].get_statistics(),
+            'storage': self.monitors['storage'].get_results(),
+            'fingerprinting': self.monitors['fingerprint']._get_results_for_visit(visit),
+            'visited_urls': visited_in_this_cycle
+        }
+
+    async def _construct_final_data(self, domain, visit_results):
+        """Construct the final data structure and save it using CrawlDataManager"""
+        final_data = {
             'domain': domain,
             'timestamp': datetime.now().isoformat(),
             'visits': visit_results,
@@ -367,3 +263,5 @@ class WebsiteCrawler:
             'fingerprinting': self.monitors['fingerprint'].get_fingerprinting_data(),
             'cookies': self.monitors['network'].get_cookies()
         }
+
+        return final_data
