@@ -14,15 +14,16 @@ from utils.user_simulator import UserSimulator
 import os
 
 class WebsiteCrawler:
-    def __init__(self, max_pages=20, visits=2, verbose=False, monitors=None):
+    def __init__(self, max_pages=20, visits=2, verbose=False, show_progress=False):
         self.max_pages = max_pages
         self.visits = visits
         self.verbose = verbose
         self.base_domain = None
-        self.user_simulator = UserSimulator()
+        self.user_simulator = UserSimulator(verbose=verbose)
+        self.show_progress = show_progress
         
-        # Use provided monitors or create defaults
-        self.monitors = monitors or {
+        # Initialize monitors
+        self.monitors = {
             'network': NetworkMonitor(verbose=verbose),
             'storage': StorageMonitor(verbose=verbose),
             'fingerprint': FingerprintCollector(verbose=verbose)
