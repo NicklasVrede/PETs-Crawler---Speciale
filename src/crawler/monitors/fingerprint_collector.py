@@ -1,7 +1,6 @@
 from datetime import datetime
 from typing import Dict, List, Set, Counter
 from collections import defaultdict, Counter
-import json
 from urllib.parse import urlparse
 from pathlib import Path
 
@@ -93,35 +92,6 @@ class FingerprintCollector:
             self.script_patterns[source] = set()
         self.script_patterns[source].add(category)
 
-    def _is_likely_fingerprinting(self, script: str) -> bool:
-        """Determine if a script is likely fingerprinting based on its behavior"""
-        if script not in self.script_patterns:
-            return False
-
-        patterns = self.script_patterns[script]
-        
-        # Check for known fingerprinting combinations
-        fp_combinations = [
-            {'canvas', 'fonts'},  # Canvas + Font fingerprinting
-            {'webgl', 'hardware'},  # WebGL + Hardware info
-            {'canvas', 'webgl', 'hardware'},  # Multiple techniques
-            {'audio', 'hardware'}  # Audio + Hardware fingerprinting
-        ]
-
-        # Check if script uses any known fingerprinting combinations
-        return any(combo.issubset(patterns) for combo in fp_combinations)
-
-    def get_fingerprinting_results(self, visit_number=None):
-        """Get analysis results with aggregated statistics
-        If visit_number is provided, return results for that visit,
-        otherwise return combined results across all visits"""
-        
-        if visit_number is not None and visit_number in self.visits_data:
-            # Return results for a specific visit
-            return self._get_results_for_visit(visit_number)
-        else:
-            # Return combined results
-            return self._get_combined_results()
     
     def _get_results_for_visit(self, visit_number):
         """Get fingerprinting results for a specific visit"""
