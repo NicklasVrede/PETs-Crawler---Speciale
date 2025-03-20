@@ -49,22 +49,15 @@ class NetworkMonitor:
         """Get storage monitoring data"""
         return {}
 
-    def get_network_data(self):
-        """Get network request data"""
-        return {
-            'requests': self.requests,
-            'domains_contacted': list(self.domains_contacted)
-        }
-
     def get_results(self):
-        """Get comprehensive monitoring results"""
+        """Get comprehensive monitoring results (only public method needed for data retrieval)"""
         return {
-            'network_data': self.get_network_data(),
-            'statistics': self.get_statistics()
+            'network_data': self._get_network_data(),
+            'statistics': self._get_statistics()
         }
 
     async def setup_monitoring(self, page, visit_number=0):
-        """Setup network monitoring"""
+        """Setup network monitoring for a new page/visit"""
         if self.verbose:
             print(f"Starting network monitor for visit {visit_number}")
         
@@ -182,8 +175,8 @@ class NetworkMonitor:
         except:
             return url.split('/')[2] if '://' in url else url.split('/')[0]
     
-    def get_statistics(self):
-        """Get comprehensive statistics"""
+    def _get_statistics(self):
+        """Get computed statistics from network data (private)"""
         return {
             'total_requests': len(self.requests),
             'request_types': self._count_request_types(),
@@ -194,3 +187,10 @@ class NetworkMonitor:
         """Store the final state of cookies for this visit"""
         if visit_number in self.cookies_by_visit:
             del self.cookies_by_visit[visit_number]
+
+    def _get_network_data(self):
+        """Get raw network request data (private)"""
+        return {
+            'requests': self.requests,
+            'domains_contacted': list(self.domains_contacted)
+        }
