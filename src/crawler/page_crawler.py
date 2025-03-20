@@ -1,19 +1,16 @@
-from playwright.async_api import async_playwright, TimeoutError
+from playwright.async_api import async_playwright
 from crawler.monitors.network_monitor import NetworkMonitor
 from crawler.monitors.fingerprint_collector import FingerprintCollector
 from crawler.monitors.storage_monitor import StorageMonitor
 from crawler.monitors.banner_monitor import BannerMonitor
-from pathlib import Path
-import json
 from datetime import datetime
-from urllib.parse import urlparse
 from tqdm import tqdm
 import random
 import asyncio
 from utils.page_collector import load_site_pages
 from utils.user_simulator import UserSimulator
-import os
 from playwright_stealth import Stealth
+
 
 class WebsiteCrawler:
     def __init__(self, max_pages=20, visits=2, verbose=False, monitors=None, extension_name=None):

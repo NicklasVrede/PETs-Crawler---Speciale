@@ -57,7 +57,7 @@ class BannerMonitor:
             
             # Capture screenshot
             screenshot_path = os.path.join(domain_screenshot_dir, f"{filename}.png")
-            await page.screenshot(path=screenshot_path, full_page=True)
+            await page.screenshot(path=screenshot_path, full_page=False)
             
             # Capture HTML
             html_path = os.path.join(domain_html_dir, f"{filename}.html")

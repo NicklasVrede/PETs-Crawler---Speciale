@@ -146,7 +146,7 @@ if __name__ == "__main__":
         config=config,
         profiles=profiles,
         sites=sites,
-        max_concurrent=4,
+        max_concurrent=8,
         max_pages=20,
         verbose=verbose
     ))
