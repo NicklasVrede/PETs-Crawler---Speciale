@@ -182,12 +182,7 @@ class NetworkMonitor:
             'request_types': self._count_request_types(),
             'cookie_operations': self.get_cookie_stats()
         }
-
-    def finalize_visit(self, visit_number):
-        """Store the final state of cookies for this visit"""
-        if visit_number in self.cookies_by_visit:
-            del self.cookies_by_visit[visit_number]
-
+    
     def _get_network_data(self):
         """Get raw network request data (private)"""
         return {
