@@ -8,7 +8,7 @@ from utils.util import (construct_paths, load_config, get_profile_config,
 from tqdm import tqdm
 
 
-async def crawl_domain(profile, site_info, data_dir=None, max_pages=2, verbose=False):
+async def crawl_domain(profile, site_info, data_dir=None, max_pages=5, verbose=False):
     """
     Crawl a single domain with configurable verbosity
     
@@ -48,7 +48,11 @@ async def crawl_domain(profile, site_info, data_dir=None, max_pages=2, verbose=F
         rank, domain = site_info
         
         # Crawl site - pass verbose flag to control internal printing
-        crawler = WebsiteCrawler(max_pages=max_pages, verbose=verbose)
+        crawler = WebsiteCrawler(
+            max_pages=max_pages, 
+            verbose=verbose,
+            extension_name=profile
+        )
         
         # Modify browser launch arguments based on profile
         browser_args = {}
@@ -87,7 +91,7 @@ if __name__ == "__main__":
     profile_names = config.get('profiles', {}).keys()
     print("Profile names:", list(profile_names))
 
-    profile = 'consent_o_matic_opt_out'
+    profile = 'cookie_cutter'
     
     # Get all sites to crawl
     all_sites = get_all_sites()

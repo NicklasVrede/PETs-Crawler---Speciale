@@ -2,9 +2,10 @@ import os
 from tqdm import tqdm
 from identify_sources import identify_site_sources
 from cookie_classifier import classify_site_cookies
+from add_domain_categories import add_categories_to_files
 
 def process_all_crawler_data():
-    """Process all folders in crawler_data using both analyzers"""
+    """Process all folders in crawler_data using all analyzers"""
     base_dir = os.path.join('data', 'crawler_data')
     
     # Get all folders in crawler_data
@@ -28,6 +29,10 @@ def process_all_crawler_data():
         # Then run cookie_classifier
         print("\nClassifying cookies...")
         classify_site_cookies(folder_path)
+        
+        # Add domain categories
+        print("\nAdding domain categories...")
+        add_categories_to_files(folder_path)
         
         print(f"✓ Completed processing {folder}")
 

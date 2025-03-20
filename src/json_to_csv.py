@@ -212,6 +212,70 @@ def analyze_crawler_data(json_file):
         if cname_stats:
             potential_cname_cloaking = cname_stats.get('total', 0)
         
+        # Web Storage metrics - SIMPLIFIED to just counts and reads
+        # First look in top-level storage stats
+        local_storage_count = data.get('local_storage_count', 0)
+        session_storage_count = data.get('session_storage_count', 0)
+        
+        # Just include getItem operations
+        local_storage_get = data.get('localStorage_getItem', 0)
+        session_storage_get = data.get('sessionStorage_getItem', 0)
+        
+        # Domain categories, organizations, and providers from domain_analysis
+        domain_analysis = data.get('domain_analysis', {})
+        analyzed_domains = domain_analysis.get('domains', [])
+        
+        # Initialize counters - RENAMED to be more accurate
+        advertising_services = 0
+        analytics_services = 0
+        social_media_services = 0
+        content_delivery_services = 0
+        hosting_services = 0
+        cdn_services = 0
+        
+        # Top organizations and providers
+        top_organizations = set()
+        top_providers = set()
+        
+        for domain_info in analyzed_domains:
+            # Count categories
+            categories = domain_info.get('categories', [])
+            for category in categories:
+                category = category.lower()
+                if any(term in category for term in ['ad', 'advertising', 'marketin']):
+                    advertising_services += 1
+                elif any(term in category for term in ['analytic', 'statistics', 'measurement']):
+                    analytics_services += 1
+                elif any(term in category for term in ['social', 'comment', 'share']):
+                    social_media_services += 1
+                elif any(term in category for term in ['cdn', 'content']):
+                    content_delivery_services += 1
+                elif 'hosting' in category:
+                    hosting_services += 1
+            
+            # Track organizations (limit to 5 to avoid overly long fields)
+            organizations = domain_info.get('organizations', [])
+            if len(top_organizations) < 5:
+                for org in organizations:
+                    if org and org not in top_organizations:
+                        top_organizations.add(org)
+            
+            # Track providers (limit to 5)
+            provider = domain_info.get('provider')
+            if provider and len(top_providers) < 5 and provider not in top_providers:
+                top_providers.add(provider)
+        
+        # Convert sets to strings for CSV
+        top_organizations_str = ", ".join(sorted(top_organizations))
+        top_providers_str = ", ".join(sorted(top_providers))
+        
+        # Other third-party services (those that don't fit into specific categories)
+        other_services = unique_domains - (advertising_services + analytics_services + 
+                                        social_media_services + content_delivery_services + 
+                                        hosting_services + cdn_services)
+        if other_services < 0:  # Handle potential overlaps in categories
+            other_services = 0
+        
         # Fingerprinting metrics - fixed to match the actual JSON structure
         fingerprinting = data.get('fingerprinting', {})
         total_fp_calls = 0
@@ -253,6 +317,19 @@ def analyze_crawler_data(json_file):
             'unclassified_cookies': unclassified_cookies,
             'filter_matches': filter_matches,
             'potential_cname_cloaking': potential_cname_cloaking,
+            'local_storage_count': local_storage_count,
+            'session_storage_count': session_storage_count,
+            'local_storage_get': local_storage_get,
+            'session_storage_get': session_storage_get,
+            'advertising_services': advertising_services,
+            'analytics_services': analytics_services,
+            'social_media_services': social_media_services,
+            'content_delivery_services': content_delivery_services,
+            'hosting_services': hosting_services,
+            'cdn_services': cdn_services,
+            'other_services': other_services,
+            'top_organizations': top_organizations_str,
+            'top_providers': top_providers_str,
             'total_fingerprinting_calls': total_fp_calls,
             'hardware_fingerprinting_calls': hardware_fp_calls,
             'canvas_fingerprinting_calls': canvas_fp_calls,

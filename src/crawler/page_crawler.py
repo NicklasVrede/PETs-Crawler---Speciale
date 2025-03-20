@@ -2,6 +2,7 @@ from playwright.async_api import async_playwright, TimeoutError
 from crawler.monitors.network_monitor import NetworkMonitor
 from crawler.monitors.fingerprint_collector import FingerprintCollector
 from crawler.monitors.storage_monitor import StorageMonitor
+from crawler.monitors.banner_monitor import BannerMonitor
 from pathlib import Path
 import json
 from datetime import datetime
@@ -12,20 +13,25 @@ import asyncio
 from utils.page_collector import load_site_pages
 from utils.user_simulator import UserSimulator
 import os
+from playwright_stealth import Stealth
 
 class WebsiteCrawler:
-    def __init__(self, max_pages=20, visits=2, verbose=False, monitors=None):
+    def __init__(self, max_pages=20, visits=2, verbose=False, monitors=None, extension_name=None):
+        """Initialize the crawler with configuration parameters"""
         self.max_pages = max_pages
         self.visits = visits
         self.verbose = verbose
         self.base_domain = None
+        self.extension_name = extension_name or "no_extension"
         self.user_simulator = UserSimulator()
+        self.stealth = Stealth()
         
         # Use provided monitors or create defaults
         self.monitors = monitors or {
             'network': NetworkMonitor(verbose=verbose),
             'storage': StorageMonitor(verbose=verbose),
-            'fingerprint': FingerprintCollector(verbose=verbose)
+            'fingerprint': FingerprintCollector(verbose=verbose),
+            'banner': BannerMonitor(verbose=verbose)
         }
 
     async def clear_all_browser_data(self, context):
@@ -111,12 +117,17 @@ class WebsiteCrawler:
                 f'--load-extension={full_extension_path}'
             ]
 
-        return await p.chromium.launch_persistent_context(
+        context = await p.chromium.launch_persistent_context(
             user_data_dir=user_data_dir,
             headless=headless,
             viewport=viewport or {'width': 1280, 'height': 800},
             **browser_args
         )
+        
+        # Apply stealth to the context (this will affect all pages created from this context)
+        await self.stealth.apply_stealth_async(context)
+        
+        return context
 
     async def _clear_browser_data(self, context):
         """Clear browser data"""
@@ -215,6 +226,9 @@ class WebsiteCrawler:
 
     async def _setup_monitoring(self, page, visit):
         """Setup network, fingerprint, and storage monitoring"""
+        # No need to apply stealth mode here anymore, as it's applied at the context level
+        
+        # Continue with your existing monitoring setup
         await self.monitors['network'].setup_monitoring(page, visit)
         await self.monitors['fingerprint'].setup_monitoring(page, visit)
         await self.monitors['storage'].setup_monitoring(page)
@@ -234,18 +248,55 @@ class WebsiteCrawler:
     async def _visit_urls(self, page, urls, visit):
         """Visit each URL and simulate user interaction"""
         visited_in_this_cycle = []
-        for url in urls:
+        
+        # print(f"\n[DEBUG] Visit #{visit} - About to visit {len(urls)} URLs")
+        
+        for idx, url in enumerate(urls):
             try:
+                # Shorten URL for display
+                display_url = url
+                if '?' in url:
+                    # Show only domain and path, no query parameters
+                    display_url = url.split('?')[0] + '...'
+                elif len(url) > 70:
+                    # If URL is too long even without parameters, truncate it
+                    display_url = url[:70] + '...'
+                
+                # print(f"[DEBUG] Visit #{visit} - Navigating to URL #{idx}: {display_url}")
+                
                 await page.goto(url, timeout=30000)
                 await page.wait_for_load_state('domcontentloaded')
                 await page.wait_for_timeout(random.uniform(1000, 2000))
                 final_url = page.url
+                
+                # On the first subpage, capture banner state
+                if idx == 0 and 'banner' in self.monitors:
+                    # print(f"[DEBUG] Visit #{visit} - Triggering banner monitor capture for {self.base_domain}")
+                    try:
+                        # Pass current values as fallbacks
+                        await self.monitors['banner'].capture_on_subpage(
+                            page, 
+                            domain=self.base_domain,
+                            visit_number=visit,
+                            extension_name=self.extension_name
+                        )
+                    except Exception as e:
+                        print(f"Error in banner capture: {e}")
+                    
                 visited_in_this_cycle.append({"original": url, "final": final_url})
-                await self.monitors['storage'].capture_snapshot(page, visit_number=visit)
+                
+                # Capture storage after visiting
+                if 'storage' in self.monitors:
+                    await self.monitors['storage'].capture_snapshot(page, visit_number=visit)
+                    
+                # Simulate user interaction
                 await self.user_simulator.simulate_interaction(page)
+                
             except Exception as e:
-                tqdm.write(f"Error visiting {url}: {e}")
+                print(f"Error visiting {url}: {e}")
                 visited_in_this_cycle.append({"original": url, "error": str(e)})
+                
+        # print(f"[DEBUG] Visit #{visit} - Completed visiting URLs")
         return visited_in_this_cycle
 
     async def _collect_visit_results(self, visit, visited_in_this_cycle):

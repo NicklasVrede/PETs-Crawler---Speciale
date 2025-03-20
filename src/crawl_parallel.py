@@ -76,7 +76,7 @@ async def crawl_with_profile(config, profile, sites, max_pages=2, verbose=False,
             import shutil
             shutil.rmtree(temp_profile_dir, ignore_errors=True)
 
-async def crawl_sites_parallel(config, profiles, sites, max_concurrent=3, max_pages=2, verbose=False):
+async def crawl_sites_parallel(config, profiles, sites, max_concurrent=None, max_pages=2, verbose=False):
     """
     Crawl multiple sites with multiple browser profiles in parallel
     
@@ -84,10 +84,16 @@ async def crawl_sites_parallel(config, profiles, sites, max_concurrent=3, max_pa
         config: Configuration dictionary
         profiles: List of browser profiles to use
         sites: List of (rank, domain) tuples for the sites to crawl
-        max_concurrent: Maximum number of concurrent browser instances
+        max_concurrent: Maximum number of concurrent browser instances. If None, use all profiles.
         max_pages: Maximum pages to crawl per site
         verbose: If True, print detailed progress information
     """
+    # If max_concurrent is not specified, use all available profiles
+    if max_concurrent is None:
+        max_concurrent = len(profiles)
+        if verbose:
+            print(f"Using all {max_concurrent} profiles concurrently")
+    
     # Create semaphore to limit concurrent crawls
     semaphore = asyncio.Semaphore(max_concurrent)
     
@@ -140,8 +146,8 @@ if __name__ == "__main__":
         config=config,
         profiles=profiles,
         sites=sites,
-        max_concurrent=3,
-        max_pages=2,
+        max_concurrent=4,
+        max_pages=20,
         verbose=verbose
     ))
     
