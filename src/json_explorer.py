@@ -84,7 +84,7 @@ def explore_json_structure(json_file):
 
 def main():
     # Change this to your target JSON file
-    json_file = "data/crawler_data/i_dont_care_about_cookies/Amazon.co.uk.json"
+    json_file = "data/crawler_data/i_dont_care_about_cookies/Active.com.json"
     
     if not os.path.exists(json_file):
         print(f"Error: File not found: {json_file}")

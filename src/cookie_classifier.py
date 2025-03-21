@@ -1,159 +1,333 @@
 import os
 import json
-from datetime import datetime
-from tqdm import tqdm
-from managers.cookie_manager import analyze_cookie, cookie_db
-from collections import Counter
+import time
 import sys
+from typing import Dict, List, Any, Optional, Set
+from tqdm import tqdm
+from collections import Counter
+from datetime import datetime
 
-def classify_site_cookies(data_dir):
-    """Classify cookies in site data and add analysis to JSON files"""
-    # Add debug print at the start
-    tqdm.write("\nDebug: First 5 entries in cookie database:")
-    for entry in list(cookie_db)[:5]:
-        tqdm.write(str(entry))
+# Fix imports with relative paths
+try:
+    from managers.cookie_database import CookieDatabase
+    from managers.cookie_crawler import CookieCrawler
+except ImportError:
+    # Try alternative import paths
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(current_dir)
+    sys.path.append(parent_dir)
+    from src.managers.cookie_database import CookieDatabase
+    from src.managers.cookie_crawler import CookieCrawler
+
+class CookieClassifier:
+    """
+    Classifies cookies found on websites by looking them up in the cookie database.
+    Uses CookieCrawler to look up cookies not found in the database.
+    Generates analysis and statistics for cookie usage on websites.
+    """
     
-    json_files = [f for f in os.listdir(data_dir) if f.endswith('.json')]
-    
-    for filename in tqdm(json_files, desc="Analyzing site cookies", unit="site"):
-        file_path = os.path.join(data_dir, filename)
+    def __init__(self, database=None, crawler=None):
+        """
+        Initialize the cookie classifier.
         
+        Args:
+            database: CookieDatabase instance to use (creates a new one if None)
+            crawler: CookieCrawler instance to use (creates a new one if None)
+        """
+        self.database = database or CookieDatabase()
+        self.crawler = crawler
+        self.unknown_cookies = set()  # Track unknown cookies for batch lookup
+    
+    def init_crawler_if_needed(self):
+        """Initialize the crawler if it doesn't exist already"""
+        if self.crawler is None:
+            tqdm.write("Initializing browser for cookie lookups...")
+            self.crawler = CookieCrawler(database=self.database)
+    
+    def classify_file(self, file_path: str, save_result=True, lookup_unknown=True) -> Dict[str, Any]:
+        """
+        Classify cookies in a website crawl file.
+        
+        Args:
+            file_path: Path to the website crawl JSON file
+            save_result: Whether to save the result back to the file
+            lookup_unknown: Whether to look up unknown cookies
+            
+        Returns:
+            Website data with added cookie analysis
+        """
         try:
-            # Load site data
+            # Load website data
             with open(file_path, 'r', encoding='utf-8') as f:
                 site_data = json.load(f)
             
-            # Get main site domain
-            main_site = site_data.get('domain', filename.replace('.json', ''))
-            
-            # Initialize cookie statistics
-            stats = {
-                'total_cookies': 0,
-                'identified_cookies': 0,
-                'categories': Counter(),
-                'providers': Counter(),
-                'wildcard_matches': 0,
-                'retention_known': 0,
-                'cookies': []  # Will store detailed info about each cookie
-            }
-            
-            # Extract all cookies from the site data
-            all_cookies = []
-            if 'cookies' in site_data:
-                # Flatten cookies from all visits
-                for visit_cookies in site_data['cookies'].values():
-                    all_cookies.extend(visit_cookies)
-            
-            stats['total_cookies'] = len(all_cookies)
-            
-            # Create a set to track unique cookies by name+domain
-            unique_cookies = set()
-            
-            # Analyze each cookie
-            for cookie in all_cookies:
-                cookie_name = cookie.get('name', '')
-                cookie_domain = cookie.get('domain', '')
+            # Get the site name for display
+            site_name = site_data.get('domain', os.path.basename(file_path).replace('.json', ''))
+            tqdm.write(f"\nProcessing site: {site_name}")
                 
-                # Normalize the domain by removing leading dot and www
-                if cookie_domain:
-                    cookie_domain = cookie_domain.lstrip('.')
-                    if cookie_domain.startswith('www.'):
-                        cookie_domain = cookie_domain[4:]
+            # Extract and track unknown cookies
+            unknown_cookies = self.extract_unknown_cookies(site_data)
+            if unknown_cookies:
+                self.unknown_cookies.update(unknown_cookies)
+                tqdm.write(f"Found {len(unknown_cookies)} unknown cookies in {site_name}")
                 
-                # Skip if we've already analyzed this cookie
-                cookie_key = f"{cookie_name}:{cookie_domain}"
-                if cookie_key in unique_cookies:
-                    continue
-                unique_cookies.add(cookie_key)
-                
-                # Get cookie analysis
-                analysis = analyze_cookie(cookie_name)
-                
-                if analysis:
-                    stats['identified_cookies'] += 1
-                    stats['categories'][analysis.get('category', 'unknown')] += 1
+            # Classify cookies using current database
+            self.classify_site(site_data)
+            
+            # Save result if requested
+            if save_result:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(site_data, f, indent=2)
                     
-                    # Use the normalized domain as the provider
-                    provider = cookie_domain if cookie_domain else 'unknown'
-                    stats['providers'][provider] += 1
-                    
-                    # Store detailed cookie info
-                    cookie_info = {
-                        'name': cookie_name,
-                        'domain': cookie_domain,
-                        'category': analysis.get('category', 'unknown'),
-                        'provider': provider,
-                        'description': analysis.get('description', ''),
-                        'is_wildcard_match': analysis.get('is_wildcard', False)
-                    }
-                    stats['cookies'].append(cookie_info)
-                else:
-                    # Store unidentified cookie
-                    cookie_info = {
-                        'name': cookie_name,
-                        'domain': cookie_domain,
-                        'category': 'unknown',
-                        'provider': cookie_domain if cookie_domain else 'unknown',
-                        'description': 'Cookie not found in database',
-                        'is_wildcard_match': False
-                    }
-                    stats['cookies'].append(cookie_info)
-            
-            # Convert counters to regular dictionaries for JSON serialization
-            stats['categories'] = dict(stats['categories'])
-            stats['providers'] = dict(stats['providers'])
-            
-            # Add analysis timestamp
-            stats['analyzed_at'] = datetime.now().isoformat()
-            
-            # Add cookie analysis to site data
-            site_data['cookie_analysis'] = stats
-            
-            # Save updated data
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(site_data, f, indent=2)
-            
-            # Print summary
-            tqdm.write(f"\nCookie analysis for {main_site}:")
-            tqdm.write(f"Total cookies: {stats['total_cookies']}")
-            
-            # Fix the percentage calculation
-            percentage = (stats['identified_cookies']/stats['total_cookies']*100) if stats['total_cookies'] > 0 else 0
-            tqdm.write(f"Identified cookies: {stats['identified_cookies']} ({percentage:.1f}%)")
-            tqdm.write(f"Wildcard matches: {stats['wildcard_matches']}")
-            
-            if stats['categories']:
-                tqdm.write("\nTop cookie categories:")
-                for category, count in sorted(stats['categories'].items(), key=lambda x: x[1], reverse=True)[:5]:
-                    percentage = (count/stats['total_cookies']*100) if stats['total_cookies'] > 0 else 0
-                    tqdm.write(f"  - {category}: {count} ({percentage:.1f}%)")
-            
-            if stats['providers']:
-                tqdm.write("\nTop cookie providers:")
-                for provider, count in sorted(stats['providers'].items(), key=lambda x: x[1], reverse=True)[:5]:
-                    percentage = (count/stats['total_cookies']*100) if stats['total_cookies'] > 0 else 0
-                    tqdm.write(f"  - {provider}: {count} ({percentage:.1f}%)")
-                    
-            # Add debug print for each cookie analysis
-            for cookie in all_cookies:
-                cookie_name = cookie.get('name', '')
-                cookie_domain = cookie.get('domain', '')
-                analysis = analyze_cookie(cookie_name)
-                tqdm.write(f"\nAnalyzing cookie: {cookie_name} on {cookie_domain}")
-                tqdm.write(f"Analysis result: {analysis}")
-            
+            return site_data
         except Exception as e:
-            tqdm.write(f"Error processing {filename}: {str(e)}")
+            tqdm.write(f"Error classifying file {file_path}: {str(e)}")
             import traceback
             tqdm.write(traceback.format_exc())
+            return {}
+    
+    def extract_unknown_cookies(self, site_data: Dict[str, Any]) -> Set[str]:
+        """Extract cookies not in the database"""
+        unknown_cookies = set()
+        
+        # Extract all cookies from the site data
+        all_cookies = []
+        if 'cookies' in site_data and isinstance(site_data['cookies'], dict):
+            # Format: {'visit1': [cookies], 'visit2': [cookies]}
+            for visit_cookies in site_data['cookies'].values():
+                all_cookies.extend(visit_cookies)
+        elif 'cookies' in site_data and isinstance(site_data['cookies'], list):
+            # Simple list format
+            all_cookies = site_data['cookies']
+        
+        # Find cookies not in the database
+        for cookie in all_cookies:
+            cookie_name = cookie.get('name', '')
+            if not cookie_name:
+                continue
+                
+            if not self.database.contains(cookie_name):
+                unknown_cookies.add(cookie_name)
+        
+        return unknown_cookies
+    
+    def classify_directory(self, directory: str, lookup_unknown=True) -> Dict[str, Dict[str, Any]]:
+        """
+        Classify cookies in all JSON files in a directory.
+        
+        Args:
+            directory: Path to directory containing website crawl JSON files
+            lookup_unknown: Whether to look up unknown cookies
+            
+        Returns:
+            Dictionary mapping filenames to their website data
+        """
+        results = {}
+        self.unknown_cookies.clear()
+        
+        # Get all JSON files in the directory
+        json_files = [f for f in os.listdir(directory) if f.endswith('.json')]
+        tqdm.write(f"Found {len(json_files)} JSON files to process")
+        
+        # First pass: classify with existing database and gather unknown cookies
+        for file_name in tqdm(json_files, desc="Classifying websites (first pass)"):
+            file_path = os.path.join(directory, file_name)
+            site_data = self.classify_file(file_path, lookup_unknown=False)
+            results[file_name] = site_data
+        
+        # Look up unknown cookies if requested
+        if lookup_unknown and self.unknown_cookies:
+            tqdm.write(f"\nFound {len(self.unknown_cookies)} unique unknown cookies across all sites")
+            
+            # Initialize crawler if needed
+            self.init_crawler_if_needed()
+            
+            # Look up unknown cookies
+            tqdm.write("Looking up unknown cookies...")
+            self.crawler.lookup_cookies_batch(list(self.unknown_cookies))
+            
+            # Second pass: re-classify with updated database
+            tqdm.write("\nRe-classifying websites with updated database...")
+            for file_name in tqdm(json_files, desc="Classifying websites (final pass)"):
+                file_path = os.path.join(directory, file_name)
+                site_data = self.classify_file(file_path, lookup_unknown=False)
+                results[file_name] = site_data
+                
+                # Print summary for this site
+                if 'cookie_analysis' in site_data:
+                    self.print_site_summary(site_data)
+        else:
+            # Print summaries for first pass
+            for file_name, site_data in results.items():
+                if 'cookie_analysis' in site_data:
+                    self.print_site_summary(site_data)
+        
+        return results
+    
+    def print_site_summary(self, site_data: Dict[str, Any]) -> None:
+        """Print a summary of cookie analysis for a site"""
+        analysis = site_data.get('cookie_analysis', {})
+        main_site = site_data.get('domain', '')
+        
+        tqdm.write(f"\nCookie analysis for {main_site}:")
+        tqdm.write(f"Total cookies: {analysis.get('total_cookies', 0)}")
+        
+        identified = analysis.get('identified_cookies', 0)
+        total = analysis.get('total_cookies', 0)
+        if total > 0:
+            percentage = (identified/total*100)
+            tqdm.write(f"Identified cookies: {identified} ({percentage:.1f}%)")
+        
+        if 'categories' in analysis:
+            tqdm.write("\nTop cookie categories:")
+            sorted_categories = sorted(analysis['categories'].items(), key=lambda x: x[1], reverse=True)
+            for category, count in sorted_categories[:5]:
+                if total > 0:
+                    percentage = (count/total*100)
+                    tqdm.write(f"  - {category}: {count} ({percentage:.1f}%)")
+                else:
+                    tqdm.write(f"  - {category}: {count}")
+        
+        if 'scripts' in analysis:
+            tqdm.write("\nTop cookie providers:")
+            sorted_scripts = sorted(analysis['scripts'].items(), key=lambda x: x[1], reverse=True)
+            for script, count in sorted_scripts[:5]:
+                if script != "Not specified" and total > 0:
+                    percentage = (count/total*100)
+                    tqdm.write(f"  - {script}: {count} ({percentage:.1f}%)")
+    
+    def classify_site(self, site_data: Dict[str, Any]) -> None:
+        """
+        Classify cookies in a website data dictionary.
+        
+        Args:
+            site_data: Website data dictionary
+        """
+        # Initialize cookie statistics
+        stats = {
+            'total_cookies': 0,
+            'identified_cookies': 0,
+            'categories': {},
+            'scripts': {},
+            'analyzed_at': datetime.now().isoformat()
+        }
+        
+        # Extract all cookies from the site data
+        all_cookies = []
+        if 'cookies' in site_data and isinstance(site_data['cookies'], dict):
+            # Format: {'visit1': [cookies], 'visit2': [cookies]}
+            for visit_cookies in site_data['cookies'].values():
+                all_cookies.extend(visit_cookies)
+        elif 'cookies' in site_data and isinstance(site_data['cookies'], list):
+            # Simple list format
+            all_cookies = site_data['cookies']
+        
+        stats['total_cookies'] = len(all_cookies)
+        
+        # Create a set to track unique cookies by name+domain
+        unique_cookies = set()
+        classified_cookies = []
+        
+        # Analyze each cookie
+        for cookie in all_cookies:
+            cookie_name = cookie.get('name', '')
+            cookie_domain = cookie.get('domain', '')
+            
+            # Skip if no name
+            if not cookie_name:
+                continue
+                
+            # Normalize the domain by removing leading dot and www
+            if cookie_domain:
+                cookie_domain = cookie_domain.lstrip('.')
+                if cookie_domain.startswith('www.'):
+                    cookie_domain = cookie_domain[4:]
+            
+            # Skip if we've already analyzed this cookie
+            cookie_key = f"{cookie_name}:{cookie_domain}"
+            if cookie_key in unique_cookies:
+                continue
+            unique_cookies.add(cookie_key)
+            
+            # Get cookie information from database
+            cookie_info = self.database.get(cookie_name)
+            
+            # Create a copy of the cookie data
+            classified_cookie = cookie.copy()
+            
+            if cookie_info:
+                # Found in database
+                category = cookie_info.get('category', 'Unknown')
+                script = cookie_info.get('script', 'Not specified')
+                
+                # Add classification details
+                classified_cookie['classification'] = {
+                    'category': category,
+                    'script': script,
+                    'script_url': cookie_info.get('script_url', 'Not specified'),
+                    'description': cookie_info.get('description', 'Not specified'),
+                    'match_type': cookie_info.get('match_type', 'none')
+                }
+                
+                # Update statistics
+                stats['identified_cookies'] += 1
+                stats['categories'][category] = stats['categories'].get(category, 0) + 1
+                stats['scripts'][script] = stats['scripts'].get(script, 0) + 1
+            else:
+                # Not found in database
+                classified_cookie['classification'] = {
+                    'category': 'Unknown',
+                    'script': 'Not specified',
+                    'script_url': 'Not specified',
+                    'description': 'No match found in database',
+                    'match_type': 'none'
+                }
+                
+                # Update statistics
+                stats['categories']['Unknown'] = stats['categories'].get('Unknown', 0) + 1
+                stats['scripts']['Not specified'] = stats['scripts'].get('Not specified', 0) + 1
+                
+            classified_cookies.append(classified_cookie)
+        
+        # Update site data
+        site_data['cookies'] = classified_cookies
+        site_data['cookie_analysis'] = stats
+    
+    def close(self):
+        """Close resources"""
+        if self.crawler:
+            self.crawler.close()
+            self.crawler = None
 
+# Standalone execution
 if __name__ == "__main__":
-    data_directory = 'data/crawler_data/i_dont_care_about_cookies'
+    if len(sys.argv) > 1:
+        data_directory = sys.argv[1]
+    else:
+        # Default directory
+        data_directory = 'data/crawler_data/i_dont_care_about_cookies'
     
     # Validate directory exists
     if not os.path.exists(data_directory):
         tqdm.write(f"Error: Directory not found: {data_directory}")
         tqdm.write("Please ensure the data directory exists before running the script.")
         sys.exit(1)
-    
-    classify_site_cookies(data_directory)
+        
+    try:
+        # Print database stats
+        db = CookieDatabase()
+        stats = db.get_statistics()
+        tqdm.write(f"Cookie database contains {stats['total_cookies']} cookies")
+        
+        # Create classifier and process directory
+        classifier = CookieClassifier(db)
+        try:
+            classifier.classify_directory(data_directory, lookup_unknown=True)
+        finally:
+            # Ensure resources are closed
+            classifier.close()
+        
+        tqdm.write("\nClassification complete!")
+    except KeyboardInterrupt:
+        tqdm.write("\nClassification interrupted by user.")
+        sys.exit(0)
