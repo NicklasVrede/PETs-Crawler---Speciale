@@ -8,7 +8,7 @@ from utils.util import (construct_paths, load_config, get_profile_config,
 from tqdm import tqdm
 
 
-async def crawl_domain(profile, site_info, data_dir=None, max_pages=5, verbose=False):
+async def crawl_domain(profile, site_info, data_dir=None, max_pages=2, verbose=False):
     """
     Crawl a single domain with configurable verbosity
     
