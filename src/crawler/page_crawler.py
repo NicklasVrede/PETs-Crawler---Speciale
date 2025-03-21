@@ -31,7 +31,57 @@ class WebsiteCrawler:
             'banner': BannerMonitor(verbose=verbose)
         }
 
-    async def _populate_cache(self, page, urls):
+    async def clear_all_browser_data(self, context):
+        """Clear browser data between visits"""
+        if self.verbose:
+            tqdm.write("\nClearing browser data...")
+        try:
+            # Clear context-level data
+            if self.verbose:
+                tqdm.write("Clearing context-level data...")
+            await context.clear_cookies()
+            await asyncio.sleep(1)
+            await context.clear_permissions()
+            await asyncio.sleep(1)
+            
+            # Use page-level JavaScript to clear storage with error handling
+            page = context.pages[0] if context.pages else None
+            if page:
+                if self.verbose:
+                    tqdm.write("Clearing local and session storage...")
+                try:
+                    # Use a safer approach with try/catch inside the JS
+                    await page.evaluate("""() => {
+                        try {
+                            if (window.localStorage) {
+                                localStorage.clear();
+                                console.log('LocalStorage cleared');
+                            }
+                            if (window.sessionStorage) {
+                                sessionStorage.clear();
+                                console.log('SessionStorage cleared');
+                            }
+                            return true;
+                        } catch (e) {
+                            console.log('Storage clearing error (expected on blank pages):', e);
+                            return false;
+                        }
+                    }""")
+                    await asyncio.sleep(1)
+                except Exception as e:
+                    if self.verbose:
+                        tqdm.write(f"Note: Could not clear page storage: {e}")
+            
+            if self.verbose:
+                tqdm.write("✓ Browser data cleared")
+            
+        except Exception as e:
+            if self.verbose:
+                tqdm.write(f"Warning: Error during data clearing: {e}")
+        
+        await asyncio.sleep(1)  # Final wait before proceeding
+
+    async def populate_cache(self, page, urls):
         """Pre-populate browser cache with resources from the target site"""
         tqdm.write("\nPre-populating cache with site resources...")
         try:
