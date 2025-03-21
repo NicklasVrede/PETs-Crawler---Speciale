@@ -8,7 +8,7 @@ from utils.util import (construct_paths, load_config, get_profile_config,
 from tqdm import tqdm
 
 
-async def crawl_domain(profile, site_info, data_dir=None, max_pages=2, verbose=False):
+async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=2, verbose=False):
     """
     Crawl a single domain with configurable verbosity
     
@@ -49,7 +49,7 @@ async def crawl_domain(profile, site_info, data_dir=None, max_pages=2, verbose=F
         
         # Crawl site - pass verbose flag to control internal printing
         crawler = WebsiteCrawler(
-            max_pages=max_pages, 
+            subpages_nr=subpages_nr, 
             verbose=verbose,
             extension_name=profile
         )

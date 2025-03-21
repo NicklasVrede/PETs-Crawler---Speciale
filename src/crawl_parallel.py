@@ -5,7 +5,7 @@ from crawl import crawl_domain
 from utils.util import load_config, get_all_sites, construct_paths, create_temp_profile_copy
 from tqdm import tqdm
 
-async def crawl_with_profile(config, profile, sites, max_pages=2, verbose=False, overall_progress=None):
+async def crawl_with_profile(config, profile, sites, subpages_nr=2, verbose=False, overall_progress=None):
     """
     Crawl multiple sites with a single browser profile
     
@@ -50,7 +50,7 @@ async def crawl_with_profile(config, profile, sites, max_pages=2, verbose=False,
                     profile=profile,
                     site_info=site_info,
                     data_dir=temp_profile_dir,
-                    max_pages=max_pages,
+                    subpages_nr=subpages_nr,
                     verbose=verbose
                 )
                 
@@ -76,7 +76,7 @@ async def crawl_with_profile(config, profile, sites, max_pages=2, verbose=False,
             import shutil
             shutil.rmtree(temp_profile_dir, ignore_errors=True)
 
-async def crawl_sites_parallel(config, profiles, sites, max_concurrent=None, max_pages=2, verbose=False):
+async def crawl_sites_parallel(config, profiles, sites, max_concurrent=None, subpages_nr=2, verbose=False):
     """
     Crawl multiple sites with multiple browser profiles in parallel
     
@@ -110,7 +110,7 @@ async def crawl_sites_parallel(config, profiles, sites, max_concurrent=None, max
                     config=config,
                     profile=profile,
                     sites=sites,
-                    max_pages=max_pages,
+                    subpages_nr=subpages_nr,
                     verbose=verbose,
                     overall_progress=overall_pbar
                 )
@@ -146,8 +146,8 @@ if __name__ == "__main__":
         config=config,
         profiles=profiles,
         sites=sites,
-        max_concurrent=16,
-        max_pages=20,
+        max_concurrent=8,
+        subpages_nr=3,
         verbose=verbose
     ))
     

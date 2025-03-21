@@ -13,9 +13,9 @@ from playwright_stealth import Stealth
 
 
 class WebsiteCrawler:
-    def __init__(self, max_pages=20, visits=2, verbose=False, monitors=None, extension_name=None):
+    def __init__(self, subpages_nr=20, visits=2, verbose=False, monitors=None, extension_name=None):
         """Initialize the crawler with configuration parameters"""
-        self.max_pages = max_pages
+        self.subpages_nr = subpages_nr
         self.visits = visits
         self.verbose = verbose
         self.base_domain = None
@@ -150,7 +150,7 @@ class WebsiteCrawler:
         """Load pre-collected URLs from a specified directory"""
         if self.verbose:
             tqdm.write("\nLoading pre-collected URLs...")
-        urls = load_site_pages(domain, input_dir="data/site_pages", count=self.max_pages)
+        urls = load_site_pages(domain, input_dir="data/site_pages", count=self.subpages_nr)
         if not urls or len(urls) == 0:
             tqdm.write(f"ERROR: No pre-collected URLs found for {domain}")
             return None

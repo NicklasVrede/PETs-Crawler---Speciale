@@ -31,7 +31,6 @@ class FingerprintCollector:
                 'page_data': defaultdict(lambda: {
                     'api_counts': Counter(),
                     'categories': Counter(),
-                    'scripts': set()
                 }),
                 'category_counts': Counter()
             }
@@ -57,7 +56,6 @@ class FingerprintCollector:
         """Process fingerprinting API calls with aggregation"""
         category = call_data['category']
         api = call_data['api']
-        source = call_data['source']
         url = self._normalize_url(call_data['url'])
         visit = call_data.get('visit', self.current_visit)
         
@@ -67,7 +65,6 @@ class FingerprintCollector:
                 'page_data': defaultdict(lambda: {
                     'api_counts': Counter(),
                     'categories': Counter(),
-                    'scripts': set()
                 }),
                 'category_counts': Counter()
             }
@@ -81,18 +78,9 @@ class FingerprintCollector:
         # Increment category count for this page
         visit_data['page_data'][url]['categories'][category] += 1
         
-        # Store script source
-        visit_data['page_data'][url]['scripts'].add(source)
-        
         # Update global category counts for this visit
         visit_data['category_counts'][category] += 1
-        
-        # Update script patterns for fingerprinting detection (global)
-        if source not in self.script_patterns:
-            self.script_patterns[source] = set()
-        self.script_patterns[source].add(category)
 
-    
     def _get_results_for_visit(self, visit_number):
         """Get fingerprinting results for a specific visit"""
         # If this visit doesn't exist in our data, create an empty structure
@@ -102,7 +90,6 @@ class FingerprintCollector:
                 'page_data': defaultdict(lambda: {
                     'api_counts': Counter(),
                     'categories': Counter(),
-                    'scripts': set()
                 }),
                 'category_counts': Counter()
             }
@@ -111,31 +98,49 @@ class FingerprintCollector:
         page_data = visit_data['page_data']
         category_counts = visit_data['category_counts']
         
-        # Get detected techniques
-        detected_techniques = self._get_detected_techniques(page_data, category_counts)
+        # Aggregate API calls at the domain level
+        domain_api_counts = Counter()
+        domain_category_counts = Counter()
         
-        # Create page summaries
-        page_summaries = []
         for url, data in page_data.items():
-            page_summaries.append({
-                'url': url,
-                'total_calls': sum(data['api_counts'].values()),
-                'api_breakdown': dict(data['api_counts']),
-                'category_breakdown': dict(data['categories'])
-            })
+            domain = urlparse(url).netloc
+            domain_api_counts.update(data['api_counts'])
+            domain_category_counts.update(data['categories'])
         
         # Calculate total calls
-        total_calls = sum(sum(data['api_counts'].values()) for data in page_data.values())
+        total_calls = sum(domain_api_counts.values())
+        
+        # Create technique breakdown by aggregating categories
+        technique_breakdown = {
+            'canvas': domain_category_counts.get('canvas', 0),
+            'webgl': domain_category_counts.get('webgl', 0) + domain_category_counts.get('webgl2', 0),
+            'audio': domain_category_counts.get('audio', 0),
+            'hardware': domain_category_counts.get('hardware', 0) + domain_category_counts.get('sensor', 0),
+            'fonts': domain_category_counts.get('fonts', 0),
+            'navigator': domain_category_counts.get('navigator', 0),
+            'storage': domain_category_counts.get('storage', 0),
+            'screen': domain_category_counts.get('screen', 0),
+            'window': domain_category_counts.get('window', 0),
+            'date': domain_category_counts.get('date', 0),
+            'media': domain_category_counts.get('media', 0),
+            'dom': domain_category_counts.get('dom', 0),
+            'performance': domain_category_counts.get('performance', 0),
+            'speech': domain_category_counts.get('speech', 0),
+            'intl': domain_category_counts.get('intl', 0),
+            'webrtc': domain_category_counts.get('webrtc', 0),
+            'permission': domain_category_counts.get('permission', 0)
+        }
+        
+        # Remove techniques with zero counts
+        technique_breakdown = {k: v for k, v in technique_breakdown.items() if v > 0}
         
         return {
             'visit_number': visit_number,
-            'fingerprinting_detected': bool(detected_techniques) or total_calls > 0,
-            'techniques_detected': list(detected_techniques),
-            'page_summaries': page_summaries,
-            'summary': {
+            'technique_breakdown': technique_breakdown,
+            'domain_summary': {
                 'total_calls': total_calls,
-                'pages_analyzed': len(page_data),
-                'category_counts': dict(category_counts)
+                'api_breakdown': dict(domain_api_counts),
+                'category_breakdown': dict(domain_category_counts)
             }
         }
     
@@ -164,23 +169,19 @@ class FingerprintCollector:
             # Add to visit summaries
             visit_summaries.append({
                 'visit_number': visit_number,
-                'fingerprinting_detected': visit_result['fingerprinting_detected'],
-                'techniques_detected': visit_result['techniques_detected'],
-                'total_calls': visit_result['summary']['total_calls']
+                'total_calls': visit_result['domain_summary']['total_calls']
             })
             
             # Store page summaries for this visit
-            visit_page_summaries[visit_number] = visit_result['page_summaries']
+            visit_page_summaries[visit_number] = visit_result['domain_summary']
             
             # Update combined data
-            all_techniques.update(visit_result['techniques_detected'])
-            all_category_counts.update(visit_result['summary']['category_counts'])
-            total_calls += visit_result['summary']['total_calls']
-            pages_analyzed.update(data['url'] for data in visit_result['page_summaries'])
+            all_techniques.update(visit_result['technique_breakdown'].keys())
+            all_category_counts.update(visit_result['domain_summary']['api_breakdown'])
+            total_calls += visit_result['domain_summary']['total_calls']
         
         # Create final result
         result = {
-            'fingerprinting_detected': bool(all_techniques) or total_calls > 0,
             'techniques_detected': list(all_techniques),
             'visit_summaries': visit_summaries,
             'summary': {
@@ -193,66 +194,15 @@ class FingerprintCollector:
         }
         
         # Add per-visit page summaries
-        for visit_number, page_summaries in visit_page_summaries.items():
-            result['visit_page_data'][str(visit_number)] = page_summaries
-        
-        # Keep the overall page_summaries for backward compatibility
-        result['page_summaries'] = []
-        for summaries in visit_page_summaries.values():
-            result['page_summaries'].extend(summaries)
+        for visit_number, page_summary in visit_page_summaries.items():
+            result['visit_page_data'][str(visit_number)] = page_summary
         
         return result
-    
-    def _get_detected_techniques(self, page_data, category_counts):
-        """Helper method to get detected techniques from page data and category counts"""
-        detected_techniques = set()
-        
-        # Check page data first
-        for data in page_data.values():
-            category_breakdown = data['categories']
-            if category_breakdown.get('canvas', 0) > 0:
-                detected_techniques.add('canvas')
-            if category_breakdown.get('webgl', 0) > 0:
-                detected_techniques.add('webgl')
-            if category_breakdown.get('hardware', 0) > 0:
-                detected_techniques.add('hardware')
-            if category_breakdown.get('audio', 0) > 0:
-                detected_techniques.add('audio')
-            if category_breakdown.get('fonts', 0) > 0:
-                detected_techniques.add('fonts')
-        
-        # Check category counts as fallback
-        if category_counts.get('canvas', 0) > 0:
-            detected_techniques.add('canvas')
-        if category_counts.get('webgl', 0) > 0:
-            detected_techniques.add('webgl')  
-        if category_counts.get('hardware', 0) > 0:
-            detected_techniques.add('hardware')
-        if category_counts.get('audio', 0) > 0:
-            detected_techniques.add('audio')
-        if category_counts.get('fonts', 0) > 0:
-            detected_techniques.add('fonts')
-        
-        # Check for API usage as last fallback
-        if not detected_techniques:
-            for url, data in page_data.items():
-                api_breakdown = data.get('api_counts', {})
-                for api, count in api_breakdown.items():
-                    if api in {'getContext', 'toDataURL'}:
-                        detected_techniques.add('canvas')
-                    elif api == 'getParameter':
-                        detected_techniques.add('webgl')
-                    elif api in {'hardwareConcurrency', 'deviceMemory', 'platform'}:
-                        detected_techniques.add('hardware')
-        
-        return detected_techniques
 
     def get_fingerprinting_data(self):
-        """Get comprehensive fingerprinting results"""
+        """Get fingerprinting results per visit"""
+        # Return only the visits data
         return {
-            'summary': self._get_combined_results(),
-            'visits': {
-                visit: self._get_results_for_visit(visit) 
-                for visit in self.visits_data.keys()
-            }
+            visit: self._get_results_for_visit(visit) 
+            for visit in self.visits_data.keys()
         }
