@@ -143,22 +143,30 @@ console.error('Ghostery bridge ready');
             if base_url in self._cache:
                 return self._cache[base_url]
             
-            # Ensure process is running
-            self._ensure_process_running()
+            # Use direct npx command instead of the bridge process
+            result = subprocess.run(
+                ['npx', '@ghostery/trackerdb', base_url],
+                capture_output=True,
+                text=True,
+                check=False,
+                shell=True
+            )
             
-            # Send URL to the process
-            try:
-                self._process.stdin.write(f"{base_url}\n")
-                response = self._process.stdout.readline()
-                data = json.loads(response)
-            except Exception as e:
-                tqdm.write(f"Error communicating with Ghostery bridge: {e}")
-                self._start_db()  # Try to restart
-                data = {}
+            # Parse the JSON output
+            if result.stdout and '{' in result.stdout:
+                json_start = result.stdout.find('{')
+                json_end = result.stdout.rfind('}') + 1
+                json_str = result.stdout[json_start:json_end]
+                
+                data = json.loads(json_str)
+                
+                # Cache the result
+                self._cache[base_url] = data
+                return data
             
-            # Cache the result
-            self._cache[base_url] = data
-            return data
+            # Cache empty results too to avoid re-checking
+            self._cache[base_url] = {}
+            return {}
             
         except Exception as e:
             tqdm.write(f"Error analyzing {url}: {e}")

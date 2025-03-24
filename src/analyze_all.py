@@ -1,6 +1,6 @@
 import os
 from tqdm import tqdm
-from identify_sources import identify_site_sources
+from identify_sources import SourceIdentifier
 from cookie_classifier import CookieClassifier
 from add_domain_categories import add_categories_to_files
 
@@ -17,7 +17,8 @@ def process_all_crawler_data():
         
     print(f"Found {len(folders)} folders to process")
     
-    # Create cookie classifier once for all folders
+    # Create instances of analyzers
+    source_identifier = SourceIdentifier()
     cookie_classifier = CookieClassifier()
     
     try:
@@ -28,7 +29,7 @@ def process_all_crawler_data():
             
             # First run identify_sources
             print("\nIdentifying sources...")
-            identify_site_sources(folder_path)
+            source_identifier.identify_site_sources(folder_path)
             
             # Then run cookie_classifier
             print("\nClassifying cookies...")
