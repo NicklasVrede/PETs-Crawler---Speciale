@@ -78,20 +78,6 @@ class DomainFilterAnalyzer:
         
         return None, None
 
-    def resolve_cname(self, domain):
-        """Resolve the CNAME for a given domain, using a cache to avoid repeated queries."""
-        if domain in self.cache:
-            return self.cache[domain]
-        
-        try:
-            answers = dns.resolver.resolve(domain, 'CNAME')
-            for rdata in answers:
-                cname = str(rdata.target).rstrip('.')
-                self.cache[domain] = cname
-                return cname
-        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.exception.Timeout, Exception):
-            self.cache[domain] = None
-            return None
 
     def __del__(self):
         """Cleanup the cache when the object is destroyed."""

@@ -14,7 +14,6 @@ from src.managers.ghostery_manager import GhosteryManager
 from src.analyzers.check_filters import DomainFilterAnalyzer
 from src.utils.domain_parser import get_base_domain, are_domains_related
 from src.utils.public_suffix_updater import update_public_suffix_list
-import functools
 import pickle
 import atexit
 from cachetools import TTLCache, cached
