@@ -37,14 +37,14 @@ class WebsiteCrawler:
         try:
             # Visit homepage first to cache common resources
             domain = self.base_domain
-            await page.goto(f"https://{domain}/", timeout=30000)
+            await page.goto(f"https://{domain}/", timeout=60000)
             await page.wait_for_load_state('domcontentloaded')
             await page.wait_for_timeout(2000)
             
             # Quick visit to each URL to populate cache
             for url in urls[:5]:  # Visit first 5 URLs to build cache
                 try:
-                    await page.goto(url, timeout=20000)
+                    await page.goto(url, timeout=40000)
                     await page.wait_for_load_state('domcontentloaded')
                 except Exception as e:
                     tqdm.write(f"Error pre-caching {url}: {e}")
@@ -251,18 +251,29 @@ class WebsiteCrawler:
         return {
             'visit_number': visit,
             'network': self.monitors['network'].get_results()['network_data'],
-            'statistics': self.monitors['network'].get_statistics(),
-            'storage': self.monitors['storage'].get_results(),
-            'fingerprinting': self.monitors['fingerprint']._get_results_for_visit(visit),
             'visited_urls': visited_in_this_cycle
         }
 
     async def _construct_final_data(self, domain, visit_results):
         """Construct the final data structure and save it using CrawlDataManager"""
+        
+        # Create a new network_data structure with visit numbers as keys
+        network_data = {}
+        
+        for visit in visit_results:
+            visit_number = visit['visit_number']
+            
+            # Store network requests and visited URLs by visit number
+            network_data[str(visit_number)] = {
+                'requests': visit['network']['requests'],
+                'domains_contacted': visit['network']['domains_contacted'],
+                'visited_urls': visit['visited_urls']
+            }
+            
         final_data = {
             'domain': domain,
             'timestamp': datetime.now().isoformat(),
-            'visits': visit_results,
+            'network_data': network_data,
             'statistics': self.monitors['network'].get_statistics(),
             'storage': self.monitors['storage'].get_results(),
             'fingerprinting': self.monitors['fingerprint'].get_fingerprinting_data(),

@@ -1,5 +1,5 @@
 import asyncio
-from playwright.async_api import async_playwright
+from rebrowser_playwright.async_api import async_playwright
 from playwright_stealth import Stealth
 import time
 
@@ -20,7 +20,7 @@ async def main():
         
         # Navigate to the bot detection test site
         print("Navigating to bot detection test site...")
-        await page.goto("https://bot.sannysoft.com/")
+        await page.goto("https://bot-detector.rebrowser.net/")
         
         # Wait for the page to load completely
         await page.wait_for_load_state("networkidle")

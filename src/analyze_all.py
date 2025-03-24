@@ -1,7 +1,7 @@
 import os
 from tqdm import tqdm
 from identify_sources import identify_site_sources
-from cookie_classifier import classify_site_cookies
+from cookie_classifier import CookieClassifier
 from add_domain_categories import add_categories_to_files
 
 def process_all_crawler_data():
@@ -17,24 +17,31 @@ def process_all_crawler_data():
         
     print(f"Found {len(folders)} folders to process")
     
-    # Process each folder
-    for folder in folders:
-        folder_path = os.path.join(base_dir, folder)
-        print(f"\nProcessing folder: {folder}")
-        
-        # First run identify_sources
-        print("\nIdentifying sources...")
-        identify_site_sources(folder_path)
-        
-        # Then run cookie_classifier
-        print("\nClassifying cookies...")
-        classify_site_cookies(folder_path)
-        
-        # Add domain categories
-        print("\nAdding domain categories...")
-        add_categories_to_files(folder_path)
-        
-        print(f"✓ Completed processing {folder}")
+    # Create cookie classifier once for all folders
+    cookie_classifier = CookieClassifier()
+    
+    try:
+        # Process each folder
+        for folder in folders:
+            folder_path = os.path.join(base_dir, folder)
+            print(f"\nProcessing folder: {folder}")
+            
+            # First run identify_sources
+            print("\nIdentifying sources...")
+            identify_site_sources(folder_path)
+            
+            # Then run cookie_classifier
+            print("\nClassifying cookies...")
+            cookie_classifier.classify_directory(folder_path)
+            
+            # Add domain categories
+            print("\nAdding domain categories...")
+            add_categories_to_files(folder_path)
+            
+            print(f"✓ Completed processing {folder}")
+    finally:
+        # Make sure to close the classifier to free resources
+        cookie_classifier.close()
 
 if __name__ == "__main__":
     process_all_crawler_data() 

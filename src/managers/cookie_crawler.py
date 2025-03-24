@@ -118,7 +118,7 @@ class CookieCrawler:
                     self.database.save()
             except Exception as e:
                 tqdm.write(f"Error processing {name}: {str(e)}")
-                results[name] = self.database.create_unknown_cookie(name)
+                results[name] = self.database.create_unknown(name)
         
         # Save once at the end if we processed multiple cookies
         if len(cookie_names) > 1:
@@ -189,7 +189,7 @@ class CookieCrawler:
                     simplified_name = new_simplified_name
                     
                     # Try lookup with this simplified name
-                    result = self._try_simplified_lookup(name, simplified_name)
+                    result = self._simplified_lookup(name, simplified_name)
                     if result:
                         return result
                 else:
@@ -197,13 +197,13 @@ class CookieCrawler:
                     break
             
             # If all lookups failed, create an unknown cookie entry
-            return self.database.create_unknown_cookie(name)
+            return self.database.create_unknown(name)
             
         except Exception as e:
             tqdm.write(f"Error looking up cookie {name}: {str(e)}")
-            return self.database.create_unknown_cookie(name)
+            return self.database.create_unknown(name)
             
-    def _try_simplified_lookup(self, original_name: str, simplified_name: str) -> Optional[Dict[str, Any]]:
+    def _simplified_lookup(self, original_name: str, simplified_name: str) -> Optional[Dict[str, Any]]:
         """
         Try lookup using a simplified cookie name.
         
@@ -353,46 +353,6 @@ class CookieCrawler:
             return "Not specified"
         except:
             return "Not specified"
-    
-    @staticmethod
-    def extract_base_name(name: str) -> str:
-        """
-        Extract the base name from a cookie using pattern recognition.
-        
-        Args:
-            name: Cookie name
-            
-        Returns:
-            Base name or empty string if no pattern recognized
-        """
-        # Pattern 1: prefix followed by separator and numbers
-        # Examples: xyz_123456, abc.12345, etc.
-        match = re.match(r'^([a-zA-Z_\-]+)[._\-][\d]+', name)
-        if match:
-            return match.group(1)
-        
-        # Pattern 2: parts with separators where the second part has digits
-        # Examples: abc_123_xyz, abc_xyz_123
-        if '_' in name:
-            parts = name.split('_')
-            # If second part has digits but first doesn't, return first part
-            if len(parts) > 1 and any(c.isdigit() for c in parts[1]) and not any(c.isdigit() for c in parts[0]):
-                return parts[0]
-            
-            # If third part has digits but first and second don't, return first_second
-            if (len(parts) > 2 and any(c.isdigit() for c in parts[2]) 
-                    and not any(c.isdigit() for c in parts[0]) 
-                    and not any(c.isdigit() for c in parts[1])):
-                return f"{parts[0]}_{parts[1]}"
-        
-        # Pattern 3: letters followed by digits (no separator)
-        # Example: abc123
-        match = re.match(r'^([a-zA-Z_\-]+)[\d]+', name)
-        if match:
-            return match.group(1)
-        
-        # No recognizable pattern
-        return ""
 
 
 # Example usage

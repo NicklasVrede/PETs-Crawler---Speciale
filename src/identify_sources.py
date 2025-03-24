@@ -10,7 +10,7 @@ from tqdm import tqdm
 from urllib.parse import urlparse
 from collections import Counter
 sys.path.append('.')
-from src.managers.ghostery_manager import analyze_request
+from src.managers.ghostery_manager import GhosteryManager
 from src.analyzers.check_filters import DomainFilterAnalyzer
 from src.utils.domain_parser import get_base_domain, are_domains_related
 from src.utils.public_suffix_updater import update_public_suffix_list
@@ -189,7 +189,8 @@ def analyze_subdomain(domain_analyzer, main_site, base_url, request_count):
         'domain': base_url,
         'request_count': request_count,
         'is_first_party_domain': None,
-        'tracking_type': None,
+        'filter_match': False,  # Boolean flag for direct filter match
+        'direct_cname': False,  # Boolean flag for CNAME-based tracking
         'tracking_evidence': [],
         'categories': [],
         'organizations': [],
@@ -219,7 +220,7 @@ def analyze_subdomain(domain_analyzer, main_site, base_url, request_count):
     # Check if URL matches filter rules
     filter_name, rule = domain_analyzer.is_domain_in_filters(base_url)
     if filter_name:
-        analysis_result['tracking_type'] = 'filter_match'
+        analysis_result['filter_match'] = True
         analysis_result['is_first_party_domain'] = False  # Override for known trackers
         analysis_result['tracking_evidence'].append(f"Domain found in {filter_name}: {rule}")
     
@@ -231,7 +232,7 @@ def analyze_subdomain(domain_analyzer, main_site, base_url, request_count):
         for cname in cname_chain:
             filter_name, rule = domain_analyzer.is_domain_in_filters(cname)
             if filter_name:
-                analysis_result['tracking_type'] = 'cname_tracking'
+                analysis_result['direct_cname'] = True
                 analysis_result['is_first_party_domain'] = False
                 analysis_result['tracking_evidence'].append(f"CNAME chain member {cname} found in {filter_name}: {rule}")
     
@@ -317,10 +318,10 @@ def identify_site_sources(data_dir):
             # Get main site domain from the site_data
             main_site = site_data.get('domain', filename.replace('.json', ''))
             
-            # Extract all requests based on the actual structure
+            # Extract all requests based on the new structure
             all_requests = []
-            if 'network_data' in site_data and 'requests' in site_data['network_data']:
-                all_requests = site_data['network_data']['requests']
+            if 'network_data' in site_data and '0' in site_data['network_data'] and 'requests' in site_data['network_data']['0']:
+                all_requests = site_data['network_data']['0']['requests']
             
             # Get unique domains
             unique_domains = set()
@@ -370,7 +371,7 @@ def identify_site_sources(data_dir):
             analyzed_domains = {}
             with tqdm(total=len(unique_domains), desc=f"Analyzing domains in {filename}", leave=False) as pbar:
                 for domain in unique_domains:
-                    request_count = sum(1 for req in all_requests if get_base_url(req['url']) == domain)
+                    request_count = sum(1 for req in all_requests if 'url' in req and get_base_url(req['url']) == domain)
                     analysis = analyze_subdomain(
                         domain_analyzer,
                         main_site,
@@ -585,7 +586,8 @@ def get_tracker_categorization(domain):
     Returns:
         dict: Dictionary containing categories and organizations found, or None if not identified
     """
-    result = analyze_request(f"https://{domain}")
+    ghostery = GhosteryManager()  # Gets singleton instance
+    result = ghostery.analyze_request(f"https://{domain}")
     
     if result.get('matches'):
         categories = set()
@@ -717,7 +719,7 @@ if __name__ == "__main__":
     # Load the DNS cache at startup
     load_dns_cache()
     
-    data_directory = 'data/crawler_data/i_dont_care_about_cookies'
+    data_directory = 'data/crawler_data/test'
     
     # Validate directory exists
     if not os.path.exists(data_directory):

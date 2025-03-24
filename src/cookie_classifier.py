@@ -6,18 +6,9 @@ from typing import Dict, List, Any, Optional, Set
 from tqdm import tqdm
 from collections import Counter
 from datetime import datetime
+from managers.cookie_database import CookieDatabase
+from managers.cookie_crawler import CookieCrawler
 
-# Fix imports with relative paths
-try:
-    from managers.cookie_database import CookieDatabase
-    from managers.cookie_crawler import CookieCrawler
-except ImportError:
-    # Try alternative import paths
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    parent_dir = os.path.dirname(current_dir)
-    sys.path.append(parent_dir)
-    from src.managers.cookie_database import CookieDatabase
-    from src.managers.cookie_crawler import CookieCrawler
 
 class CookieClassifier:
     """
@@ -38,7 +29,7 @@ class CookieClassifier:
         self.crawler = crawler
         self.unknown_cookies = set()  # Track unknown cookies for batch lookup
     
-    def init_crawler_if_needed(self):
+    def _init_crawler(self):
         """Initialize the crawler if it doesn't exist already"""
         if self.crawler is None:
             tqdm.write("Initializing browser for cookie lookups...")
@@ -66,13 +57,13 @@ class CookieClassifier:
             tqdm.write(f"\nProcessing site: {site_name}")
                 
             # Extract and track unknown cookies
-            unknown_cookies = self.extract_unknown_cookies(site_data)
+            unknown_cookies = self._extract_unknown_cookies(site_data)
             if unknown_cookies:
                 self.unknown_cookies.update(unknown_cookies)
                 tqdm.write(f"Found {len(unknown_cookies)} unknown cookies in {site_name}")
                 
             # Classify cookies using current database
-            self.classify_site(site_data)
+            self._classify_site(site_data)
             
             # Save result if requested
             if save_result:
@@ -86,7 +77,7 @@ class CookieClassifier:
             tqdm.write(traceback.format_exc())
             return {}
     
-    def extract_unknown_cookies(self, site_data: Dict[str, Any]) -> Set[str]:
+    def _extract_unknown_cookies(self, site_data: Dict[str, Any]) -> Set[str]:
         """Extract cookies not in the database"""
         unknown_cookies = set()
         
@@ -140,7 +131,7 @@ class CookieClassifier:
             tqdm.write(f"\nFound {len(self.unknown_cookies)} unique unknown cookies across all sites")
             
             # Initialize crawler if needed
-            self.init_crawler_if_needed()
+            self._init_crawler()
             
             # Look up unknown cookies
             tqdm.write("Looking up unknown cookies...")
@@ -196,7 +187,7 @@ class CookieClassifier:
                     percentage = (count/total*100)
                     tqdm.write(f"  - {script}: {count} ({percentage:.1f}%)")
     
-    def classify_site(self, site_data: Dict[str, Any]) -> None:
+    def _classify_site(self, site_data: Dict[str, Any]) -> None:
         """
         Classify cookies in a website data dictionary.
         

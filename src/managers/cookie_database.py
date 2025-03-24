@@ -14,9 +14,9 @@ class CookieDatabase:
         """Initialize the cookie database."""
         self.db_file = db_file
         self.cookies = {}
-        self.load()
+        self._load()
     
-    def load(self) -> None:
+    def _load(self) -> None:
         """Load the cookie database from file."""
         try:
             if os.path.exists(self.db_file):
@@ -61,17 +61,8 @@ class CookieDatabase:
             cookie_data: Cookie information dictionary
         """
         self.cookies[name] = cookie_data
-        
-    def add_batch(self, cookies: Dict[str, Dict[str, Any]]) -> None:
-        """
-        Add multiple cookies to the database.
-        
-        Args:
-            cookies: Dictionary mapping cookie names to their data
-        """
-        self.cookies.update(cookies)
     
-    def create_unknown_cookie(self, name: str) -> Dict[str, Any]:
+    def create_unknown(self, name: str) -> Dict[str, Any]:
         """
         Create a record for an unknown cookie.
         
@@ -92,32 +83,6 @@ class CookieDatabase:
             'found_at': time.strftime('%Y-%m-%d %H:%M:%S'),
             'match_type': 'none'
         }
-    
-    def get_cookies_by_category(self, category: str) -> List[Dict[str, Any]]:
-        """
-        Get all cookies of a specific category.
-        
-        Args:
-            category: Category to filter by
-            
-        Returns:
-            List of cookies in the category
-        """
-        return [cookie for cookie in self.cookies.values() 
-                if cookie.get('category', '').lower() == category.lower()]
-    
-    def get_cookies_by_script(self, script: str) -> List[Dict[str, Any]]:
-        """
-        Get all cookies associated with a specific script.
-        
-        Args:
-            script: Script to filter by
-            
-        Returns:
-            List of cookies from the script
-        """
-        return [cookie for cookie in self.cookies.values() 
-                if cookie.get('script', '').lower() == script.lower()]
     
     def get_statistics(self) -> Dict[str, Any]:
         """
@@ -157,20 +122,7 @@ class CookieDatabase:
             True if cookie exists, False otherwise
         """
         return name in self.cookies
-    
-    def is_unknown(self, name: str) -> bool:
-        """
-        Check if a cookie exists but is classified as unknown.
-        
-        Args:
-            name: Cookie name
-            
-        Returns:
-            True if cookie exists and is unknown, False otherwise
-        """
-        if not self.contains(name):
-            return False
-        return self.cookies[name].get('category', '').lower() == 'unknown'
+
 
 # Example usage
 if __name__ == "__main__":
