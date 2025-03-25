@@ -1,9 +1,9 @@
 import unittest
-from check_filters import DomainFilterAnalyzer
+from check_filters import FilterManager
 
 class TestDomainFilterAnalyzer(unittest.TestCase):
     def setUp(self):
-        self.analyzer = DomainFilterAnalyzer()
+        self.analyzer = FilterManager()
 
     def test_direct_tracker_matching(self):
         """Test that domains directly in filter lists are correctly identified"""

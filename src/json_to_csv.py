@@ -381,8 +381,8 @@ def convert_to_csv(json_dir, output_csv):
 
 if __name__ == "__main__":
     # Use the specific directory as requested
-    json_dir = "data/crawler_data/i_dont_care_about_cookies"
-    output_csv = "data/csv/i_dont_care_about_cookies_metrics.csv"
+    json_dir = "data/crawler_data/test"
+    output_csv = "data/csv/main_data.csv"
     
     # Ensure output directory exists
     os.makedirs(os.path.dirname(output_csv), exist_ok=True)

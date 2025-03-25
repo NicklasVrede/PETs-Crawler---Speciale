@@ -26,16 +26,17 @@ class DNSResolver:
         self.cname_cache_file = cname_cache_file
         
         # Load both caches at initialization
-        self.load_a_record_cache()
-        self.load_cname_chain_cache()
+        self._load_a_record_cache()
+        self._load_cname_chain_cache()
         
         # Register cleanup on exit
         atexit.register(self.save_caches)
         
         self.a_record_lookup_count = 0
+        self.cname_cache_additions = 0  # Counter for CNAME cache additions
     
-    def load_a_record_cache(self):
-        """Load A record cache from file if it exists"""
+    def _load_a_record_cache(self):
+        """Load A record cache from file if it exists (private method)"""
         try:
             if os.path.exists(self.a_record_cache_file):
                 with open(self.a_record_cache_file, 'rb') as f:
@@ -49,8 +50,8 @@ class DNSResolver:
         except Exception as e:
             tqdm.write(f"Error loading A record cache: {e}")
     
-    def load_cname_chain_cache(self):
-        """Load CNAME chain cache from file if it exists"""
+    def _load_cname_chain_cache(self):
+        """Load CNAME chain cache from file if it exists (private method)"""
         try:
             if os.path.exists(self.cname_cache_file):
                 with open(self.cname_cache_file, 'rb') as f:
@@ -64,8 +65,8 @@ class DNSResolver:
         except Exception as e:
             tqdm.write(f"Error loading CNAME chain cache: {e}")
     
-    def resolve_cname(self, domain):
-        """Get the CNAME for a domain if it exists."""
+    def _resolve_cname(self, domain):
+        """Get the CNAME for a domain if it exists (private method)."""
         try:
             #tqdm.write(f"Performing CNAME lookup for: {domain}")
             answers = dns.resolver.resolve(domain, 'CNAME')
@@ -114,7 +115,7 @@ class DNSResolver:
         seen = set()  # Prevent infinite loops
         
         while True:
-            cname = self.resolve_cname(current)
+            cname = self._resolve_cname(current)
             if not cname or cname in seen:
                 break
             chain.append(cname)
@@ -124,6 +125,13 @@ class DNSResolver:
         # Store in cache
         result = tuple(chain)  # Convert to tuple for immutability
         self.cname_chain_cache[cache_key] = result
+        
+        # Increment the counter and save if needed
+        self.cname_cache_additions += 1
+        if self.cname_cache_additions >= 100:
+            self._save_cname_chain_cache()
+            self.cname_cache_additions = 0  # Reset counter
+            tqdm.write(f"CNAME chain cache automatically saved after 100 additions")
         
         #tqdm.write(f"Found CNAME chain for {domain}: {result}")
         
@@ -181,8 +189,8 @@ class DNSResolver:
             self.a_record_cache[domain] = set()
             return set()
 
-    def save_a_record_cache(self):
-        """Save A record cache to file"""
+    def _save_a_record_cache(self):
+        """Save A record cache to file (private method)"""
         try:
             # Ensure directory exists
             os.makedirs(os.path.dirname(self.a_record_cache_file), exist_ok=True)
@@ -197,8 +205,8 @@ class DNSResolver:
         except Exception as e:
             tqdm.write(f"Error saving A record cache: {e}")
 
-    def save_cname_chain_cache(self):
-        """Save CNAME chain cache to file"""
+    def _save_cname_chain_cache(self):
+        """Save CNAME chain cache to file (private method)"""
         try:
             # Ensure directory exists
             os.makedirs(os.path.dirname(self.cname_cache_file), exist_ok=True)
@@ -214,20 +222,7 @@ class DNSResolver:
             tqdm.write(f"Error saving CNAME chain cache: {e}")
 
     def save_caches(self):
-        """Save all caches to disk"""
-        self.save_a_record_cache()
-        self.save_cname_chain_cache()
+        """Save all caches to disk (public method that can be called manually)"""
+        self._save_a_record_cache()
+        self._save_cname_chain_cache()
         #tqdm.write(f"DNS resolver: performed {self.a_record_lookup_count} A record lookups this session")
-
-
-# Create a single instance to use throughout the application
-dns_resolver = DNSResolver()
-
-# Convenience functions that use the global instance
-def get_cname_chain(domain, lookup_ips=False):
-    """Get the CNAME chain using the global DNS resolver."""
-    return dns_resolver.get_cname_chain(domain, lookup_ips)
-
-def get_ip_addresses(domain):
-    """Get IP addresses using the global DNS resolver."""
-    return dns_resolver.get_ip_addresses(domain)

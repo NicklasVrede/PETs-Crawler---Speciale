@@ -1,5 +1,5 @@
 # Import necessary functions from identify_sources.py
-from src.identify_sources import get_tracker_categorization, DomainFilterAnalyzer
+from src.identify_sources import get_tracker_categorization, FilterManager
 from urllib.parse import urlparse
 
 # Create test function
@@ -16,7 +16,7 @@ def test_domain(domain):
         print("Domain NOT found in TrackerDB")
     
     # 2. Check if domain is in filter lists
-    domain_analyzer = DomainFilterAnalyzer()
+    domain_analyzer = FilterManager()
     filter_name, rule = domain_analyzer.is_domain_in_filters("https://" + domain)
     if filter_name:
         print(f"Domain found in filter list: {filter_name}")

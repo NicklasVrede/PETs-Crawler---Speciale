@@ -10,39 +10,43 @@ from urllib.parse import urlparse
 from collections import Counter
 sys.path.append('.')
 from src.managers.ghostery_manager import GhosteryManager
-from src.analyzers.check_filters import DomainFilterAnalyzer
+from src.analyzers.check_filters import FilterManager
 from src.utils.domain_parser import get_base_domain, are_domains_related
 from src.utils.public_suffix_updater import update_public_suffix_list
-from src.managers.dns_resolver import dns_resolver
+from src.managers.dns_resolver import DNSResolver
 
 class SourceIdentifier:
     def __init__(self):
         """Initialize the SourceIdentifier with all required dependencies."""
-        self.domain_analyzer = DomainFilterAnalyzer()
-        self.ghostery = GhosteryManager()  # Gets singleton instance
+        self.filter_manager = FilterManager()
+        self.ghostery = GhosteryManager()
+        self.dns_resolver = DNSResolver()
         
-    def load_json(self, file_path):
+    def _load_json(self, file_path):
+        """Load JSON data from file (private method)."""
         with open(file_path, 'r', encoding='utf-8') as f:
             return json.load(f)
 
-    def save_json(self, data, file_path):
+    def _save_json(self, data, file_path):
+        """Save data to JSON file (private method)."""
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, default=str)
 
-    def get_base_url(self, url: str) -> str:
+    def _get_base_url(self, url: str) -> str:
+        """Extract the base URL from a full URL (private method)."""
         parsed = urlparse(url)
         return f"{parsed.scheme}://{parsed.netloc}"
 
-    def check_tracking_cname(self, cname: str, tracking_list: list) -> bool:
-        """Check if the CNAME resolution matches a known tracking domain"""
+    def _check_tracking_cname(self, cname: str, tracking_list: list) -> bool:
+        """Check if the CNAME resolution matches a known tracking domain (private method)."""
         if cname:
             for tracker in tracking_list:
                 if tracker in cname:
                     return True
         return False
 
-    def analyze_subdomain(self, main_site, base_url, request_count):
-        """Analyze a single subdomain."""
+    def _analyze_subdomain(self, main_site, base_url, request_count):
+        """Analyze a single subdomain (private method)."""
         analysis_result = {
             'domain': base_url,
             'request_count': request_count,
@@ -63,39 +67,39 @@ class SourceIdentifier:
         
         # Use are_domains_related to check first-party status
         try:
-            if not self.domain_analyzer.public_suffixes:
-                self.domain_analyzer.public_suffixes = update_public_suffix_list()
+            if not self.filter_manager.public_suffixes:
+                self.filter_manager.public_suffixes = update_public_suffix_list()
             
             is_first_party = are_domains_related(
                 main_domain, 
                 parsed_url, 
-                self.domain_analyzer.public_suffixes
+                self.filter_manager.public_suffixes
             )
             analysis_result['is_first_party_domain'] = is_first_party
         except Exception as e:
             tqdm.write(f"Error checking domain relationship: {e}")
         
         # Check if URL matches filter rules
-        filter_name, rule = self.domain_analyzer.is_domain_in_filters(base_url)
+        filter_name, rule = self.filter_manager.is_domain_in_filters(base_url)
         if filter_name:
             analysis_result['filter_match'] = True
             analysis_result['is_first_party_domain'] = False  # Override for known trackers
             analysis_result['tracking_evidence'].append(f"Domain found in {filter_name}: {rule}")
         
         # Check CNAME chain - Using dns_resolver
-        cname_chain = dns_resolver.get_cname_chain(parsed_url)
+        cname_chain = self.dns_resolver.get_cname_chain(parsed_url)
         if cname_chain:
             analysis_result['cname_chain'] = cname_chain
             # Check each CNAME in chain against filters
             for cname in cname_chain:
-                filter_name, rule = self.domain_analyzer.is_domain_in_filters(cname)
+                filter_name, rule = self.filter_manager.is_domain_in_filters(cname)
                 if filter_name:
                     analysis_result['direct_cname'] = True
                     analysis_result['is_first_party_domain'] = False
                     analysis_result['tracking_evidence'].append(f"CNAME chain member {cname} found in {filter_name}: {rule}")
         
         # Always check Ghostery DB for additional info, regardless of filter matches
-        tracker_info = self.get_tracker_categorization(parsed_url)
+        tracker_info = self._get_tracker_categorization(parsed_url)
         if tracker_info:
             analysis_result['categories'].extend(tracker_info['categories'])
             analysis_result['organizations'].extend(tracker_info['organizations'])
@@ -108,7 +112,7 @@ class SourceIdentifier:
         # Also check CNAME chain members for additional categorization
         if cname_chain:
             for cname in cname_chain:
-                cname_info = self.get_tracker_categorization(cname)
+                cname_info = self._get_tracker_categorization(cname)
                 if cname_info:
                     analysis_result['categories'].extend(cname_info['categories'])
                     analysis_result['organizations'].extend(cname_info['organizations'])
@@ -119,10 +123,10 @@ class SourceIdentifier:
         
         return analysis_result
 
-    def initialize_site_analysis(self, file_path):
-        """Initialize analysis for a site by loading data and counting requests."""
+    def _initialize_site_analysis(self, file_path):
+        """Initialize analysis for a site by loading data and counting requests (private method)."""
         # Load existing data
-        site_data = self.load_json(file_path)
+        site_data = self._load_json(file_path)
         
         # Initialize analysis stats
         source_analysis = {
@@ -137,7 +141,7 @@ class SourceIdentifier:
         subdomain_requests = Counter()
         for page_data in site_data['pages'].values():
             for request in page_data.get('requests', []):
-                base_url = self.get_base_url(request['url'])
+                base_url = self._get_base_url(request['url'])
                 subdomain_requests[base_url] += 1
         
         # Set total analyzed to number of unique subdomains
@@ -145,8 +149,8 @@ class SourceIdentifier:
                 
         return site_data, source_analysis, subdomain_requests
 
-    def finalize_site_analysis(self, site_data, source_analysis, file_path):
-        """Finalize analysis by sorting results, saving data, and printing summary."""
+    def _finalize_site_analysis(self, site_data, source_analysis, file_path):
+        """Finalize analysis by sorting results, saving data, and printing summary (private method)."""
         # Sort identified sources by request count (most frequent first)
         source_analysis['identified_sources'].sort(key=lambda x: x['request_count'], reverse=True)
         source_analysis['filter_matches'].sort(key=lambda x: x['request_count'], reverse=True)
@@ -156,13 +160,13 @@ class SourceIdentifier:
         site_data['last_analyzed'] = datetime.now()
         
         # Save updated data
-        self.save_json(site_data, file_path)
+        self._save_json(site_data, file_path)
         
         # Print analysis summary
-        self.print_analysis_summary(site_data, source_analysis)
+        self._print_analysis_summary(site_data, source_analysis)
 
     def identify_site_sources(self, data_dir):
-        """Identify the sources/origins of URLs in site data"""
+        """Identify the sources/origins of URLs in site data (public method)."""
         json_files = [f for f in os.listdir(data_dir) if f.endswith('.json')]
         
         for filename in tqdm(json_files, desc="Analyzing sites", unit="site"):
@@ -170,7 +174,7 @@ class SourceIdentifier:
             
             try:
                 # Load site data
-                site_data = self.load_json(file_path)
+                site_data = self._load_json(file_path)
                 
                 # Get main site domain from the site_data
                 main_site = site_data.get('domain', filename.replace('.json', ''))
@@ -184,7 +188,7 @@ class SourceIdentifier:
                 unique_domains = set()
                 for request in all_requests:
                     if 'url' in request:
-                        unique_domains.add(self.get_base_url(request['url']))
+                        unique_domains.add(self._get_base_url(request['url']))
                 
                 # Skip if no domains found
                 if not unique_domains:
@@ -228,8 +232,8 @@ class SourceIdentifier:
                 analyzed_domains = {}
                 with tqdm(total=len(unique_domains), desc=f"Analyzing domains in {filename}", leave=False) as pbar:
                     for domain in unique_domains:
-                        request_count = sum(1 for req in all_requests if 'url' in req and self.get_base_url(req['url']) == domain)
-                        analysis = self.analyze_subdomain(
+                        request_count = sum(1 for req in all_requests if 'url' in req and self._get_base_url(req['url']) == domain)
+                        analysis = self._analyze_subdomain(
                             main_site,
                             domain,
                             request_count
@@ -252,7 +256,7 @@ class SourceIdentifier:
                             stats['cname_cloaking']['total'] += 1
                             # Record which trackers use cloaking (from CNAME chain)
                             for cname in analysis['cname_chain']:
-                                tracker_info = self.get_tracker_categorization(cname)
+                                tracker_info = self._get_tracker_categorization(cname)
                                 if tracker_info:
                                     for org in tracker_info['organizations']:
                                         stats['cname_cloaking']['trackers_using_cloaking'][org] += 1
@@ -311,7 +315,7 @@ class SourceIdentifier:
                     'domains': list(analyzed_domains.values()),
                     'statistics': stats
                 }
-                self.save_json(site_data, file_path)
+                self._save_json(site_data, file_path)
                 
                 # Print summary statistics
                 tqdm.write(f"\nStatistics for {main_site}:")
@@ -377,8 +381,8 @@ class SourceIdentifier:
                 import traceback
                 tqdm.write(traceback.format_exc())  # Print the full error trace
 
-    def print_analysis_summary(self, site_data, source_analysis):
-        """Print a summary of the source analysis results."""
+    def _print_analysis_summary(self, site_data, source_analysis):
+        """Print a summary of the source analysis results (private method)."""
         tqdm.write(f"\nResults for {site_data.get('domain', 'unknown domain')}:")
         tqdm.write(f"Unique domains analyzed: {source_analysis['total_analyzed']}")
         tqdm.write(f"Identified sources: {len([s for s in source_analysis['identified_sources'] if s['category'] != 'unidentified'])}")
@@ -403,8 +407,8 @@ class SourceIdentifier:
                 cname_info = f" -> {match['cname_resolution']}" if match['is_cname_cloaked'] else ""
                 tqdm.write(f"  - {match['url']}{cname_info} ({status})")
 
-    def is_first_party_cname_chain(self, subdomain, main_site, cname_chain, public_suffixes, verbose=False):
-        """Check if a CNAME chain is first-party.
+    def _is_first_party_cname_chain(self, subdomain, main_site, cname_chain, public_suffixes, verbose=False):
+        """Check if a CNAME chain is first-party (private method).
         
         Args:
             subdomain: The full subdomain being checked (e.g., dnklry.plushbeds.com)
@@ -436,8 +440,8 @@ class SourceIdentifier:
         
         return domains_match
 
-    def get_tracker_categorization(self, domain):
-        """Get detailed categorization of a domain using Ghostery's trackerdb.
+    def _get_tracker_categorization(self, domain):
+        """Get detailed categorization of a domain using Ghostery's trackerdb (private method).
         
         Returns:
             dict: Dictionary containing categories and organizations found, or None if not identified
@@ -449,8 +453,10 @@ class SourceIdentifier:
             organizations = set()
             
             for match in result['matches']:
-                categories.add(match['category']['name'])
-                organizations.add(match['organization']['name'])
+                if match.get('category') and match['category'].get('name'):
+                    categories.add(match['category']['name'])
+                if match.get('organization') and match['organization'].get('name'):
+                    organizations.add(match['organization']['name'])
             
             return {
                 'categories': list(categories),
@@ -460,8 +466,8 @@ class SourceIdentifier:
         
         return None
 
-    def analyze_cname_chain(self, subdomain, main_site, cname_chain, public_suffixes, verbose=False):
-        """Analyze each node in the CNAME chain for tracking behavior.
+    def _analyze_cname_chain(self, subdomain, main_site, cname_chain, public_suffixes, verbose=False):
+        """Analyze each node in the CNAME chain for tracking behavior (private method).
         First checks filter lists, then falls back to Ghostery for detailed categorization.
         
         Args:
@@ -487,7 +493,7 @@ class SourceIdentifier:
                 tqdm.write(f"  {i}. → {cname}")
         
         # First check if chain is first-party
-        is_first_party = self.is_first_party_cname_chain(
+        is_first_party = self._is_first_party_cname_chain(
             subdomain,
             main_site,
             cname_chain,
@@ -505,7 +511,7 @@ class SourceIdentifier:
             # Check the original subdomain
             if verbose:
                 tqdm.write(f"\nOriginal domain: {subdomain}")
-            filter_name, rule = self.domain_analyzer.is_domain_in_filters(subdomain)
+            filter_name, rule = self.filter_manager.is_domain_in_filters(subdomain)
             if filter_name:
                 if verbose:
                     tqdm.write(f"  Found in filter: {filter_name}")
@@ -513,7 +519,7 @@ class SourceIdentifier:
                 evidence.append(f"{subdomain} found in {filter_name}")
             
             # Always check Ghostery for categorization
-            tracker_info = self.get_tracker_categorization(subdomain)
+            tracker_info = self._get_tracker_categorization(subdomain)
             if tracker_info:
                 categorization[subdomain] = tracker_info
                 if verbose:
@@ -527,7 +533,7 @@ class SourceIdentifier:
             for cname in cname_chain:
                 if verbose:
                     tqdm.write(f"\nAnalyzing CNAME: {cname}")
-                filter_name, rule = self.domain_analyzer.is_domain_in_filters(cname)
+                filter_name, rule = self.filter_manager.is_domain_in_filters(cname)
                 if filter_name:
                     if verbose:
                         tqdm.write(f"  Found in filter: {filter_name}")
@@ -535,7 +541,7 @@ class SourceIdentifier:
                     evidence.append(f"{cname} found in {filter_name}")
                 
                 # Always check Ghostery for categorization
-                tracker_info = self.get_tracker_categorization(cname)
+                tracker_info = self._get_tracker_categorization(cname)
                 if tracker_info:
                     categorization[cname] = tracker_info
                     if verbose:
@@ -561,8 +567,8 @@ class SourceIdentifier:
         
         return is_tracking, evidence, categorization
 
-    def is_cdn_or_hosting(self, tracker_info: dict) -> bool:
-        """Check if a domain is categorized as hosting/CDN infrastructure."""
+    def _is_cdn_or_hosting(self, tracker_info: dict) -> bool:
+        """Check if a domain is categorized as hosting/CDN infrastructure (private method)."""
         if not tracker_info:
             return False
             

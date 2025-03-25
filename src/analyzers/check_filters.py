@@ -1,11 +1,10 @@
 import os
 import fnmatch
 from urllib.parse import urlparse
-import dns.resolver
 from diskcache import Cache
 from src.utils.public_suffix_updater import update_public_suffix_list
 
-class DomainFilterAnalyzer:
+class FilterManager:
     def __init__(self, filter_dir='data/filters', cache_dir='data/cache'):
         if not os.path.exists(filter_dir):
             raise FileNotFoundError(f"Filter directory not found: {filter_dir}")
@@ -86,7 +85,7 @@ class DomainFilterAnalyzer:
 # Example usage
 if __name__ == "__main__":
     # Create an instance of the DomainFilterAnalyzer
-    analyzer = DomainFilterAnalyzer()
+    analyzer = FilterManager()
     
     # List of URLs to check
     urls_to_check = [

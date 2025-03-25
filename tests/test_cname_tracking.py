@@ -12,7 +12,7 @@ from src.identify_sources import (
     get_cname_chain,
     analyze_cname_chain
 )
-from src.analyzers.check_filters import DomainFilterAnalyzer
+from src.analyzers.check_filters import FilterManager
 from src.utils.public_suffix_updater import update_public_suffix_list
 
 def test_cname_tracking():
@@ -27,7 +27,7 @@ def test_cname_tracking():
     ]
     
     # Initialize domain analyzer and get public suffixes
-    domain_analyzer = DomainFilterAnalyzer()
+    domain_analyzer = FilterManager()
     public_suffixes = update_public_suffix_list()
     
     for main_site, test_url, description in test_cases:
