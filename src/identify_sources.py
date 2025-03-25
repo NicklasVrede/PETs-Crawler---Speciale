@@ -8,6 +8,9 @@ import sys
 from tqdm import tqdm
 from urllib.parse import urlparse
 from collections import Counter
+import time  # Add this at the top with other imports if not already there
+import pickle  # Add this at the top with other imports if not already there
+import hashlib  # For creating cache keys
 sys.path.append('.')
 from src.managers.ghostery_manager import GhosteryManager
 from src.analyzers.check_filters import FilterManager
@@ -16,12 +19,23 @@ from src.utils.public_suffix_updater import update_public_suffix_list
 from src.managers.dns_resolver import DNSResolver
 
 class SourceIdentifier:
-    def __init__(self):
+    def __init__(self, verbose=False, use_cache=True):
         """Initialize the SourceIdentifier with all required dependencies."""
         self.filter_manager = FilterManager()
         self.ghostery = GhosteryManager()
         self.dns_resolver = DNSResolver()
+        self.verbose = verbose
+        self.use_cache = use_cache
         
+        # Initialize the subdomain analysis cache
+        self.subdomain_analysis_cache = {}
+        self.subdomain_cache_file = 'data/subdomain_analysis_cache.pickle'
+        self._load_analysis_cache()
+        
+        # Register cleanup on exit
+        import atexit
+        atexit.register(self._save_analysis_cache)
+
     def _load_json(self, file_path):
         """Load JSON data from file (private method)."""
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -45,8 +59,53 @@ class SourceIdentifier:
                     return True
         return False
 
+    def _load_analysis_cache(self):
+        """Load subdomain analysis cache from file."""
+        try:
+            if os.path.exists(self.subdomain_cache_file):
+                with open(self.subdomain_cache_file, 'rb') as f:
+                    self.subdomain_analysis_cache = pickle.load(f)
+                if self.verbose:
+                    tqdm.write(f"Loaded {len(self.subdomain_analysis_cache)} subdomain analysis entries from cache")
+        except Exception as e:
+            tqdm.write(f"Error loading subdomain analysis cache: {e}")
+            self.subdomain_analysis_cache = {}
+
+    def _save_analysis_cache(self):
+        """Save subdomain analysis cache to file."""
+        try:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(self.subdomain_cache_file), exist_ok=True)
+            
+            with open(self.subdomain_cache_file, 'wb') as f:
+                pickle.dump(self.subdomain_analysis_cache, f)
+            
+            if self.verbose:
+                tqdm.write(f"Saved {len(self.subdomain_analysis_cache)} subdomain analysis entries to cache")
+        except Exception as e:
+            tqdm.write(f"Error saving subdomain analysis cache: {e}")
+
+    def _get_cache_key(self, main_site, domain):
+        """Generate a cache key for subdomain analysis."""
+        # Normalize both domains to ensure consistent caching
+        main_site = main_site.lower().strip()
+        domain = domain.lower().strip()
+        return f"{main_site}:{domain}"
+
     def _analyze_subdomain(self, main_site, base_url, request_count):
         """Analyze a single subdomain (private method)."""
+        # Try to use cached result if available
+        cache_key = self._get_cache_key(main_site, base_url)
+        
+        if self.use_cache and cache_key in self.subdomain_analysis_cache:
+            cached_result = self.subdomain_analysis_cache[cache_key].copy()
+            # Update the request count which can change
+            cached_result['request_count'] = request_count
+            if self.verbose:
+                tqdm.write(f"Cache hit for {base_url} (main site: {main_site})")
+            return cached_result
+        
+        # Perform full analysis if not cached
         analysis_result = {
             'domain': base_url,
             'request_count': request_count,
@@ -120,6 +179,10 @@ class SourceIdentifier:
         # Remove duplicates while preserving order
         analysis_result['categories'] = list(dict.fromkeys(analysis_result['categories']))
         analysis_result['organizations'] = list(dict.fromkeys(analysis_result['organizations']))
+        
+        # Store in cache for future use
+        if self.use_cache:
+            self.subdomain_analysis_cache[cache_key] = analysis_result.copy()
         
         return analysis_result
 
@@ -195,7 +258,8 @@ class SourceIdentifier:
                     tqdm.write(f"No domains found in {filename}")
                     continue
                     
-                tqdm.write(f"Found {len(unique_domains)} unique domains in {filename}")
+                if self.verbose:
+                    tqdm.write(f"Found {len(unique_domains)} unique domains in {filename}")
                 
                 # Initialize statistics
                 stats = {
@@ -228,16 +292,24 @@ class SourceIdentifier:
                     'organizations': Counter()  # Will count occurrences of each organization
                 }
                 
+                # Count the number of requests per domain
+                domain_request_count = Counter()
+                for request in all_requests:
+                    if 'url' in request:
+                        base_url = self._get_base_url(request['url'])
+                        domain_request_count[base_url] += 1
+                
                 # Analyze each unique domain
                 analyzed_domains = {}
-                with tqdm(total=len(unique_domains), desc=f"Analyzing domains in {filename}", leave=False) as pbar:
+                
+                with tqdm(total=len(unique_domains), desc=f"Analyzing domains for {main_site}", 
+                        unit="domain", leave=False, disable=not self.verbose) as pbar:
                     for domain in unique_domains:
-                        request_count = sum(1 for req in all_requests if 'url' in req and self._get_base_url(req['url']) == domain)
-                        analysis = self._analyze_subdomain(
-                            main_site,
-                            domain,
-                            request_count
-                        )
+                        # Get request count for this domain
+                        request_count = domain_request_count.get(domain, 0)
+                        
+                        # Analyze domain
+                        analysis = self._analyze_subdomain(main_site, domain, request_count)
                         analyzed_domains[domain] = analysis
                         
                         # Check for CNAME cloaking
@@ -317,64 +389,8 @@ class SourceIdentifier:
                 }
                 self._save_json(site_data, file_path)
                 
-                # Print summary statistics
-                tqdm.write(f"\nStatistics for {main_site}:")
-                tqdm.write(f"Total unique domains: {stats['total_domains']}")
-                tqdm.write(f"Total tracking domains: {stats['filter_matches']} ({stats['filter_matches']/stats['total_domains']*100:.1f}%)")
-                
-                # CNAME cloaking statistics
-                cname_total = stats['cname_cloaking']['total']
-                if cname_total > 0:
-                    tqdm.write(f"CNAME cloaking detected: {cname_total} domains ({cname_total/stats['total_domains']*100:.1f}%)")
-                    if stats['cname_cloaking']['trackers_using_cloaking']:
-                        tqdm.write("  Top trackers using CNAME cloaking:")
-                        for tracker, count in sorted(stats['cname_cloaking']['trackers_using_cloaking'].items(), 
-                                                  key=lambda x: x[1], reverse=True)[:3]:
-                            tqdm.write(f"  - {tracker}: {count}")
-                
-                # First-party breakdown
-                first_party_total = stats['first_party']['total']
-                tqdm.write(f"First-party domains: {first_party_total} ({first_party_total/stats['total_domains']*100:.1f}%)")
-                if first_party_total > 0:
-                    trackers_total = stats['first_party']['trackers']['total']
-                    trackers_direct = stats['first_party']['trackers']['direct']
-                    trackers_cloaked = stats['first_party']['trackers']['cloaked']
-                    clean = stats['first_party']['clean']
-                    
-                    if trackers_total > 0:
-                        tqdm.write(f"  - First-party trackers: {trackers_total} ({trackers_total/first_party_total*100:.1f}% of first-party)")
-                        if trackers_direct > 0:
-                            tqdm.write(f"    - Direct: {trackers_direct} ({trackers_direct/trackers_total*100:.1f}% of first-party trackers)")
-                        if trackers_cloaked > 0:
-                            tqdm.write(f"    - CNAME cloaked: {trackers_cloaked} ({trackers_cloaked/trackers_total*100:.1f}% of first-party trackers)")
-                    
-                    tqdm.write(f"  - Clean first-party: {clean} ({clean/first_party_total*100:.1f}% of first-party)")
-                
-                # Third-party breakdown
-                third_party_total = stats['third_party']['total']
-                tqdm.write(f"Third-party domains: {third_party_total} ({third_party_total/stats['total_domains']*100:.1f}%)")
-                if third_party_total > 0:
-                    infra = stats['third_party']['infrastructure']
-                    trackers_total = stats['third_party']['trackers']['total']
-                    trackers_direct = stats['third_party']['trackers']['direct']
-                    trackers_cloaked = stats['third_party']['trackers']['cloaked']
-                    other = stats['third_party']['other']
-                    
-                    tqdm.write(f"  - Infrastructure (CDN/Hosting): {infra} ({infra/third_party_total*100:.1f}% of third-party)")
-                    
-                    if trackers_total > 0:
-                        tqdm.write(f"  - Trackers: {trackers_total} ({trackers_total/third_party_total*100:.1f}% of third-party)")
-                        if trackers_direct > 0:
-                            tqdm.write(f"    - Direct: {trackers_direct} ({trackers_direct/trackers_total*100:.1f}% of trackers)")
-                        if trackers_cloaked > 0:
-                            tqdm.write(f"    - CNAME cloaked: {trackers_cloaked} ({trackers_cloaked/trackers_total*100:.1f}% of trackers)")
-                    
-                    tqdm.write(f"  - Other third-party: {other} ({other/third_party_total*100:.1f}% of third-party)")
-                
-                if stats['categories']:
-                    tqdm.write("\nTop categories:")
-                    for category, count in sorted(stats['categories'].items(), key=lambda x: x[1], reverse=True)[:5]:
-                        tqdm.write(f"  - {category}: {count} ({count/stats['total_domains']*100:.1f}%)")
+                if self.verbose:
+                    self._print_domain_statistics(main_site, stats)
                 
             except Exception as e:
                 tqdm.write(f"Error processing {filename}: {str(e)}")
@@ -441,11 +457,7 @@ class SourceIdentifier:
         return domains_match
 
     def _get_tracker_categorization(self, domain):
-        """Get detailed categorization of a domain using Ghostery's trackerdb (private method).
-        
-        Returns:
-            dict: Dictionary containing categories and organizations found, or None if not identified
-        """
+        """Get detailed categorization of a domain using Ghostery's trackerdb (private method)."""
         result = self.ghostery.analyze_request(f"https://{domain}")
         
         if result.get('matches'):

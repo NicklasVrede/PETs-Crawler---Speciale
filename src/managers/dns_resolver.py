@@ -46,7 +46,7 @@ class DNSResolver:
                     for key, value in cached_data.items():
                         self.a_record_cache[key] = value
                         loaded_count += 1
-                    #tqdm.write(f"Loaded {loaded_count} A record entries from cache")
+                    tqdm.write(f"Loaded {loaded_count} A record entries from cache")
         except Exception as e:
             tqdm.write(f"Error loading A record cache: {e}")
     
@@ -61,23 +61,19 @@ class DNSResolver:
                     for key, value in cached_data.items():
                         self.cname_chain_cache[key] = value
                         loaded_count += 1
-                    #tqdm.write(f"Loaded {loaded_count} CNAME chains from cache")
+                    tqdm.write(f"Loaded {loaded_count} CNAME chains from cache")
         except Exception as e:
             tqdm.write(f"Error loading CNAME chain cache: {e}")
     
     def _resolve_cname(self, domain):
         """Get the CNAME for a domain if it exists (private method)."""
         try:
-            #tqdm.write(f"Performing CNAME lookup for: {domain}")
             answers = dns.resolver.resolve(domain, 'CNAME')
             result = str(answers[0].target).rstrip('.')
-            #tqdm.write(f"CNAME result for {domain}: {result}")
             return result
         except dns.resolver.NoAnswer:
-            tqdm.write(f"No CNAME record found for {domain}")
             return None
         except dns.resolver.NXDOMAIN:
-            tqdm.write(f"Domain {domain} does not exist (NXDOMAIN)")
             return None
         except Exception as e:
             tqdm.write(f"CNAME lookup error for {domain}: {str(e)}")
@@ -100,7 +96,6 @@ class DNSResolver:
         
         # Check if in cache
         if cache_key in self.cname_chain_cache:
-            #tqdm.write(f"CNAME chain cache hit for: {domain}")
             chain = self.cname_chain_cache[cache_key]
             # Only lookup IPs if specifically requested
             if lookup_ips and chain:
@@ -109,7 +104,7 @@ class DNSResolver:
             return chain
         
         # Not in cache, perform DNS lookups
-        #tqdm.write(f"CNAME chain cache miss for: {domain}, resolving chain...")
+        tqdm.write(f"CNAME chain cache miss for: {domain}, resolving chain...")
         chain = []
         current = domain
         seen = set()  # Prevent infinite loops
@@ -133,11 +128,8 @@ class DNSResolver:
             self.cname_cache_additions = 0  # Reset counter
             tqdm.write(f"CNAME chain cache automatically saved after 100 additions")
         
-        #tqdm.write(f"Found CNAME chain for {domain}: {result}")
-        
         # Only lookup IPs if specifically requested
         if lookup_ips:
-            #tqdm.write(f"IP lookup requested for final domain in chain")
             if chain:
                 final_domain = chain[-1]
                 self.get_ip_addresses(final_domain)
@@ -161,26 +153,24 @@ class DNSResolver:
         
         # Check cache first
         if domain in self.a_record_cache:
-            #tqdm.write(f"A record cache hit for: {domain}")
             return self.a_record_cache[domain]
         
         # Not in cache, do actual DNS lookup
         try:
-            #tqdm.write(f"A record cache miss for: {domain}, performing DNS lookup...")
+            tqdm.write(f"A record cache miss for {domain}, performing DNS lookup...")
             self.a_record_lookup_count += 1
             answers = dns.resolver.resolve(domain, 'A')
+            
             ip_set = {str(rdata) for rdata in answers}
             
             # Store in cache
             self.a_record_cache[domain] = ip_set
-            #tqdm.write(f"Found A records for {domain}: {ip_set}")
+            
             return ip_set
         except dns.resolver.NoAnswer:
-            tqdm.write(f"No A records found for {domain}")
             self.a_record_cache[domain] = set()
             return set()
         except dns.resolver.NXDOMAIN:
-            tqdm.write(f"Domain {domain} does not exist (NXDOMAIN)")
             self.a_record_cache[domain] = set()
             return set()
         except Exception as e:
@@ -200,8 +190,8 @@ class DNSResolver:
             
             with open(self.a_record_cache_file, 'wb') as f:
                 pickle.dump(cache_dict, f)
-                
-            #tqdm.write(f"Saved {len(self.a_record_cache)} A record entries to cache")
+            
+            tqdm.write(f"Saved {len(self.a_record_cache)} A record entries to cache")
         except Exception as e:
             tqdm.write(f"Error saving A record cache: {e}")
 
@@ -216,8 +206,8 @@ class DNSResolver:
             
             with open(self.cname_cache_file, 'wb') as f:
                 pickle.dump(cache_dict, f)
-                
-            #tqdm.write(f"Saved {len(self.cname_chain_cache)} CNAME chains to cache")
+            
+            tqdm.write(f"Saved {len(self.cname_chain_cache)} CNAME chains to cache")
         except Exception as e:
             tqdm.write(f"Error saving CNAME chain cache: {e}")
 
@@ -225,4 +215,4 @@ class DNSResolver:
         """Save all caches to disk (public method that can be called manually)"""
         self._save_a_record_cache()
         self._save_cname_chain_cache()
-        #tqdm.write(f"DNS resolver: performed {self.a_record_lookup_count} A record lookups this session")
+        tqdm.write(f"DNS resolver: saved all caches, performed {self.a_record_lookup_count} A record lookups this session")

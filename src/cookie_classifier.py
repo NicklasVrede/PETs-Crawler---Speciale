@@ -17,22 +17,25 @@ class CookieClassifier:
     Generates analysis and statistics for cookie usage on websites.
     """
     
-    def __init__(self, database=None, crawler=None):
+    def __init__(self, database=None, crawler=None, verbose=False):
         """
         Initialize the cookie classifier.
         
         Args:
             database: CookieDatabase instance to use (creates a new one if None)
             crawler: CookieCrawler instance to use (creates a new one if None)
+            verbose: Whether to print detailed information during processing
         """
         self.database = database or CookieDatabase()
         self.crawler = crawler
         self.unknown_cookies = set()  # Track unknown cookies for batch lookup
+        self.verbose = verbose
     
     def _init_crawler(self):
         """Initialize the crawler if it doesn't exist already"""
         if self.crawler is None:
-            tqdm.write("Initializing browser for cookie lookups...")
+            if self.verbose:
+                tqdm.write("Initializing browser for cookie lookups...")
             self.crawler = CookieCrawler(database=self.database)
     
     def classify_file(self, file_path: str, save_result=True, lookup_unknown=True) -> Dict[str, Any]:
@@ -54,13 +57,15 @@ class CookieClassifier:
             
             # Get the site name for display
             site_name = site_data.get('domain', os.path.basename(file_path).replace('.json', ''))
-            tqdm.write(f"\nProcessing site: {site_name}")
+            if self.verbose:
+                tqdm.write(f"\nProcessing site: {site_name}")
                 
             # Extract and track unknown cookies
             unknown_cookies = self._extract_unknown_cookies(site_data)
             if unknown_cookies:
                 self.unknown_cookies.update(unknown_cookies)
-                tqdm.write(f"Found {len(unknown_cookies)} unknown cookies in {site_name}")
+                if self.verbose:
+                    tqdm.write(f"Found {len(unknown_cookies)} unknown cookies in {site_name}")
                 
             # Classify cookies using current database
             self._classify_site(site_data)
@@ -118,7 +123,8 @@ class CookieClassifier:
         
         # Get all JSON files in the directory
         json_files = [f for f in os.listdir(directory) if f.endswith('.json')]
-        tqdm.write(f"Found {len(json_files)} JSON files to process")
+        if self.verbose:
+            tqdm.write(f"Found {len(json_files)} JSON files to process")
         
         # First pass: classify with existing database and gather unknown cookies
         for file_name in tqdm(json_files, desc="Classifying websites (first pass)"):
@@ -128,30 +134,34 @@ class CookieClassifier:
         
         # Look up unknown cookies if requested
         if lookup_unknown and self.unknown_cookies:
-            tqdm.write(f"\nFound {len(self.unknown_cookies)} unique unknown cookies across all sites")
+            if self.verbose:
+                tqdm.write(f"\nFound {len(self.unknown_cookies)} unique unknown cookies across all sites")
             
             # Initialize crawler if needed
             self._init_crawler()
             
             # Look up unknown cookies
-            tqdm.write("Looking up unknown cookies...")
+            if self.verbose:
+                tqdm.write("Looking up unknown cookies...")
             self.crawler.lookup_cookies_batch(list(self.unknown_cookies))
             
             # Second pass: re-classify with updated database
-            tqdm.write("\nRe-classifying websites with updated database...")
+            if self.verbose:
+                tqdm.write("\nRe-classifying websites with updated database...")
             for file_name in tqdm(json_files, desc="Classifying websites (final pass)"):
                 file_path = os.path.join(directory, file_name)
                 site_data = self.classify_file(file_path, lookup_unknown=False)
                 results[file_name] = site_data
                 
                 # Print summary for this site
-                if 'cookie_analysis' in site_data:
+                if self.verbose and 'cookie_analysis' in site_data:
                     self.print_site_summary(site_data)
         else:
             # Print summaries for first pass
-            for file_name, site_data in results.items():
-                if 'cookie_analysis' in site_data:
-                    self.print_site_summary(site_data)
+            if self.verbose:
+                for file_name, site_data in results.items():
+                    if 'cookie_analysis' in site_data:
+                        self.print_site_summary(site_data)
         
         return results
     
@@ -311,7 +321,7 @@ if __name__ == "__main__":
         tqdm.write(f"Cookie database contains {stats['total_cookies']} cookies")
         
         # Create classifier and process directory
-        classifier = CookieClassifier(db)
+        classifier = CookieClassifier(db, verbose=True)  # Use verbose=True for command line usage
         try:
             classifier.classify_directory(data_directory, lookup_unknown=True)
         finally:

@@ -202,12 +202,12 @@ if __name__ == "__main__":
     ]
     
     for url in test_urls:
-        print(f"\nAnalyzing: {url}")
-        print("-" * 50)
+        tqdm.write(f"\nAnalyzing: {url}")
+        tqdm.write("-" * 50)
         result = analyze_request(url)
         if result:
-            print(json.dumps(result, indent=2))
+            tqdm.write(json.dumps(result, indent=2))
         else:
-            print("No tracking information found")
-        print("-" * 50)
+            tqdm.write("No tracking information found")
+        tqdm.write("-" * 50)
     

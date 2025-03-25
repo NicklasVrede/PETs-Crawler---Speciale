@@ -19,30 +19,21 @@ def process_all_crawler_data():
     
     # Create instances of analyzers
     source_identifier = SourceIdentifier()
-    cookie_classifier = CookieClassifier()
+    cookie_classifier = CookieClassifier(verbose=False)
     
-    try:
-        # Process each folder
-        for folder in folders:
-            folder_path = os.path.join(base_dir, folder)
-            print(f"\nProcessing folder: {folder}")
-            
-            # First run identify_sources
-            print("\nIdentifying sources...")
-            source_identifier.identify_site_sources(folder_path)
-            
-            # Then run cookie_classifier
-            print("\nClassifying cookies...")
-            cookie_classifier.classify_directory(folder_path)
-            
-            # Add domain categories
-            print("\nAdding domain categories...")
-            add_categories_to_files(folder_path)
-            
-            print(f"✓ Completed processing {folder}")
-    finally:
-        # Make sure to close the classifier to free resources
-        cookie_classifier.close()
+
+    # Process each folder with progress bar
+    for folder in tqdm(folders, desc="Processing folders", unit="folder"):
+        folder_path = os.path.join(base_dir, folder)
+        
+        # First run identify_sources
+        source_identifier.identify_site_sources(folder_path)
+        
+        # Then run cookie_classifier
+        cookie_classifier.classify_directory(folder_path)
+        
+        # Add domain categories
+        add_categories_to_files(folder_path)
 
 if __name__ == "__main__":
     process_all_crawler_data() 
