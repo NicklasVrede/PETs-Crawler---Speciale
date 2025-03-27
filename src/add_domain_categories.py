@@ -23,7 +23,7 @@ def save_json(data, file_path):
         print(f"Error saving {file_path}: {e}")
         return False
 
-def add_categories_to_files(data_directory, categories_file="data/domain_categories.json"):
+def add_categories_to_files(data_directory, categories_file="data/domain_categories.json", verbose=False):
     """Add domain categories to JSON files in the specified directory"""
     # Load domain categories
     categories = load_json(categories_file)
@@ -31,11 +31,13 @@ def add_categories_to_files(data_directory, categories_file="data/domain_categor
         print(f"Error: Could not load categories from {categories_file}")
         return
     
-    print(f"Loaded categories for {len(categories)} domains")
+    if verbose:
+        tqdm.write(f"Loaded categories for {len(categories)} domains")
     
     # Find all JSON files in the directory (recursively)
     json_files = list(Path(data_directory).glob("**/*.json"))
-    print(f"Found {len(json_files)} JSON files to process")
+    if verbose:
+        tqdm.write(f"Found {len(json_files)} JSON files to process")
     
     # Process each file
     modified_count = 0

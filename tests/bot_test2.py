@@ -1,18 +1,18 @@
 import asyncio
-from rebrowser_playwright.async_api import async_playwright
-from playwright_stealth import Stealth
+from patchright.async_api import async_playwright
 import time
 
 async def main():
     # Initialize stealth with the async playwright
-    async with Stealth().use_async(async_playwright()) as p:
+    async with async_playwright() as p:
         # Launch browser with slowMo and headful mode
         browser = await p.chromium.launch(
             headless=False,
-            slow_mo=5000  # 500ms delay between actions
+            slow_mo=5000,
+            channel="msedge"
         )
         
-        # Create a context and page
+        # Create a context with specific user agent and viewport
         context = await browser.new_context(
             viewport={"width": 1280, "height": 800}
         )
@@ -20,7 +20,7 @@ async def main():
         
         # Navigate to the bot detection test site
         print("Navigating to bot detection test site...")
-        await page.goto("https://bot-detector.rebrowser.net/")
+        await page.goto("https://www.whatismybrowser.com/detect/what-is-my-user-agent/")
         
         # Wait for the page to load completely
         await page.wait_for_load_state("networkidle")

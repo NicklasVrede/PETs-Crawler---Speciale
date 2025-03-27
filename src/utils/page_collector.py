@@ -4,7 +4,7 @@ import os
 import csv
 from urllib.parse import urlparse
 from collections import deque
-from playwright.async_api import async_playwright
+from patchright.async_api import async_playwright
 import sys
 import os
 from tqdm import tqdm

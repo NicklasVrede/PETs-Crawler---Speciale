@@ -3,7 +3,7 @@ from playwright.async_api import async_playwright
 import os
 
 async def open_browser_with_extension():
-    user_data_dir = r"C:\Users\Nickl\AppData\Local\ms-playwright\User_profiles\consent_o_matic"
+    user_data_dir = r"C:\Users\Nickl\AppData\Local\ms-playwright\User_profiles\consent_o_matic_opt_out"
     extension_path = os.path.join(user_data_dir, 'Default', 'Extensions', 'mdjildafknihdffpkfmmpnpoiajfjnjd', '1.1.3_0')
     
     # Print the extension path
@@ -16,8 +16,10 @@ async def open_browser_with_extension():
             headless=False,  # Set to False to see the browser window
             args=[
                 f'--disable-extensions-except={extension_path}',
-                f'--load-extension={extension_path}'
-            ]
+                f'--load-extension={extension_path}',
+                
+            ],
+            channel="chrome"
         )
     
         # Wait for a few seconds to observe the browser

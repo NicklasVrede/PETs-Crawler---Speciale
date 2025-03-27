@@ -6,6 +6,7 @@ from managers.crawl_data_manager import CrawlDataManager
 from utils.util import (construct_paths, load_config, get_profile_config, 
                        get_all_sites, create_temp_profile_copy)
 from tqdm import tqdm
+import pprint
 
 
 async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=2, verbose=False):
@@ -20,10 +21,11 @@ async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=2, verbose
         verbose: If True, print detailed progress information
     """
     # Load configuration
-    config = load_config('config.json')
-    
+    config = load_config('config.json')    
     # Extract profile configuration
     profile_config = get_profile_config(config, profile)
+
+    channel = profile_config.get('channel', 'chromium')
     
     # Construct paths
     user_data_dir, full_extension_path = construct_paths(config, profile)
@@ -51,7 +53,10 @@ async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=2, verbose
         crawler = WebsiteCrawler(
             subpages_nr=subpages_nr, 
             verbose=verbose,
-            extension_name=profile
+            extension_name=profile,
+            channel=channel,
+            headless=profile_config.get('headless', False),
+            viewport=profile_config.get('viewport', {'width': 1280, 'height': 800})
         )
         
         # Modify browser launch arguments based on profile
@@ -62,9 +67,7 @@ async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=2, verbose
         result = await crawler.crawl_site(
             domain,
             user_data_dir=crawl_user_data_dir,
-            **browser_args,
-            headless=profile_config.get('headless', False),
-            viewport=profile_config.get('viewport', {'width': 1280, 'height': 800})
+            **browser_args
         )
         
         # Store data
