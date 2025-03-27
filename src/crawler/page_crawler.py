@@ -9,11 +9,10 @@ import random
 import asyncio
 from utils.page_collector import load_site_pages
 from utils.user_simulator import UserSimulator
-from playwright_stealth import Stealth
 
 
 class WebsiteCrawler:
-    def __init__(self, subpages_nr=20, visits=2, verbose=False, monitors=None, extension_name=None, channel=None, headless=False, viewport=None):
+    def __init__(self, subpages_nr=20, visits=2, verbose=False, monitors=None, extension_name=None, headless=False, viewport=None):
         """Initialize the crawler with configuration parameters"""
         self.subpages_nr = subpages_nr
         self.visits = visits
@@ -21,9 +20,6 @@ class WebsiteCrawler:
         self.base_domain = None
         self.extension_name = extension_name or "no_extension"
         self.user_simulator = UserSimulator()
-        self.channel = channel
-        self.headless = headless
-        self.viewport = viewport or {'width': 1280, 'height': 800}
         
         # Use provided monitors or create defaults
         self.monitors = monitors or {
@@ -55,13 +51,9 @@ class WebsiteCrawler:
         except Exception as e:
             tqdm.write(f"Error during cache population: {e}")
 
-    async def _setup_browser(self, p, user_data_dir, full_extension_path, headless=None, viewport=None):
+    async def _setup_browser(self, p, user_data_dir, full_extension_path, headless, viewport):
         """Setup browser with context"""
         browser_args = {}
-        
-        # Use instance attributes as defaults if parameters not provided
-        headless = headless if headless is not None else self.headless
-        viewport = viewport if viewport is not None else self.viewport
         
         # Only add extension arguments if an extension is specified
         if full_extension_path and full_extension_path != "no_extension":
@@ -73,9 +65,8 @@ class WebsiteCrawler:
         context = await p.chromium.launch_persistent_context(
             user_data_dir=user_data_dir,
             headless=headless,
-            viewport=viewport,
+            viewport=viewport or {'width': 1280, 'height': 800},
             **browser_args,
-            channel=self.channel
         )
         
         return context
@@ -110,12 +101,8 @@ class WebsiteCrawler:
             except Exception as e:
                 tqdm.write(f"Note: Could not clear page storage: {e}")
 
-    async def crawl_site(self, domain, user_data_dir=None, full_extension_path=None, headless=None, viewport=None):
+    async def crawl_site(self, domain, user_data_dir=None, full_extension_path=None, headless=False, viewport=None):
         """Crawl a website multiple times to analyze cookie persistence"""
-        # Use instance attributes if parameters not provided
-        headless = headless if headless is not None else self.headless
-        viewport = viewport if viewport is not None else self.viewport
-        
         self.base_domain = domain.lower().replace('www.', '')
         visit_results = []
 
@@ -181,7 +168,6 @@ class WebsiteCrawler:
 
     async def _setup_monitoring(self, page, visit):
         """Setup network, fingerprint, and storage monitoring"""
-        # No need to apply stealth mode here anymore, as it's applied at the context level
         
         # Continue with your existing monitoring setup
         await self.monitors['network'].setup_monitoring(page, visit)
@@ -256,9 +242,11 @@ class WebsiteCrawler:
 
     async def _collect_visit_results(self, visit, visited_in_this_cycle):
         """Collect and structure the results of each visit"""
+        network_results = self.monitors['network'].get_results()
+
         return {
             'visit_number': visit,
-            'network': self.monitors['network'].get_results()['network_data'],
+            'network': network_results['network_data'],
             'visited_urls': visited_in_this_cycle
         }
 

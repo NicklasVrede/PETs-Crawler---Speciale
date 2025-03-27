@@ -54,7 +54,6 @@ async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=2, verbose
             subpages_nr=subpages_nr, 
             verbose=verbose,
             extension_name=profile,
-            channel=channel,
             headless=profile_config.get('headless', False),
             viewport=profile_config.get('viewport', {'width': 1280, 'height': 800})
         )
