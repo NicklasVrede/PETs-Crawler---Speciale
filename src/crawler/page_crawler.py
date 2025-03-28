@@ -1,4 +1,4 @@
-from patchright.async_api import async_playwright
+from playwright.async_api import async_playwright
 from crawler.monitors.network_monitor import NetworkMonitor
 from crawler.monitors.fingerprint_collector import FingerprintCollector
 from crawler.monitors.storage_monitor import StorageMonitor
@@ -9,6 +9,7 @@ import random
 import asyncio
 from utils.page_collector import load_site_pages
 from utils.user_simulator import UserSimulator
+from playwright_stealth import Stealth
 
 
 class WebsiteCrawler:
@@ -19,7 +20,10 @@ class WebsiteCrawler:
         self.verbose = verbose
         self.base_domain = None
         self.extension_name = extension_name or "no_extension"
+        self.headless = headless
+        self.viewport = viewport
         self.user_simulator = UserSimulator()
+        self.stealth = Stealth()
         
         # Use provided monitors or create defaults
         self.monitors = monitors or {
@@ -64,10 +68,13 @@ class WebsiteCrawler:
 
         context = await p.chromium.launch_persistent_context(
             user_data_dir=user_data_dir,
-            headless=headless,
-            viewport=viewport or {'width': 1280, 'height': 800},
-            **browser_args,
+            headless=self.headless,
+            viewport=self.viewport or {'width': 1280, 'height': 800},
+            **browser_args
         )
+        
+        # Apply stealth to the context (this will affect all pages created from this context)
+        await self.stealth.apply_stealth_async(context)
         
         return context
 
@@ -168,6 +175,7 @@ class WebsiteCrawler:
 
     async def _setup_monitoring(self, page, visit):
         """Setup network, fingerprint, and storage monitoring"""
+        # No need to apply stealth mode here anymore, as it's applied at the context level
         
         # Continue with your existing monitoring setup
         await self.monitors['network'].setup_monitoring(page, visit)
@@ -242,11 +250,9 @@ class WebsiteCrawler:
 
     async def _collect_visit_results(self, visit, visited_in_this_cycle):
         """Collect and structure the results of each visit"""
-        network_results = self.monitors['network'].get_results()
-
         return {
             'visit_number': visit,
-            'network': network_results['network_data'],
+            'network': self.monitors['network'].get_results()['network_data'],
             'visited_urls': visited_in_this_cycle
         }
 

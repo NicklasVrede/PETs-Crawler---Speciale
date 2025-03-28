@@ -49,18 +49,11 @@ class NetworkMonitor:
         """Get storage monitoring data"""
         return {}
 
-
-
-
-
-
-
-
     def get_results(self):
         """Get comprehensive monitoring results (only public method needed for data retrieval)"""
         return {
             'network_data': self._get_network_data(),
-            'statistics': self._get_statistics()
+            'statistics': self.get_statistics()
         }
 
     async def setup_monitoring(self, page, visit_number=0):
@@ -182,7 +175,7 @@ class NetworkMonitor:
         except:
             return url.split('/')[2] if '://' in url else url.split('/')[0]
     
-    def _get_statistics(self):
+    def get_statistics(self):
         """Get computed statistics from network data (private)"""
         return {
             'total_requests': len(self.requests),
