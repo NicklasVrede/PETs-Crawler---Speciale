@@ -3,8 +3,9 @@ import re
 import json
 from collections import defaultdict
 from tqdm import tqdm
+from pprint import pprint
 
-def analyze_cookie_consent_text(directory_path="data/banner_data/html/active.com", verbose=False):
+def analyze_cookie_consent_text(directory_path="data/banner_data/html/amazon.co.uk", verbose=False):
     """Analyze HTML files for cookie consent text and update JSON results
     
     Args:

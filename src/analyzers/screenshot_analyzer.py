@@ -121,6 +121,13 @@ def analyze_screenshots(directory="data/banner_data/screenshots/active.com", ver
                 # Extract text using the new function
                 ext_text = extract_text_from_image(ext_path)
                 
+                # If no keywords were found in baseline, we can't determine if banner was removed
+                if not found_keywords:
+                    if verbose:
+                        tqdm.write("No baseline keywords to compare against - can't determine if banner was removed")
+                    json_results["screenshot_check"][f"visit{visit_num}"]["extensions"][ext_file] = None
+                    continue
+                
                 # Check if keywords from baseline are missing
                 missing_keywords = []
                 for keyword in found_keywords:
