@@ -15,8 +15,9 @@ class DNSResolver:
     2. CNAME chain cache: Domain → list of CNAME redirects (24-hour TTL)
     """
     
-    def __init__(self, a_record_cache_file='data/a_record_cache.pickle', 
-                 cname_cache_file='data/cname_chain_cache.pickle'):
+    def __init__(self, a_record_cache_file='data/cache/a_record_cache.pickle', 
+                 cname_cache_file='data/cache/cname_chain_cache.pickle',
+                 verbose=False):
         # A record cache for IP addresses (with 1-hour TTL)
         self.a_record_cache = TTLCache(maxsize=10000, ttl=3600)
         self.a_record_cache_file = a_record_cache_file
@@ -24,6 +25,7 @@ class DNSResolver:
         # CNAME chain cache (with 24-hour TTL since CNAMEs change less frequently)
         self.cname_chain_cache = TTLCache(maxsize=10000, ttl=86400)  # 24 hours
         self.cname_cache_file = cname_cache_file
+        self.verbose = verbose
         
         # Load both caches at initialization
         self._load_a_record_cache()
@@ -46,9 +48,11 @@ class DNSResolver:
                     for key, value in cached_data.items():
                         self.a_record_cache[key] = value
                         loaded_count += 1
-                    tqdm.write(f"Loaded {loaded_count} A record entries from cache")
+                    if self.verbose:
+                        tqdm.write(f"Loaded {loaded_count} A record entries from cache")
         except Exception as e:
-            tqdm.write(f"Error loading A record cache: {e}")
+            if self.verbose:
+                tqdm.write(f"Error loading A record cache: {e}")
     
     def _load_cname_chain_cache(self):
         """Load CNAME chain cache from file if it exists (private method)"""
@@ -61,9 +65,11 @@ class DNSResolver:
                     for key, value in cached_data.items():
                         self.cname_chain_cache[key] = value
                         loaded_count += 1
-                    tqdm.write(f"Loaded {loaded_count} CNAME chains from cache")
+                    if self.verbose:
+                        tqdm.write(f"Loaded {loaded_count} CNAME chains from cache")
         except Exception as e:
-            tqdm.write(f"Error loading CNAME chain cache: {e}")
+            if self.verbose:
+                tqdm.write(f"Error loading CNAME chain cache: {e}")
     
     def _resolve_cname(self, domain):
         """Get the CNAME for a domain if it exists (private method)."""
@@ -104,7 +110,8 @@ class DNSResolver:
             return chain
         
         # Not in cache, perform DNS lookups
-        tqdm.write(f"CNAME chain cache miss for: {domain}, resolving chain...")
+        if self.verbose:
+            tqdm.write(f"CNAME chain cache miss for: {domain}, resolving chain...")
         chain = []
         current = domain
         seen = set()  # Prevent infinite loops
@@ -126,7 +133,8 @@ class DNSResolver:
         if self.cname_cache_additions >= 100:
             self._save_cname_chain_cache()
             self.cname_cache_additions = 0  # Reset counter
-            tqdm.write(f"CNAME chain cache automatically saved after 100 additions")
+            if self.verbose:
+                tqdm.write(f"CNAME chain cache automatically saved after 100 additions")
         
         # Only lookup IPs if specifically requested
         if lookup_ips:
@@ -157,7 +165,8 @@ class DNSResolver:
         
         # Not in cache, do actual DNS lookup
         try:
-            tqdm.write(f"A record cache miss for {domain}, performing DNS lookup...")
+            if self.verbose:
+                tqdm.write(f"A record cache miss for {domain}, performing DNS lookup...")
             self.a_record_lookup_count += 1
             answers = dns.resolver.resolve(domain, 'A')
             
@@ -174,7 +183,8 @@ class DNSResolver:
             self.a_record_cache[domain] = set()
             return set()
         except Exception as e:
-            tqdm.write(f"A record lookup error for {domain}: {str(e)}")
+            if self.verbose:
+                tqdm.write(f"A record lookup error for {domain}: {str(e)}")
             # Cache empty result too to avoid repeated lookups
             self.a_record_cache[domain] = set()
             return set()
@@ -191,9 +201,11 @@ class DNSResolver:
             with open(self.a_record_cache_file, 'wb') as f:
                 pickle.dump(cache_dict, f)
             
-            tqdm.write(f"Saved {len(self.a_record_cache)} A record entries to cache")
+            if self.verbose:
+                tqdm.write(f"Saved {len(self.a_record_cache)} A record entries to cache")
         except Exception as e:
-            tqdm.write(f"Error saving A record cache: {e}")
+            if self.verbose:
+                tqdm.write(f"Error saving A record cache: {e}")
 
     def _save_cname_chain_cache(self):
         """Save CNAME chain cache to file (private method)"""
@@ -207,12 +219,15 @@ class DNSResolver:
             with open(self.cname_cache_file, 'wb') as f:
                 pickle.dump(cache_dict, f)
             
-            tqdm.write(f"Saved {len(self.cname_chain_cache)} CNAME chains to cache")
+            if self.verbose:
+                tqdm.write(f"Saved {len(self.cname_chain_cache)} CNAME chains to cache")
         except Exception as e:
-            tqdm.write(f"Error saving CNAME chain cache: {e}")
+            if self.verbose:
+                tqdm.write(f"Error saving CNAME chain cache: {e}")
 
     def save_caches(self):
         """Save all caches to disk (public method that can be called manually)"""
         self._save_a_record_cache()
         self._save_cname_chain_cache()
-        tqdm.write(f"DNS resolver: saved all caches, performed {self.a_record_lookup_count} A record lookups this session")
+        if self.verbose:
+            tqdm.write(f"DNS resolver: saved all caches, performed {self.a_record_lookup_count} A record lookups this session")

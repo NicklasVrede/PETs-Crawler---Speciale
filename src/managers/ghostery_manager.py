@@ -14,27 +14,25 @@ class GhosteryManager:
     Maintains a single Node.js process for efficient lookups.
     """
     _instance: 'GhosteryManager' = None
-    _lock = threading.Lock()
     
     # Constants
-    CACHE_FILE = 'data/ghostery_cache.pickle'
+    CACHE_FILE = 'data/cache/ghostery_cache.pickle'
     BRIDGE_FILE = os.path.join('src', 'managers', 'ghostery_bridge.js')
     
     def __new__(cls):
-        with cls._lock:
-            if cls._instance is None:
-                cls._instance = super(GhosteryManager, cls).__new__(cls)
-                cls._instance._initialized = False
-            return cls._instance
+        if cls._instance is None:
+            cls._instance = super(GhosteryManager, cls).__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
     
-    def __init__(self):
+    def __init__(self, verbose=False):
         if self._initialized:
             return
             
         self._process = None
         self._cache = {}
         self._initialized = True
-        
+        self.verbose = verbose
         # Load cache
         self._load_cache()
         
@@ -77,7 +75,8 @@ console.error('Ghostery bridge ready');
     def _start_db(self):
         """Start the Node.js process"""
         try:
-            tqdm.write("Starting Ghostery bridge process...")
+            if self.verbose:
+                tqdm.write("Starting Ghostery bridge process...")
             self._process = subprocess.Popen(
                 ['node', self.BRIDGE_FILE],
                 stdin=subprocess.PIPE,
@@ -91,16 +90,19 @@ console.error('Ghostery bridge ready');
             if 'ready' not in ready_msg.lower():
                 tqdm.write(f"Warning: Unexpected message from Ghostery bridge: {ready_msg}")
             else:
-                tqdm.write("Ghostery bridge process started successfully")
+                if self.verbose:
+                    tqdm.write("Ghostery bridge process started successfully")
         except Exception as e:
-            tqdm.write(f"Error starting Ghostery bridge: {e}")
+            if self.verbose:
+                tqdm.write(f"Error starting Ghostery bridge: {e}")
             self._process = None
     
     def _ensure_process_running(self):
         """Ensure the Node.js process is running, restart if needed"""
         with self._lock:
             if self._process is None or self._process.poll() is not None:
-                tqdm.write("Restarting Ghostery bridge process...")
+                if self.verbose:
+                    tqdm.write("Restarting Ghostery bridge process...")
                 self._start_db()
     
     def _load_cache(self):
@@ -109,7 +111,8 @@ console.error('Ghostery bridge ready');
             if os.path.exists(self.CACHE_FILE):
                 with open(self.CACHE_FILE, 'rb') as f:
                     self._cache.update(pickle.load(f))
-                    tqdm.write(f"Loaded {len(self._cache)} Ghostery cache entries")
+                    if self.verbose:
+                        tqdm.write(f"Loaded {len(self._cache)} Ghostery cache entries")
         except Exception as e:
             tqdm.write(f"Error loading Ghostery cache: {e}")
     
@@ -120,7 +123,8 @@ console.error('Ghostery bridge ready');
                 os.makedirs(os.path.dirname(self.CACHE_FILE), exist_ok=True)
                 with open(self.CACHE_FILE, 'wb') as f:
                     pickle.dump(self._cache, f)
-                tqdm.write(f"Saved {len(self._cache)} Ghostery cache entries")
+                if self.verbose:
+                    tqdm.write(f"Saved {len(self._cache)} Ghostery cache entries")
         except Exception as e:
             tqdm.write(f"Error saving Ghostery cache: {e}")
     
@@ -169,11 +173,14 @@ console.error('Ghostery bridge ready');
             return {}
             
         except Exception as e:
-            tqdm.write(f"Error analyzing {url}: {e}")
+            if self.verbose:
+                tqdm.write(f"Error analyzing {url}: {e}")
             return {}
     
     def cleanup(self):
         """Clean up resources and save cache"""
+        if self.verbose:
+            tqdm.write("Saving Ghostery cache...")
         self._save_cache()
         if self._process and self._process.poll() is None:
             try:

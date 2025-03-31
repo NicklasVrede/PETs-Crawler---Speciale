@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fingerprinting Test Page</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+        h2 {
+            margin-top: 0;
+        }
+        button {
+            padding: 5px 10px;
+            margin-right: 5px;
+            margin-bottom: 5px;
+        }
+        #results {
+            white-space: pre-wrap;
+            font-family: monospace;
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Browser Fingerprinting Test Page</h1>
+    <p>This page tests various fingerprinting techniques to verify the fingerprint collector.</p>
+    
+    <div class="test-section">
+        <h2>Navigator Properties</h2>
+        <button onclick="testNavigator()">Test Navigator Properties</button>
+        <div id="navigator-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Canvas Fingerprinting</h2>
+        <button onclick="testCanvas()">Test Canvas</button>
+        <canvas id="fingerprintCanvas" width="200" height="60"></canvas>
+    </div>
+    
+    <div class="test-section">
+        <h2>WebGL Fingerprinting</h2>
+        <button onclick="testWebGL()">Test WebGL</button>
+        <canvas id="webglCanvas" width="200" height="60"></canvas>
+    </div>
+    
+    <div class="test-section">
+        <h2>Audio Fingerprinting</h2>
+        <button onclick="testAudio()">Test Audio</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>Font Detection</h2>
+        <button onclick="testFonts()">Test Fonts</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>Screen Properties</h2>
+        <button onclick="testScreen()">Test Screen</button>
+        <div id="screen-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>WebRTC</h2>
+        <button onclick="testWebRTC()">Test WebRTC</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>Battery API</h2>
+        <button onclick="testBattery()">Test Battery</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>Media Devices</h2>
+        <button onclick="testMediaDevices()">Test Media Devices</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>Network Information</h2>
+        <button onclick="testNetwork()">Test Network</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>Timing and Performance</h2>
+        <button onclick="testTiming()">Test Timing</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>Hardware Information</h2>
+        <button onclick="testHardware()">Test Hardware</button>
+        <div id="hardware-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Run All Tests</h2>
+        <button onclick="runAllTests()">Run All Fingerprinting Tests</button>
+    </div>
+    
+    <h2>Results:</h2>
+    <pre id="results"></pre>
+    
+    <script>
+        // Helper to log results
+        function logResult(message) {
+            const results = document.getElementById('results');
+            results.textContent += message + '\n';
+            console.log(message);
+        }
+        
+        // Test navigator properties
+        function testNavigator() {
+            const props = [
+                'userAgent', 'language', 'languages', 'platform',
+                'cookieEnabled', 'doNotTrack', 'appName', 'appCodeName',
+                'appVersion', 'product', 'productSub', 'vendor', 'vendorSub'
+            ];
+            
+            const results = props.map(prop => `${prop}: ${navigator[prop]}`);
+            document.getElementById('navigator-result').textContent = results.join('\n');
+            logResult("Navigator properties tested");
+        }
+        
+        // Canvas fingerprinting
+        function testCanvas() {
+            const canvas = document.getElementById('fingerprintCanvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Fill with gradient
+            const gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
+            gradient.addColorStop(0, "red");
+            gradient.addColorStop(1, "blue");
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Add text
+            ctx.fillStyle = '#f0f0f0';
+            ctx.font = '16px Arial';
+            ctx.fillText('Canvas Fingerprint', 10, 30);
+            
+            // Draw shapes
+            ctx.beginPath();
+            ctx.arc(160, 30, 20, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(0,255,0,0.8)';
+            ctx.stroke();
+            
+            // Get the data URL
+            const dataURL = canvas.toDataURL();
+            // Get image data
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            
+            logResult("Canvas fingerprinting tested");
+        }
+        
+        // WebGL fingerprinting
+        function testWebGL() {
+            const canvas = document.getElementById('webglCanvas');
+            
+            // Try to get both WebGL contexts
+            try {
+                const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                if (gl) {
+                    // Get parameters
+                    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                    if (debugInfo) {
+                        const vendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL);
+                        const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+                        logResult(`WebGL Vendor: ${vendor}`);
+                        logResult(`WebGL Renderer: ${renderer}`);
+                    }
+                    
+                    // Get supported extensions
+                    const extensions = gl.getSupportedExtensions();
+                    logResult(`WebGL Extensions: ${extensions.length} found`);
+                    
+                    // Get parameters
+                    const params = [
+                        gl.ALPHA_BITS,
+                        gl.BLUE_BITS,
+                        gl.GREEN_BITS,
+                        gl.RED_BITS,
+                        gl.DEPTH_BITS,
+                        gl.STENCIL_BITS,
+                        gl.MAX_VIEWPORT_DIMS,
+                        gl.MAX_TEXTURE_SIZE
+                    ];
+                    params.forEach(param => {
+                        gl.getParameter(param);
+                    });
+                }
+            } catch (e) {
+                logResult(`WebGL error: ${e.message}`);
+            }
+            
+            // Try WebGL2
+            try {
+                const gl2 = canvas.getContext('webgl2');
+                if (gl2) {
+                    logResult("WebGL2 context created");
+                    // Get supported extensions
+                    const extensions = gl2.getSupportedExtensions();
+                    logResult(`WebGL2 Extensions: ${extensions.length} found`);
+                }
+            } catch (e) {
+                logResult(`WebGL2 error: ${e.message}`);
+            }
+            
+            logResult("WebGL fingerprinting tested");
+        }
+        
+        // Audio fingerprinting
+        function testAudio() {
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Create oscillator
+                const oscillator = audioContext.createOscillator();
+                oscillator.type = 'triangle';
+                oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
+                
+                // Create analyser
+                const analyser = audioContext.createAnalyser();
+                analyser.fftSize = 2048;
+                
+                // Connect nodes
+                oscillator.connect(analyser);
+                analyser.connect(audioContext.destination);
+                
+                // Start and stop quickly
+                oscillator.start();
+                oscillator.stop(audioContext.currentTime + 0.001);
+                
+                // Get frequency data
+                const bufferLength = analyser.frequencyBinCount;
+                const dataArray = new Float32Array(bufferLength);
+                analyser.getFloatFrequencyData(dataArray);
+                
+                // Get channel data
+                const buffer = audioContext.createBuffer(1, 1024, 44100);
+                const channelData = buffer.getChannelData(0);
+                
+                logResult("Audio fingerprinting tested");
+            } catch (e) {
+                logResult(`Audio error: ${e.message}`);
+            }
+        }
+        
+        // Font detection
+        function testFonts() {
+            const fonts = ['Arial', 'Times New Roman', 'Courier New', 'Verdana', 'Georgia', 
+                           'Comic Sans MS', 'Impact', 'Tahoma', 'Trebuchet MS', 'Webdings'];
+            
+            fonts.forEach(font => {
+                if (document.fonts && document.fonts.check) {
+                    document.fonts.check(`12px "${font}"`);
+                }
+            });
+            
+            logResult("Font detection tested");
+        }
+        
+        // Screen properties
+        function testScreen() {
+            const properties = [
+                'width', 'height', 'availWidth', 'availHeight',
+                'colorDepth', 'pixelDepth'
+            ];
+            
+            const results = properties.map(prop => `screen.${prop}: ${screen[prop]}`);
+            results.push(`window.devicePixelRatio: ${window.devicePixelRatio}`);
+            document.getElementById('screen-result').textContent = results.join('\n');
+            
+            logResult("Screen properties tested");
+        }
+        
+        // WebRTC
+        function testWebRTC() {
+            try {
+                const pc = new RTCPeerConnection({
+                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                });
+                
+                pc.createDataChannel('test');
+                
+                pc.createOffer()
+                    .then(offer => pc.setLocalDescription(offer))
+                    .catch(err => logResult(`WebRTC error: ${err.message}`));
+                
+                pc.onicecandidate = event => {
+                    if (event.candidate) {
+                        logResult("WebRTC ICE candidate found");
+                        pc.close();
+                    }
+                };
+                
+                logResult("WebRTC test started");
+            } catch (e) {
+                logResult(`WebRTC error: ${e.message}`);
+            }
+        }
+        
+        // Battery API
+        function testBattery() {
+            if (navigator.getBattery) {
+                navigator.getBattery().then(battery => {
+                    logResult(`Battery charging: ${battery.charging}`);
+                    logResult(`Battery level: ${battery.level}`);
+                }).catch(err => {
+                    logResult(`Battery API error: ${err.message}`);
+                });
+            } else {
+                logResult("Battery API not supported");
+            }
+        }
+        
+        // Media Devices
+        function testMediaDevices() {
+            if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+                navigator.mediaDevices.enumerateDevices()
+                    .then(devices => {
+                        logResult(`Media devices found: ${devices.length}`);
+                    })
+                    .catch(err => {
+                        logResult(`Media Devices error: ${err.message}`);
+                    });
+            } else {
+                logResult("Media Devices API not supported");
+            }
+        }
+        
+        // Network Information
+        function testNetwork() {
+            if (navigator.connection) {
+                const connection = navigator.connection;
+                logResult(`Network type: ${connection.effectiveType}`);
+                if (connection.downlink) logResult(`Downlink: ${connection.downlink} Mbps`);
+                if (connection.rtt) logResult(`RTT: ${connection.rtt} ms`);
+            } else {
+                logResult("Network Information API not supported");
+            }
+        }
+        
+        // Timing and Performance
+        function testTiming() {
+            // Use performance.now()
+            const start = performance.now();
+            
+            // Do some operations
+            for (let i = 0; i < 1000; i++) {
+                Math.sqrt(i);
+            }
+            
+            const end = performance.now();
+            logResult(`Operation took ${end - start} ms`);
+            
+            // Get performance entries
+            if (performance.getEntries) {
+                const entries = performance.getEntries();
+                logResult(`Performance entries: ${entries.length}`);
+            }
+            
+            // Use Date.now()
+            const dateNow = Date.now();
+            logResult(`Current timestamp: ${dateNow}`);
+        }
+        
+        // Hardware Information
+        function testHardware() {
+            const result = [];
+            
+            if ('hardwareConcurrency' in navigator) {
+                result.push(`CPU cores: ${navigator.hardwareConcurrency}`);
+            }
+            
+            if ('deviceMemory' in navigator) {
+                result.push(`Device memory: ${navigator.deviceMemory} GB`);
+            }
+            
+            if ('maxTouchPoints' in navigator) {
+                result.push(`Touch points: ${navigator.maxTouchPoints}`);
+            }
+            
+            document.getElementById('hardware-result').textContent = result.join('\n');
+            logResult("Hardware information tested");
+        }
+        
+        // Run all tests
+        function runAllTests() {
+            document.getElementById('results').textContent = ''; // Clear results
+            logResult("Running all fingerprinting tests...");
+            
+            setTimeout(testNavigator, 100);
+            setTimeout(testCanvas, 200);
+            setTimeout(testWebGL, 300);
+            setTimeout(testAudio, 400);
+            setTimeout(testFonts, 500);
+            setTimeout(testScreen, 600);
+            setTimeout(testWebRTC, 700);
+            setTimeout(testBattery, 800);
+            setTimeout(testMediaDevices, 900);
+            setTimeout(testNetwork, 1000);
+            setTimeout(testTiming, 1100);
+            setTimeout(testHardware, 1200);
+            
+            setTimeout(() => {
+                logResult("All tests completed");
+            }, 1500);
+        }
+        
+        // Auto-run all tests when page loads
+        window.addEventListener('load', runAllTests);
+    </script>
+</body>
+</html> 

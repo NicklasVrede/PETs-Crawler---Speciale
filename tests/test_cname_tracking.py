@@ -6,13 +6,13 @@ from urllib.parse import urlparse
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
-from src.identify_sources import (
+from src.analyzers.source_identifier import (
     get_base_domain,
     are_domains_related,
     get_cname_chain,
     analyze_cname_chain
 )
-from src.analyzers.check_filters import FilterManager
+from src.analyzers.filter_manager import FilterManager
 from src.utils.public_suffix_updater import update_public_suffix_list
 
 def test_cname_tracking():
