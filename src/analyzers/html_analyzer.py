@@ -74,6 +74,7 @@ def analyze_cookie_consent_text(directory_path="data/banner_data/html/active.com
         if visit_id not in json_results["html_check"]:
             json_results["html_check"][visit_id] = {
                 "keywords": [],
+                "no_extension": {"matches": []},
                 "extensions": {}
             }
         
@@ -94,6 +95,7 @@ def analyze_cookie_consent_text(directory_path="data/banner_data/html/active.com
                 if verbose:
                     tqdm.write(f"Consent phrases found in baseline: {', '.join(baseline_consent_phrases)}")
                 json_results["html_check"][visit_id]["keywords"] = baseline_consent_phrases
+                json_results["html_check"][visit_id]["no_extension"]["matches"] = baseline_consent_phrases
             else:
                 if verbose:
                     tqdm.write("No consent phrases found in baseline")
@@ -112,27 +114,36 @@ def analyze_cookie_consent_text(directory_path="data/banner_data/html/active.com
                 
                 # Find which baseline phrases are missing in this extension file
                 missing_phrases = []
+                found_phrases = []
                 for phrase in baseline_consent_phrases:
                     pattern = re.compile(phrase, re.IGNORECASE)
-                    if not pattern.search(ext_html):
+                    if pattern.search(ext_html):
+                        found_phrases.append(phrase)
+                    else:
                         missing_phrases.append(phrase)
                         
+                # Initialize the extension entry
+                json_results["html_check"][visit_id]["extensions"][ext_file] = {
+                    "matches": found_phrases,
+                    "missing": missing_phrases
+                }
+                
                 if missing_phrases:
                     if verbose:
                         tqdm.write(f"Consent phrases missing in this file: {', '.join(missing_phrases)}")
                         tqdm.write("This indicates the cookie banner was likely handled by the extension")
-                    # If any phrases are missing, set the boolean to false
-                    json_results["html_check"][visit_id]["extensions"][ext_file] = False
                 else:
                     if verbose:
                         tqdm.write("No consent phrases are missing - banner may still be present")
-                    # If all phrases are present, set the boolean to true
-                    json_results["html_check"][visit_id]["extensions"][ext_file] = True
             except Exception as e:
                 if verbose:
                     tqdm.write(f"Error processing {ext_file}: {e}")
-                json_results["html_check"][visit_id]["extensions"][ext_file] = "error"
-            
+                json_results["html_check"][visit_id]["extensions"][ext_file] = {
+                    "matches": [],
+                    "missing": [],
+                    "error": str(e)
+                }
+        
     return json_results
 
 if __name__ == "__main__":

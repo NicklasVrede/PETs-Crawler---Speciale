@@ -6,6 +6,8 @@ from tqdm import tqdm
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
+import cv2
+import re
 
 # Add project root to path
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -120,6 +122,48 @@ class BannerAnalyzer:
         
         return banner_results
     
+    def is_file_for_extension(self, filename, ext_key):
+        """
+        Determine if a file belongs to a specific extension based on filename pattern.
+        
+        Args:
+            filename (str): The filename to check
+            ext_key (str): The extension key (lowercase, normalized)
+            
+        Returns:
+            bool: True if the file belongs to this extension, False otherwise
+        """
+        # Get base filename without extension
+        base_name = os.path.basename(filename)
+        name_without_ext = os.path.splitext(base_name)[0]
+        
+        # Split by underscores and convert to lowercase
+        parts = name_without_ext.lower().split('_')
+        
+        # Skip the first part (visit number)
+        if len(parts) > 1:
+            parts = parts[1:]
+        
+        # Check exact extension match
+        if '_' in ext_key:
+            # For multi-word extensions like "ublock_origin_lite"
+            ext_parts = ext_key.split('_')
+            
+            # The filename should contain exactly these parts as a continuous sequence
+            for i in range(len(parts) - len(ext_parts) + 1):
+                if parts[i:i+len(ext_parts)] == ext_parts:
+                    # We have an exact match, now check this isn't part of a longer extension name
+                    if (i+len(ext_parts) == len(parts)) or (ext_parts == ['adblock'] and parts[i:i+2] != ['adblock', 'plus']):
+                        return True
+        else:
+            # For single-word extensions like "adblock" or "ublock"
+            if ext_key in parts:
+                if len(parts) == 1 or (ext_key == 'adblock' and parts != ['adblock', 'plus']) or \
+                   (ext_key == 'ublock' and parts != ['ublock', 'origin', 'lite']):
+                    return True
+                    
+        return False
+    
     def process_domain_results(self, screenshot_results, html_results, page_loaded_results):
         """Process domain results to create a structured banner_results dictionary"""
         # Create a banner results structure keyed by extension
@@ -132,7 +176,6 @@ class BannerAnalyzer:
             
             # Initialize results for this extension
             banner_results[ext_key] = {
-                "keywords": {},
                 "img_match": {},
                 "text_match": {},
                 "page_loaded": {}
@@ -143,56 +186,67 @@ class BannerAnalyzer:
                 for visit_id, visit_data in screenshot_results["screenshot_check"].items():
                     # Get the keywords found in the baseline
                     keywords = visit_data.get("keywords", [])
-                    banner_results[ext_key]["keywords"][visit_id] = keywords
                     
                     # Check each extension's screenshot results
                     for screenshot_file, banner_present in visit_data.get("extensions", {}).items():
-                        # Only include if this extension is in the filename
-                        if f"_{ext_key}." in screenshot_file.lower() or f"_{ext_key}_" in screenshot_file.lower():
-                            if visit_id not in banner_results[ext_key]["img_match"]:
-                                banner_results[ext_key]["img_match"][visit_id] = {}
-                            banner_results[ext_key]["img_match"][visit_id][screenshot_file] = banner_present
+                        # Check if this file belongs to this extension
+                        if not self.is_file_for_extension(screenshot_file, ext_key):
+                            continue
+                            
+                        # If we reach here, this file belongs to the current extension
+                        if visit_id not in banner_results[ext_key]["img_match"]:
+                            banner_results[ext_key]["img_match"][visit_id] = {
+                                "matched": banner_present,
+                                "keywords": keywords
+                            }
             
             # Process HTML analysis results
             if html_results and "html_check" in html_results:
                 for visit_id, visit_data in html_results["html_check"].items():
-                    # Get the baseline matches
+                    # Get the baseline matches and keywords
                     baseline_matches = visit_data.get("no_extension", {}).get("matches", [])
+                    html_keywords = visit_data.get("keywords", [])
                     
                     # Check each extension's HTML results
-                    for html_file, html_data in visit_data.items():
-                        # Only include if this extension is in the filename (and not the baseline)
-                        if "no_extension" not in html_file and (f"_{ext_key}." in html_file.lower() or f"_{ext_key}_" in html_file.lower()):
-                            matches = html_data.get("matches", [])
+                    for html_file, html_data in visit_data.get("extensions", {}).items():
+                        # Skip the baseline
+                        if "no_extension" in html_file:
+                            continue
                             
-                            # Compare with baseline to determine if banner was removed
-                            if baseline_matches and not matches:
-                                banner_removed = True
-                            elif not baseline_matches:
-                                banner_removed = None  # Can't determine
-                            else:
-                                banner_removed = False
-                            
-                            if visit_id not in banner_results[ext_key]["text_match"]:
-                                banner_results[ext_key]["text_match"][visit_id] = {}
-                            
-                            banner_results[ext_key]["text_match"][visit_id][html_file] = {
+                        # Check if this file belongs to this extension
+                        if not self.is_file_for_extension(html_file, ext_key):
+                            continue
+                        
+                        matches = html_data.get("matches", [])
+                        missing = html_data.get("missing", [])
+                        
+                        # Compare with baseline to determine if banner was removed
+                        if baseline_matches and not matches:
+                            banner_removed = True
+                        elif not baseline_matches:
+                            banner_removed = None  # Can't determine
+                        else:
+                            banner_removed = False
+                        
+                        if visit_id not in banner_results[ext_key]["text_match"]:
+                            banner_results[ext_key]["text_match"][visit_id] = {
                                 "baseline_matches": baseline_matches,
                                 "extension_matches": matches,
-                                "banner_removed": banner_removed
+                                "missing_matches": missing,
+                                "banner_removed": banner_removed,
+                                "keywords": html_keywords
                             }
             
             # Process page loaded results
             if page_loaded_results:
                 for visit_id, visit_data in page_loaded_results.items():
                     for screenshot_file, screenshot_data in visit_data.items():
-                        # Only include if this extension is in the filename
-                        if f"_{ext_key}." in screenshot_file.lower() or f"_{ext_key}_" in screenshot_file.lower():
-                            if visit_id not in banner_results[ext_key]["page_loaded"]:
-                                banner_results[ext_key]["page_loaded"][visit_id] = {}
+                        # Check if this file belongs to this extension
+                        if not self.is_file_for_extension(screenshot_file, ext_key):
+                            continue
                             
-                            # Add page loaded status
-                            banner_results[ext_key]["page_loaded"][visit_id][screenshot_file] = {
+                        if visit_id not in banner_results[ext_key]["page_loaded"]:
+                            banner_results[ext_key]["page_loaded"][visit_id] = {
                                 "loaded": screenshot_data.get("loaded", False),
                                 "status": screenshot_data.get("status", "unknown")
                             }
@@ -335,6 +389,66 @@ class BannerAnalyzer:
         
         return domains  # Return the list of domains processed
 
+    def analyze_single_extension(self, domain, extension_name, test_run=True):
+        """
+        Analyze a single domain with a specific extension for testing purposes
+        
+        Args:
+            domain (str): The domain to analyze
+            extension_name (str): The name of the extension to focus on
+            test_run (bool): Whether to actually update files or just test
+            
+        Returns:
+            dict: The banner analysis results
+        """
+        print(f"Analyzing domain {domain} with extension {extension_name}")
+        
+        # Analyze the domain
+        banner_results = self.analyze_domain(domain)
+        
+        if not banner_results:
+            print(f"No results found for domain {domain}")
+            return {}
+            
+        # Extract just the extension we want to test
+        ext_key = extension_name.replace(" ", "_").lower()
+        if ext_key in banner_results:
+            filtered_results = {ext_key: banner_results[ext_key]}
+            
+            # Display some results for verification
+            print(f"\nResults for {extension_name} on {domain}:")
+            
+            # Show image match results if available
+            img_matches = banner_results[ext_key].get("img_match", {})
+            if img_matches:
+                print(f"  Image matches: {len(img_matches)} visits analyzed")
+                for visit_id, data in img_matches.items():
+                    print(f"    Visit {visit_id}: {len(data)} screenshots")
+            else:
+                print("  No image matches found")
+                
+            # Show text match results if available
+            text_matches = banner_results[ext_key].get("text_match", {})
+            if text_matches:
+                print(f"  Text matches: {len(text_matches)} visits analyzed")
+                for visit_id, data in text_matches.items():
+                    print(f"    Visit {visit_id}: {len(data)} HTML files")
+            else:
+                print("  No text matches found")
+            
+            # Update extension files if requested
+            if not test_run:
+                self.update_extension_files(domain, filtered_results, test_run=False)
+                print(f"Updated files for {domain} with {extension_name} results")
+            else:
+                print("Test run - no files updated")
+                
+            return filtered_results
+        else:
+            print(f"No results found for extension {extension_name}")
+            return {}
+
+
 # Helper function for parallel processing (needs to be outside the class)
 def analyze_domain_parallel(domain, banner_data_dir, extension_folders):
     """
@@ -375,6 +489,49 @@ def analyze_domain_parallel(domain, banner_data_dir, extension_folders):
         # Create a banner results structure keyed by extension
         banner_results = {}
         
+        # Helper function for extension matching
+        def is_file_for_extension(filename, ext_key):
+            """
+            Determine if a file belongs to a specific extension based on filename pattern.
+            
+            Args:
+                filename (str): The filename to check
+                ext_key (str): The extension key (lowercase, normalized)
+                
+            Returns:
+                bool: True if the file belongs to this extension, False otherwise
+            """
+            # Get base filename without extension
+            base_name = os.path.basename(filename)
+            name_without_ext = os.path.splitext(base_name)[0]
+            
+            # Split by underscores and convert to lowercase
+            parts = name_without_ext.lower().split('_')
+            
+            # Skip the first part (visit number)
+            if len(parts) > 1:
+                parts = parts[1:]
+            
+            # Check exact extension match
+            if '_' in ext_key:
+                # For multi-word extensions like "ublock_origin_lite"
+                ext_parts = ext_key.split('_')
+                
+                # The filename should contain exactly these parts as a continuous sequence
+                for i in range(len(parts) - len(ext_parts) + 1):
+                    if parts[i:i+len(ext_parts)] == ext_parts:
+                        # We have an exact match, now check this isn't part of a longer extension name
+                        if (i+len(ext_parts) == len(parts)) or (ext_parts == ['adblock'] and parts[i:i+2] != ['adblock', 'plus']):
+                            return True
+            else:
+                # For single-word extensions like "adblock" or "ublock"
+                if ext_key in parts:
+                    if len(parts) == 1 or (ext_key == 'adblock' and parts != ['adblock', 'plus']) or \
+                       (ext_key == 'ublock' and parts != ['ublock', 'origin', 'lite']):
+                        return True
+                    
+            return False
+        
         # Process for each extension
         for ext_folder in extension_folders:
             # Create a normalized extension key
@@ -382,7 +539,6 @@ def analyze_domain_parallel(domain, banner_data_dir, extension_folders):
             
             # Initialize results for this extension
             banner_results[ext_key] = {
-                "keywords": {},
                 "img_match": {},
                 "text_match": {},
                 "page_loaded": {}
@@ -393,56 +549,67 @@ def analyze_domain_parallel(domain, banner_data_dir, extension_folders):
                 for visit_id, visit_data in screenshot_results["screenshot_check"].items():
                     # Get the keywords found in the baseline
                     keywords = visit_data.get("keywords", [])
-                    banner_results[ext_key]["keywords"][visit_id] = keywords
                     
                     # Check each extension's screenshot results
                     for screenshot_file, banner_present in visit_data.get("extensions", {}).items():
-                        # Only include if this extension is in the filename
-                        if f"_{ext_key}." in screenshot_file.lower() or f"_{ext_key}_" in screenshot_file.lower():
-                            if visit_id not in banner_results[ext_key]["img_match"]:
-                                banner_results[ext_key]["img_match"][visit_id] = {}
-                            banner_results[ext_key]["img_match"][visit_id][screenshot_file] = banner_present
+                        # Check if this file belongs to this extension
+                        if not is_file_for_extension(screenshot_file, ext_key):
+                            continue
+                            
+                        # If we reach here, this file belongs to the current extension
+                        if visit_id not in banner_results[ext_key]["img_match"]:
+                            banner_results[ext_key]["img_match"][visit_id] = {
+                                "matched": banner_present,
+                                "keywords": keywords
+                            }
             
             # Process HTML analysis results
             if html_results and "html_check" in html_results:
                 for visit_id, visit_data in html_results["html_check"].items():
-                    # Get the baseline matches
+                    # Get the baseline matches and keywords
                     baseline_matches = visit_data.get("no_extension", {}).get("matches", [])
+                    html_keywords = visit_data.get("keywords", [])
                     
                     # Check each extension's HTML results
-                    for html_file, html_data in visit_data.items():
-                        # Only include if this extension is in the filename (and not the baseline)
-                        if "no_extension" not in html_file and (f"_{ext_key}." in html_file.lower() or f"_{ext_key}_" in html_file.lower()):
-                            matches = html_data.get("matches", [])
+                    for html_file, html_data in visit_data.get("extensions", {}).items():
+                        # Skip the baseline
+                        if "no_extension" in html_file:
+                            continue
                             
-                            # Compare with baseline to determine if banner was removed
-                            if baseline_matches and not matches:
-                                banner_removed = True
-                            elif not baseline_matches:
-                                banner_removed = None  # Can't determine
-                            else:
-                                banner_removed = False
-                            
-                            if visit_id not in banner_results[ext_key]["text_match"]:
-                                banner_results[ext_key]["text_match"][visit_id] = {}
-                            
-                            banner_results[ext_key]["text_match"][visit_id][html_file] = {
+                        # Check if this file belongs to this extension
+                        if not is_file_for_extension(html_file, ext_key):
+                            continue
+                        
+                        matches = html_data.get("matches", [])
+                        missing = html_data.get("missing", [])
+                        
+                        # Compare with baseline to determine if banner was removed
+                        if baseline_matches and not matches:
+                            banner_removed = True
+                        elif not baseline_matches:
+                            banner_removed = None  # Can't determine
+                        else:
+                            banner_removed = False
+                        
+                        if visit_id not in banner_results[ext_key]["text_match"]:
+                            banner_results[ext_key]["text_match"][visit_id] = {
                                 "baseline_matches": baseline_matches,
                                 "extension_matches": matches,
-                                "banner_removed": banner_removed
+                                "missing_matches": missing,
+                                "banner_removed": banner_removed,
+                                "keywords": html_keywords
                             }
             
             # Process page loaded results
             if page_loaded_results:
                 for visit_id, visit_data in page_loaded_results.items():
                     for screenshot_file, screenshot_data in visit_data.items():
-                        # Only include if this extension is in the filename
-                        if f"_{ext_key}." in screenshot_file.lower() or f"_{ext_key}_" in screenshot_file.lower():
-                            if visit_id not in banner_results[ext_key]["page_loaded"]:
-                                banner_results[ext_key]["page_loaded"][visit_id] = {}
+                        # Check if this file belongs to this extension
+                        if not is_file_for_extension(screenshot_file, ext_key):
+                            continue
                             
-                            # Add page loaded status
-                            banner_results[ext_key]["page_loaded"][visit_id][screenshot_file] = {
+                        if visit_id not in banner_results[ext_key]["page_loaded"]:
+                            banner_results[ext_key]["page_loaded"][visit_id] = {
                                 "loaded": screenshot_data.get("loaded", False),
                                 "status": screenshot_data.get("status", "unknown")
                             }
@@ -460,7 +627,8 @@ def analyze_domain_parallel(domain, banner_data_dir, extension_folders):
     return banner_results
 
 if __name__ == "__main__":
-    # Default test configuration
+    # Comment out the default test configuration
+    """
     cpu_count = multiprocessing.cpu_count()
     recommended_workers = max(1, cpu_count - 1)  # Leave one CPU for system
     
@@ -474,3 +642,20 @@ if __name__ == "__main__":
         use_parallel=True,             # Process domains in parallel 
         max_workers=5
     )
+    """
+    
+    # Single extension test code
+    analyzer = BannerAnalyzer()
+    
+    # Choose a domain and extension to test
+    test_domain = "amazon.co.uk"  # Replace with an actual domain in your dataset
+    test_extension = "adblock"
+    
+    # Run the single extension test
+    results = analyzer.analyze_single_extension(
+        domain=test_domain,
+        extension_name=test_extension,
+        test_run=False
+    )
+    
+    print("\nTest completed")
