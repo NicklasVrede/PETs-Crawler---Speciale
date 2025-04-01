@@ -136,11 +136,10 @@ class FingerprintCollector:
         
         return {
             'visit_number': visit_number,
-            'technique_breakdown': technique_breakdown,
             'domain_summary': {
                 'total_calls': total_calls,
-                'api_breakdown': dict(domain_api_counts),
-                'category_breakdown': dict(domain_category_counts)
+                'technique_breakdown': technique_breakdown,
+                'api_breakdown': dict(domain_api_counts)
             }
         }
     
@@ -177,8 +176,11 @@ class FingerprintCollector:
             
             # Update combined data
             all_techniques.update(visit_result['technique_breakdown'].keys())
-            all_category_counts.update(visit_result['domain_summary']['api_breakdown'])
+            all_category_counts.update(visit_result['technique_breakdown'])
             total_calls += visit_result['domain_summary']['total_calls']
+            
+            # Add tracked pages to the set
+            pages_analyzed.update(visit_data['page_data'].keys())
         
         # Create final result
         result = {

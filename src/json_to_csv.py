@@ -123,181 +123,276 @@ def analyze_crawler_data(json_file):
         with open(json_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
         
-        # Basic info
+        # Basic data
         domain = data.get('domain', '')
         timestamp = data.get('timestamp', '')
-        base_domain = domain.lower().replace('www.', '')
         
-        # Network metrics
-        all_requests = []
-        for visit in data.get('visits', []):
-            visit_requests = visit.get('network', {}).get('requests', [])
-            all_requests.extend(visit_requests)
+        # Helper to get specific visit data
+        def get_visit_data(section, preferred_visit="1", fallback_visit="0"):
+            if section not in data:
+                return None
+            
+            section_data = data[section]
+            # Try to get the preferred visit
+            if preferred_visit in section_data:
+                return section_data[preferred_visit]
+            # Fall back to an alternative visit
+            elif fallback_visit in section_data:
+                return section_data[fallback_visit]
+            # Try any available numeric key
+            for key in section_data:
+                if isinstance(key, (int, str)) and (isinstance(key, int) or key.isdigit()):
+                    return section_data[key]
+            return None
         
-        total_requests = len(all_requests)
-        unique_domains = count_unique_domains(all_requests)
-        third_party_requests = count_third_party_requests(all_requests, base_domain)
+        # ----- Network Data - Use visit 1 -----
+        visit_id = "1"  # Prefer visit 1
+        fallback_id = "0"  # Fallback to visit 0 if needed
         
-        # Resource type breakdown
-        resource_types = get_resource_type_counts(all_requests)
-        js_requests = resource_types.get('script', 0)
-        css_requests = resource_types.get('stylesheet', 0)
-        image_requests = resource_types.get('image', 0)
+        network_data = get_visit_data('network_data', visit_id, fallback_id)
         
-        # Cookie metrics using existing cookie_analysis if available
-        cookie_analysis = data.get('cookie_analysis', {})
-        if cookie_analysis:
-            # Use the pre-computed cookie analysis
-            total_cookies = cookie_analysis.get('total_cookies', 0)
-            identified_cookies = cookie_analysis.get('identified_cookies', 0)
-            
-            # Cookie categories from analysis - updated to match the actual capitalization
-            categories = cookie_analysis.get('categories', {})
-            necessary_cookies = categories.get('Necessary', 0)
-            preference_cookies = categories.get('Preference', 0)
-            functional_cookies = categories.get('Functional', 0)
-            marketing_cookies = categories.get('Marketing', 0) + categories.get('Advertisement', 0)
-            statistics_cookies = categories.get('Statistics', 0) + categories.get('Analytics', 0)
-            unclassified_cookies = categories.get('Unknown', 0) + categories.get('Unclassified', 0) + categories.get('Other', 0)
-            
-            # Get cookies with secure flag and httpOnly flag
-            all_cookies = []
-            for visit_num, cookies in data.get('cookies', {}).items():
-                all_cookies.extend(cookies)
-            
-            secure_cookies = sum(1 for c in all_cookies if c.get('secure', False))
-            httponly_cookies = sum(1 for c in all_cookies if c.get('httpOnly', False))
-            
-            # Determine third-party cookies based on domain
-            third_party_cookies = 0
-            for cookie_info in cookie_analysis.get('cookies', []):
-                cookie_domain = cookie_info.get('domain', '')
-                if base_domain not in cookie_domain:
-                    third_party_cookies += 1
-        else:
-            # Fallback to raw cookie collection if no analysis exists
-            all_cookies = []
-            for visit_num, cookies in data.get('cookies', {}).items():
-                all_cookies.extend(cookies)
-            
-            total_cookies = len(all_cookies)
-            identified_cookies = 0
-            necessary_cookies = 0
-            preference_cookies = 0
-            functional_cookies = 0
-            marketing_cookies = 0
-            statistics_cookies = 0
-            unclassified_cookies = total_cookies
-            
-            secure_cookies = sum(1 for c in all_cookies if c.get('secure', False))
-            httponly_cookies = sum(1 for c in all_cookies if c.get('httpOnly', False))
-            third_party_cookies = sum(1 for c in all_cookies if base_domain not in c.get('domain', '').lower())
-        
-        # Get filter matches from the correct path in the JSON structure
-        # First check domain_stats
+        # Default values in case data is missing
+        requests = []
+        total_requests = 0
+        unique_domains = 0
+        third_party_requests = 0
+        js_requests = 0
+        css_requests = 0
+        image_requests = 0
         filter_matches = 0
-        domain_stats = data.get('domain_stats', {})
-        if domain_stats:
-            filter_matches = domain_stats.get('statistics', {}).get('filter_matches', 0)
-        
-        # If not found in domain_stats, check domain_analysis
-        if filter_matches == 0 and 'domain_analysis' in data:
-            domain_analysis = data.get('domain_analysis', {})
-            if domain_analysis:
-                filter_matches = domain_analysis.get('statistics', {}).get('filter_matches', 0)
-        
-        # CNAME cloaking detection from domain_stats
         potential_cname_cloaking = 0
-        cname_stats = domain_stats.get('statistics', {}).get('cname_cloaking', {})
-        if cname_stats:
-            potential_cname_cloaking = cname_stats.get('total', 0)
+        banner_removed = False
+        page_loaded = True
         
-        # Web Storage metrics - SIMPLIFIED to just counts and reads
-        # First look in top-level storage stats
-        local_storage_count = data.get('local_storage_count', 0)
-        session_storage_count = data.get('session_storage_count', 0)
+        if network_data:
+            requests = network_data.get('requests', [])
+            total_requests = len(requests)
+            unique_domains = count_unique_domains(requests)
+            third_party_requests = count_third_party_requests(requests, domain)
+            
+            # Count resources by type
+            resource_types = get_resource_type_counts(requests)
+            js_requests = resource_types.get('script', 0)
+            css_requests = resource_types.get('stylesheet', 0)
+            image_requests = resource_types.get('image', 0)
+            
+            # Check for potential tracking and CNAME cloaking
+            filter_matches = count_filter_matches(requests)
+            potential_cname_cloaking = count_potential_cname_cloaking(requests, domain)
         
-        # Just include getItem operations
-        local_storage_get = data.get('localStorage_getItem', 0)
-        session_storage_get = data.get('sessionStorage_getItem', 0)
+        # ----- Cookie Data - Use visit 1 -----
+        cookies_data = get_visit_data('cookies', visit_id, fallback_id)
         
-        # Domain categories, organizations, and providers from domain_analysis
-        domain_analysis = data.get('domain_analysis', {})
-        analyzed_domains = domain_analysis.get('domains', [])
+        total_cookies = 0
+        identified_cookies = 0
+        secure_cookies = 0
+        httponly_cookies = 0
+        third_party_cookies = 0
+        necessary_cookies = 0
+        preference_cookies = 0
+        functional_cookies = 0 
+        marketing_cookies = 0
+        statistics_cookies = 0
+        unclassified_cookies = 0
         
-        # Initialize counters - RENAMED to be more accurate
+        if cookies_data:
+            # For cookies, the visit data is directly an array of cookies
+            total_cookies = len(cookies_data)
+            
+            # Count cookie properties
+            for cookie in cookies_data:
+                if cookie.get('secure', False):
+                    secure_cookies += 1
+                if cookie.get('httpOnly', False):
+                    httponly_cookies += 1
+                    
+                # Check if cookie is third-party
+                cookie_domain = cookie.get('domain', '')
+                if cookie_domain and domain not in cookie_domain:
+                    third_party_cookies += 1
+                
+                # Count cookies by category if available
+                category = cookie.get('category', '').lower()
+                if category:
+                    identified_cookies += 1
+                    
+                    if 'necessary' in category or 'essential' in category:
+                        necessary_cookies += 1
+                    elif 'preference' in category or 'functional' in category:
+                        preference_cookies += 1
+                    elif 'functional' in category:
+                        functional_cookies += 1
+                    elif 'marketing' in category or 'advertising' in category or 'targeting' in category:
+                        marketing_cookies += 1
+                    elif 'statistic' in category or 'analytics' in category or 'performance' in category:
+                        statistics_cookies += 1
+                    else:
+                        unclassified_cookies += 1
+        
+        # ----- Storage API Usage - Use visit 1 -----
+        storage_data = get_visit_data('storage', visit_id, fallback_id)
+        
+        local_storage_count = 0
+        session_storage_count = 0
+        local_storage_get = 0
+        session_storage_get = 0
+        
+        if storage_data:
+            local_storage_count = storage_data.get('local_storage_count', 0)
+            session_storage_count = storage_data.get('session_storage_count', 0)
+            
+            # Get API usage counts if available
+            api_usage = storage_data.get('api_usage', {})
+            local_storage_api = api_usage.get('localStorage', {})
+            session_storage_api = api_usage.get('sessionStorage', {})
+            
+            local_storage_get = local_storage_api.get('getItem_count', 0)
+            session_storage_get = session_storage_api.get('getItem_count', 0)
+        
+        # ----- Service categorization -----
+        # Initialize service counts
         advertising_services = 0
         analytics_services = 0
         social_media_services = 0
         content_delivery_services = 0
         hosting_services = 0
         cdn_services = 0
+        other_services = 0
         
-        # Top organizations and providers
-        top_organizations = set()
-        top_providers = set()
+        # Track top organizations and providers
+        top_organizations = defaultdict(int)
+        top_providers = defaultdict(int)
         
-        for domain_info in analyzed_domains:
-            # Count categories
-            categories = domain_info.get('categories', [])
-            for category in categories:
-                category = category.lower()
-                if any(term in category for term in ['ad', 'advertising', 'marketin']):
-                    advertising_services += 1
-                elif any(term in category for term in ['analytic', 'statistics', 'measurement']):
-                    analytics_services += 1
-                elif any(term in category for term in ['social', 'comment', 'share']):
-                    social_media_services += 1
-                elif any(term in category for term in ['cdn', 'content']):
-                    content_delivery_services += 1
-                elif 'hosting' in category:
-                    hosting_services += 1
+        # Get unique domains from the requests
+        domains = set()
+        for req in requests:
+            if 'domain' in req:
+                domains.add(req['domain'])
+        
+        # Categorize each domain
+        for domain_name in domains:
+            # This is a simplified version - in reality you'd want to match
+            # against a database of trackers and their categories
             
-            # Track organizations (limit to 5 to avoid overly long fields)
-            organizations = domain_info.get('organizations', [])
-            if len(top_organizations) < 5:
-                for org in organizations:
-                    if org and org not in top_organizations:
-                        top_organizations.add(org)
+            # For the example, assign simple categories based on name patterns
+            category = "unknown"
+            organization = "unknown"
+            provider = "unknown"
             
-            # Track providers (limit to 5)
-            provider = domain_info.get('provider')
-            if provider and len(top_providers) < 5 and provider not in top_providers:
-                top_providers.add(provider)
+            # Simple classification - this would be more comprehensive in practice
+            if "ad" in domain_name or "ads" in domain_name or "doubleclick" in domain_name:
+                category = "advertising"
+                if "google" in domain_name:
+                    organization = "Google"
+                    provider = "DoubleClick"
+            elif "analytics" in domain_name or "stats" in domain_name:
+                category = "analytics"
+                if "google" in domain_name:
+                    organization = "Google"
+                    provider = "Google Analytics"
+            elif "facebook" in domain_name or "twitter" in domain_name or "linkedin" in domain_name:
+                category = "social media"
+                if "facebook" in domain_name:
+                    organization = "Meta"
+                    provider = "Facebook"
+                elif "twitter" in domain_name:
+                    organization = "Twitter"
+                    provider = "Twitter"
+            elif "cdn" in domain_name or "cloudfront" in domain_name or "cloudflare" in domain_name:
+                category = "cdn"
+                if "cloudfront" in domain_name:
+                    organization = "Amazon"
+                    provider = "CloudFront"
+                elif "cloudflare" in domain_name:
+                    organization = "Cloudflare"
+                    provider = "Cloudflare CDN"
+            elif "aws" in domain_name or "azure" in domain_name or "gcp" in domain_name:
+                category = "hosting"
+                if "aws" in domain_name or "amazon" in domain_name:
+                    organization = "Amazon"
+                    provider = "AWS"
+                elif "azure" in domain_name or "microsoft" in domain_name:
+                    organization = "Microsoft"
+                    provider = "Azure"
+            
+            # Record the organization and provider
+            if organization != "unknown":
+                top_organizations[organization] += 1
+            if provider != "unknown":
+                top_providers[provider] += 1
+            
+            # Increment category counters
+            if category == "advertising":
+                advertising_services += 1
+            elif category == "analytics":
+                analytics_services += 1
+            elif category == "social media":
+                social_media_services += 1
+            elif category == "content delivery":
+                content_delivery_services += 1
+            elif category == "hosting":
+                hosting_services += 1
+            elif "cdn" in category.lower():
+                cdn_services += 1
+            else:
+                other_services += 1
         
-        # Convert sets to strings for CSV
-        top_organizations_str = ", ".join(sorted(top_organizations))
-        top_providers_str = ", ".join(sorted(top_providers))
+        # Format top organizations and providers
+        # New format with counts: "Org1:42|Org2:23|Org3:17"
+        top_organizations_str = '|'.join([f"{org}:{count}" for org, count in 
+                                        sorted(top_organizations.items(), key=lambda x: x[1], reverse=True)[:3]])
         
-        # Other third-party services (those that don't fit into specific categories)
-        other_services = unique_domains - (advertising_services + analytics_services + 
-                                        social_media_services + content_delivery_services + 
-                                        hosting_services + cdn_services)
-        if other_services < 0:  # Handle potential overlaps in categories
-            other_services = 0
+        top_providers_str = '|'.join([f"{provider}:{count}" for provider, count in 
+                                    sorted(top_providers.items(), key=lambda x: x[1], reverse=True)[:3]])
         
-        # Fingerprinting metrics - fixed to match the actual JSON structure
-        fingerprinting = data.get('fingerprinting', {})
+        # ----- Fingerprinting metrics - Use visit 1 -----
+        fingerprinting_data = get_visit_data('fingerprinting', visit_id, fallback_id)
+        
+        # Default values
         total_fp_calls = 0
         hardware_fp_calls = 0
         canvas_fp_calls = 0
         webgl_fp_calls = 0
         
-        # The correct path based on the provided JSON structure
-        if 'summary' in fingerprinting and 'summary' in fingerprinting['summary']:
-            fp_summary = fingerprinting['summary']['summary']
-            total_fp_calls = fp_summary.get('total_calls', 0)
-            
-            # Category counts are at this path
-            category_counts = fp_summary.get('category_counts', {})
-            hardware_fp_calls = category_counts.get('hardware', 0)
-            canvas_fp_calls = category_counts.get('canvas', 0)
-            webgl_fp_calls = category_counts.get('webgl', 0)
+        # Add new fingerprinting variables
+        navigator_fp_calls = 0
+        screen_fp_calls = 0
+        storage_fp_calls = 0
+        date_fp_calls = 0
+        media_fp_calls = 0
+        performance_fp_calls = 0
+        intl_fp_calls = 0
         
+        if fingerprinting_data:
+            # Get technique breakdown if available
+            technique_breakdown = fingerprinting_data.get('technique_breakdown', {})
+            if not technique_breakdown and 'domain_summary' in fingerprinting_data:
+                # Try to get from domain_summary if the direct breakdown is not there
+                domain_summary = fingerprinting_data.get('domain_summary', {})
+                technique_breakdown = domain_summary.get('technique_breakdown', {})
+            
+            # Calculate call counts
+            total_fp_calls = sum(technique_breakdown.values())
+            hardware_fp_calls = technique_breakdown.get('hardware', 0)
+            canvas_fp_calls = technique_breakdown.get('canvas', 0)
+            webgl_fp_calls = technique_breakdown.get('webgl', 0)
+            
+            # Add the additional fingerprinting techniques
+            navigator_fp_calls = technique_breakdown.get('navigator', 0)
+            screen_fp_calls = technique_breakdown.get('screen', 0)
+            storage_fp_calls = technique_breakdown.get('storage', 0)
+            date_fp_calls = technique_breakdown.get('date', 0)
+            media_fp_calls = technique_breakdown.get('media', 0)
+            performance_fp_calls = technique_breakdown.get('performance', 0)
+            intl_fp_calls = technique_breakdown.get('intl', 0)
+        
+        # Return the data with banner_removed and page_loaded moved up in the order
         return {
             'profile': profile,
             'domain': domain,
             'timestamp': timestamp,
+            'page_loaded': page_loaded,
+            'banner_removed': banner_removed,
             'total_requests': total_requests,
             'unique_domains': unique_domains,
             'third_party_requests': third_party_requests,
@@ -333,7 +428,14 @@ def analyze_crawler_data(json_file):
             'total_fingerprinting_calls': total_fp_calls,
             'hardware_fingerprinting_calls': hardware_fp_calls,
             'canvas_fingerprinting_calls': canvas_fp_calls,
-            'webgl_fingerprinting_calls': webgl_fp_calls
+            'webgl_fingerprinting_calls': webgl_fp_calls,
+            'navigator_fingerprinting_calls': navigator_fp_calls,
+            'screen_fingerprinting_calls': screen_fp_calls,
+            'storage_fingerprinting_calls': storage_fp_calls,
+            'date_fingerprinting_calls': date_fp_calls,
+            'media_fingerprinting_calls': media_fp_calls,
+            'performance_fingerprinting_calls': performance_fp_calls,
+            'intl_fingerprinting_calls': intl_fp_calls
         }
         
     except Exception as e:
@@ -381,7 +483,7 @@ def convert_to_csv(json_dir, output_csv):
 
 if __name__ == "__main__":
     # Use the specific directory as requested
-    json_dir = "data/crawler_data/test"
+    json_dir = "data/crawler_data/cookie_cutter"
     output_csv = "data/csv/main_data.csv"
     
     # Ensure output directory exists

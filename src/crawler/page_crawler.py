@@ -238,8 +238,8 @@ class WebsiteCrawler:
                 if 'storage' in self.monitors:
                     await self.monitors['storage'].capture_snapshot(page, visit_number=visit)
                     
-                # Simulate user interaction
-                await self.user_simulator.simulate_interaction(page)
+                # Simulate user interaction - PASS THE URL PARAMETER
+                await self.user_simulator.simulate_interaction(page, url=url)
                 
             except Exception as e:
                 print(f"Error visiting {url}: {e}")

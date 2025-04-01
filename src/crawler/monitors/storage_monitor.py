@@ -8,7 +8,7 @@ class StorageMonitor:
     def __init__(self, verbose=False):
         """Initialize storage monitor"""
         self.storage_items = {}  # Storage data by visit
-        self.api_usage = {}  # API usage by visit
+        self.api_count = {}  # API count by visit
         self.verbose = verbose
         self.setup_complete = False
         
@@ -80,30 +80,30 @@ class StorageMonitor:
             }""")
             
             # Get API usage counters
-            api_usage = await page.evaluate("""() => {
+            api_count = await page.evaluate("""() => {
                 // Return the API usage counts
                 if (window._storageMonitor) {
                     return {
                         localStorage: {
-                            getItem: window._storageMonitor.localStorage.getItem,
-                            setItem: window._storageMonitor.localStorage.setItem,
-                            removeItem: window._storageMonitor.localStorage.removeItem,
-                            clear: window._storageMonitor.localStorage.clear
+                            getItem_count: window._storageMonitor.localStorage.getItem,
+                            setItem_count: window._storageMonitor.localStorage.setItem,
+                            removeItem_count: window._storageMonitor.localStorage.removeItem,
+                            clear_count: window._storageMonitor.localStorage.clear
                         },
                         sessionStorage: {
-                            getItem: window._storageMonitor.sessionStorage.getItem,
-                            setItem: window._storageMonitor.sessionStorage.setItem,
-                            removeItem: window._storageMonitor.sessionStorage.removeItem,
-                            clear: window._storageMonitor.sessionStorage.clear
+                            getItem_count: window._storageMonitor.sessionStorage.getItem,
+                            setItem_count: window._storageMonitor.sessionStorage.setItem,
+                            removeItem_count: window._storageMonitor.sessionStorage.removeItem,
+                            clear_count: window._storageMonitor.sessionStorage.clear
                         }
                     };
                 }
                 return null;
             }""")
             
-            # Store API usage for this visit
-            if api_usage:
-                self.api_usage[visit_number] = api_usage
+            # Store API count for this visit
+            if api_count:
+                self.api_count[visit_number] = api_count
             
             # Store snapshot
             self.storage_items[visit_number] = {
@@ -124,9 +124,29 @@ class StorageMonitor:
             if self.verbose:
                 print(f"[StorageMonitor] Collecting API metrics for visit {visit_number}")
             
-            metrics = await page.evaluate("window._storageMonitor || null")
+            metrics = await page.evaluate("""() => {
+                // Return the API usage counts with _count suffix
+                if (window._storageMonitor) {
+                    return {
+                        localStorage: {
+                            getItem_count: window._storageMonitor.localStorage.getItem,
+                            setItem_count: window._storageMonitor.localStorage.setItem,
+                            removeItem_count: window._storageMonitor.localStorage.removeItem,
+                            clear_count: window._storageMonitor.localStorage.clear
+                        },
+                        sessionStorage: {
+                            getItem_count: window._storageMonitor.sessionStorage.getItem,
+                            setItem_count: window._storageMonitor.sessionStorage.setItem,
+                            removeItem_count: window._storageMonitor.sessionStorage.removeItem,
+                            clear_count: window._storageMonitor.sessionStorage.clear
+                        }
+                    };
+                }
+                return null;
+            }""")
+            
             if metrics:
-                self.api_usage[visit_number] = metrics
+                self.api_count[visit_number] = metrics
             
             return metrics
         except Exception as e:
@@ -136,45 +156,20 @@ class StorageMonitor:
     
     def get_results(self):
         """Get results of storage monitoring"""
-        # Count items
-        local_count = sum(len(v['local_storage']) for v in self.storage_items.values())
-        session_count = sum(len(v['session_storage']) for v in self.storage_items.values())
+        # Merge storage and API count data
+        results = {}
         
-        # Calculate API totals
-        totals = {
-            'localStorage_getItem': 0,
-            'localStorage_setItem': 0, 
-            'localStorage_removeItem': 0,
-            'localStorage_clear': 0,
-            'sessionStorage_getItem': 0,
-            'sessionStorage_setItem': 0,
-            'sessionStorage_removeItem': 0,
-            'sessionStorage_clear': 0
-        }
-        
-        # Add up API calls across all visits
-        for data in self.api_usage.values():
-            if 'localStorage' in data:
-                totals['localStorage_getItem'] += data['localStorage'].get('getItem', 0)
-                totals['localStorage_setItem'] += data['localStorage'].get('setItem', 0)
-                totals['localStorage_removeItem'] += data['localStorage'].get('removeItem', 0)
-                totals['localStorage_clear'] += data['localStorage'].get('clear', 0)
+        for visit_number, storage_data in self.storage_items.items():
+            results[visit_number] = {
+                'local_storage': storage_data['local_storage'],
+                'session_storage': storage_data['session_storage'],
+                'url': storage_data['url'],
+                'local_storage_count': len(storage_data['local_storage']),
+                'session_storage_count': len(storage_data['session_storage'])
+            }
             
-            if 'sessionStorage' in data:
-                totals['sessionStorage_getItem'] += data['sessionStorage'].get('getItem', 0)
-                totals['sessionStorage_setItem'] += data['sessionStorage'].get('setItem', 0)
-                totals['sessionStorage_removeItem'] += data['sessionStorage'].get('removeItem', 0)
-                totals['sessionStorage_clear'] += data['sessionStorage'].get('clear', 0)
+            # Add API count data if available
+            if visit_number in self.api_count:
+                results[visit_number]['api_count'] = self.api_count[visit_number]
         
-        # Build stats dictionary
-        stats = {
-            'local_storage_count': local_count,
-            'session_storage_count': session_count,
-            **totals,
-            'api_usage_by_visit': self.api_usage
-        }
-        
-        return {
-            'visits': self.storage_items,
-            'stats': stats
-        }
+        return results

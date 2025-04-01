@@ -5,9 +5,7 @@ import logging
 from tqdm import tqdm
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
-import multiprocessing
-import cv2
-import re
+
 
 # Add project root to path
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

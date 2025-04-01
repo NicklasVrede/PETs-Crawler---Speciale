@@ -242,8 +242,8 @@ class SourceIdentifier:
                 
                 # Extract all requests based on the new structure
                 all_requests = []
-                if 'network_data' in site_data and '0' in site_data['network_data'] and 'requests' in site_data['network_data']['0']:
-                    all_requests = site_data['network_data']['0']['requests']
+                if 'network_data' in site_data and '1' in site_data['network_data'] and 'requests' in site_data['network_data']['1']:
+                    all_requests = site_data['network_data']['1']['requests']
                 
                 # Get unique domains
                 unique_domains = set()

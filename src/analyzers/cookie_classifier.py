@@ -312,7 +312,7 @@ if __name__ == "__main__":
         data_directory = sys.argv[1]
     else:
         # Default directory
-        data_directory = 'data/crawler_data/i_dont_care_about_cookies'
+        data_directory = 'data/crawler_data/test'
     
     # Validate directory exists
     if not os.path.exists(data_directory):
