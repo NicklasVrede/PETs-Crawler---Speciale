@@ -242,7 +242,7 @@ class WebsiteCrawler:
                 await self.user_simulator.simulate_interaction(page, url=url)
                 
             except Exception as e:
-                print(f"Error visiting {url}: {e}")
+                tqdm.write(f"Error visiting {url}: {e}")
                 visited_in_this_cycle.append({"original": url, "error": str(e)})
                 
         # print(f"[DEBUG] Visit #{visit} - Completed visiting URLs")
