@@ -55,6 +55,7 @@ ERROR_PHRASES = [
     "unavailable",
     "cannot connect",
     "connection refused",
+    "an error occurred",
 ]
 
 def extract_text_from_image(image_path):

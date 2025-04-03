@@ -4,6 +4,7 @@ import random
 from crawl import crawl_domain
 from utils.util import load_config, get_all_sites, construct_paths, create_temp_profile_copy
 from tqdm import tqdm
+from collections import defaultdict
 
 async def crawl_with_profile(config, profile, sites, subpages_nr=2, verbose=False, overall_progress=None):
     """
@@ -51,7 +52,8 @@ async def crawl_with_profile(config, profile, sites, subpages_nr=2, verbose=Fals
                     site_info=site_info,
                     data_dir=temp_profile_dir,
                     subpages_nr=subpages_nr,
-                    verbose=verbose
+                    verbose=verbose,
+                    skip_existence_check=True  # Skip the check since we've done it already
                 )
                 
                 if verbose:
@@ -76,6 +78,73 @@ async def crawl_with_profile(config, profile, sites, subpages_nr=2, verbose=Fals
             import shutil
             shutil.rmtree(temp_profile_dir, ignore_errors=True)
 
+def precheck_existing_data(profiles, sites, verbose=False):
+    """
+    Pre-check which domain+extension combinations already have data
+    
+    Args:
+        profiles: List of profiles/extensions to check
+        sites: List of (rank, domain) tuples to check
+        verbose: Whether to print verbose output
+        
+    Returns:
+        Dictionary mapping profile -> set of domains with existing data
+    """
+    if verbose:
+        print("Pre-checking existing data files...")
+    
+    # Create a dictionary to store results
+    existing_data = defaultdict(set)
+    base_dir = "data/crawler_data"
+    
+    # Check each profile directory
+    with tqdm(total=len(profiles), desc="Checking profiles", unit="profile") as pbar:
+        for profile in profiles:
+            profile_dir = os.path.join(base_dir, profile)
+            if not os.path.exists(profile_dir):
+                if verbose:
+                    print(f"  Creating directory for {profile}")
+                os.makedirs(profile_dir, exist_ok=True)
+                pbar.update(1)
+                continue
+                
+            # Get all existing files for this profile
+            try:
+                existing_files = [f for f in os.listdir(profile_dir) if f.endswith('.json')]
+                
+                # Use nested progress bar for files within each profile
+                with tqdm(total=len(existing_files), desc=f"Checking {profile}", 
+                          unit="file", leave=False) as file_pbar:
+                    for filename in existing_files:
+                        # Extract domain name from filename
+                        domain = filename[:-5]  # Remove .json extension
+                        
+                        # Check if file has more than 10 lines
+                        file_path = os.path.join(profile_dir, filename)
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            line_count = sum(1 for _ in f)
+                        
+                        if line_count > 10:
+                            existing_data[profile].add(domain)
+                        elif verbose:
+                            print(f"  Skipping {filename} for {profile} - only has {line_count} lines")
+                        
+                        file_pbar.update(1)
+                        
+            except Exception as e:
+                print(f"Error checking {profile_dir}: {e}")
+            
+            pbar.update(1)
+    
+    # Statistics for verbose output
+    if verbose:
+        total_existing = sum(len(domains) for domains in existing_data.values())
+        total_possible = len(profiles) * len(sites)
+        print(f"Found {total_existing} existing data files out of {total_possible} possible combinations")
+        print(f"Remaining to crawl: {total_possible - total_existing}")
+    
+    return existing_data
+
 async def crawl_sites_parallel(config, profiles, sites, max_concurrent=None, subpages_nr=2, verbose=False):
     """
     Crawl multiple sites with multiple browser profiles in parallel
@@ -94,22 +163,41 @@ async def crawl_sites_parallel(config, profiles, sites, max_concurrent=None, sub
         if verbose:
             print(f"Using all {max_concurrent} profiles concurrently")
     
+    # Pre-check which domain+extension combinations already have data
+    existing_data = precheck_existing_data(profiles, sites, verbose)
+    
+    # Calculate remaining crawls (excluding ones with existing data)
+    remaining_crawls = 0
+    for profile in profiles:
+        for rank, domain in sites:
+            if domain not in existing_data[profile]:
+                remaining_crawls += 1
+    
+    if verbose:
+        print(f"Remaining crawls to perform: {remaining_crawls}")
+    
     # Create semaphore to limit concurrent crawls
     semaphore = asyncio.Semaphore(max_concurrent)
     
-    # Calculate total number of crawls (profiles × sites)
-    total_crawls = len(profiles) * len(sites)
-    
     # Create overall progress bar for all sites
-    with tqdm(total=total_crawls, desc="Overall crawl progress", unit="site") as overall_pbar:
+    with tqdm(total=remaining_crawls, desc="Overall crawl progress", unit="site") as overall_pbar:
         
         async def profile_crawl_with_semaphore(profile):
             """Wrapper to handle semaphore for each profile crawl"""
             async with semaphore:
+                # Filter out domains that already have data for this profile
+                sites_to_crawl = [(rank, domain) for rank, domain in sites 
+                                  if domain not in existing_data[profile]]
+                
+                if not sites_to_crawl:
+                    if verbose:
+                        print(f"No sites to crawl for profile {profile} - all data exists")
+                    return
+                
                 await crawl_with_profile(
                     config=config,
                     profile=profile,
-                    sites=sites,
+                    sites=sites_to_crawl,
                     subpages_nr=subpages_nr,
                     verbose=verbose,
                     overall_progress=overall_pbar

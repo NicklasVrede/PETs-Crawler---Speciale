@@ -9,7 +9,7 @@ from tqdm import tqdm
 import pprint
 
 
-async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=2, verbose=False):
+async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=2, verbose=False, skip_existence_check=False):
     """
     Crawl a single domain with configurable verbosity
     
@@ -19,6 +19,7 @@ async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=2, verbose
         data_dir: Custom data directory (for parallel processing)
         max_pages: Maximum pages to crawl
         verbose: If True, print detailed progress information
+        skip_existence_check: If True, skip checking if data already exists
     """
     # Load configuration
     config = load_config('config.json')    
@@ -52,16 +53,19 @@ async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=2, verbose
         # Crawl site - pass verbose flag to control internal printing
         crawler = WebsiteCrawler(
             subpages_nr=subpages_nr, 
+            visits=2,  # Or whatever your default is
             verbose=verbose,
             extension_name=profile,
             headless=profile_config.get('headless', False),
-            viewport=profile_config.get('viewport', {'width': 1280, 'height': 800})
+            viewport=profile_config.get('viewport', {'width': 1280, 'height': 800}),
+            domain=domain
         )
         
         # Modify browser launch arguments based on profile
         browser_args = {}
         if profile != 'no_extensions' and full_extension_path:
             browser_args['full_extension_path'] = full_extension_path
+        
         
         result = await crawler.crawl_site(
             domain,
@@ -93,7 +97,7 @@ if __name__ == "__main__":
     profile_names = config.get('profiles', {}).keys()
     print("Profile names:", list(profile_names))
 
-    profile = 'cookie_cutter'
+    profile = 'disconnect'
     
     # Get all sites to crawl
     all_sites = get_all_sites()

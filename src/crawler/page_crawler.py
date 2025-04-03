@@ -10,15 +10,17 @@ import asyncio
 from utils.page_collector import load_site_pages
 from utils.user_simulator import UserSimulator
 from playwright_stealth import Stealth
+import os
+import json
 
 
 class WebsiteCrawler:
-    def __init__(self, subpages_nr=20, visits=2, verbose=False, monitors=None, extension_name=None, headless=False, viewport=None):
+    def __init__(self, subpages_nr=20, visits=2, verbose=False, monitors=None, extension_name=None, headless=False, viewport=None, domain=None):
         """Initialize the crawler with configuration parameters"""
         self.subpages_nr = subpages_nr
         self.visits = visits
         self.verbose = verbose
-        self.base_domain = None
+        self.base_domain = domain.lower().replace('www.', '')
         self.extension_name = extension_name or "no_extension"
         self.headless = headless
         self.viewport = viewport
@@ -76,7 +78,104 @@ class WebsiteCrawler:
         # Apply stealth to the context (this will affect all pages created from this context)
         await self.stealth.apply_stealth_async(context)
         
+        # Close any extra tabs that might have been opened by extensions
+        await self._close_extra_tabs(context)
+        
+        # Set up tab monitoring if using certain extensions
+        if self._requires_tab_monitoring():
+            self._setup_tab_monitoring(context)
+        
         return context
+
+    def _requires_tab_monitoring(self):
+        """Check if the current extension requires ongoing tab monitoring"""
+        # List of extensions that need continuous tab monitoring
+        monitored_extensions = ["adblock", "adblockplus", "ublock", "disconnect"]
+        
+        # Check if current extension name contains any monitored extension strings
+        return any(ext in self.extension_name.lower() for ext in monitored_extensions)
+
+    def _setup_tab_monitoring(self, context):
+        """Set up a task to periodically check for and close extra tabs"""
+        if self.verbose:
+            tqdm.write(f"Setting up continuous tab monitoring for {self.extension_name}")
+        
+        # Store context for later access by monitoring task
+        self._monitored_context = context
+        
+        # Flag to control the monitoring loop
+        self._continue_monitoring = True
+        
+        # Start the monitoring task
+        asyncio.create_task(self._monitor_tabs_task())
+
+    async def _monitor_tabs_task(self):
+        """Task that periodically checks for and closes extra tabs"""
+        try:
+            while self._continue_monitoring:
+                # Check for extra tabs every 3 seconds
+                await asyncio.sleep(3)
+                
+                # Skip if context is no longer valid
+                if not hasattr(self, '_monitored_context'):
+                    break
+                    
+                try:
+                    context = self._monitored_context
+                    pages = context.pages
+                    
+                    # Close any tabs beyond the first one
+                    if len(pages) > 1:
+                        if self.verbose:
+                            tqdm.write(f"Tab monitor: Found {len(pages) - 1} extra tab(s). Closing them.")
+                        
+                        # Close all but the first tab
+                        for i in range(1, len(pages)):
+                            try:
+                                await pages[i].close()
+                            except Exception:
+                                # Silently continue if we can't close a tab
+                                pass
+                except Exception:
+                    # Ignore errors since this is a background task
+                    pass
+        except Exception as e:
+            tqdm.write(f"Tab monitoring task error: {e}")
+        finally:
+            self._continue_monitoring = False
+
+    async def _close_extra_tabs(self, context):
+        """Close any tabs beyond the first one (which might be opened by extensions)"""
+        wait_time = 1.5
+        
+        # For AdBlock extensions, wait longer for initial tab to appear
+        if "adblock" in self.extension_name.lower():
+            wait_time = 3.0
+            if self.verbose:
+                tqdm.write(f"Using longer wait time for {self.extension_name} tabs")
+        
+        # Wait for extension tabs to fully open
+        await asyncio.sleep(wait_time)
+        
+        # Get all pages in the context
+        pages = context.pages
+        
+        if len(pages) > 1:
+            if self.verbose:
+                tqdm.write(f"Found {len(pages) - 1} extra tab(s) opened by extensions. Closing them.")
+            
+            # Close all pages except the first one
+            for i in range(1, len(pages)):
+                try:
+                    await pages[i].close()
+                except Exception as e:
+                    tqdm.write(f"Error closing tab {i}: {str(e)}")
+        
+        # Make sure we have at least one page open
+        if len(context.pages) == 0:
+            if self.verbose:
+                tqdm.write("Creating a new page as all were closed")
+            await context.new_page()
 
     async def _clear_browser_data(self, context):
         """Clear browser data"""
@@ -111,6 +210,7 @@ class WebsiteCrawler:
     async def crawl_site(self, domain, user_data_dir=None, full_extension_path=None, headless=False, viewport=None):
         """Crawl a website multiple times to analyze cookie persistence"""
         self.base_domain = domain.lower().replace('www.', '')
+
         visit_results = []
 
         # Load pre-collected URLs
@@ -198,8 +298,6 @@ class WebsiteCrawler:
         """Visit each URL and simulate user interaction"""
         visited_in_this_cycle = []
         
-        # print(f"\n[DEBUG] Visit #{visit} - About to visit {len(urls)} URLs")
-        
         for idx, url in enumerate(urls):
             try:
                 # Shorten URL for display
@@ -211,16 +309,28 @@ class WebsiteCrawler:
                     # If URL is too long even without parameters, truncate it
                     display_url = url[:70] + '...'
                 
-                # print(f"[DEBUG] Visit #{visit} - Navigating to URL #{idx}: {display_url}")
-                
                 await page.goto(url, timeout=30000)
                 await page.wait_for_load_state('domcontentloaded')
                 await page.wait_for_timeout(random.uniform(1000, 2000))
+                
+                # Check for extension-opened tabs after each page load for monitored extensions
+                if self._requires_tab_monitoring():
+                    context = page.context
+                    if len(context.pages) > 1:
+                        if self.verbose:
+                            tqdm.write(f"Found new tab(s) after loading {display_url}. Closing...")
+                        
+                        # Close all tabs after the first one
+                        for i in range(1, len(context.pages)):
+                            try:
+                                await context.pages[i].close()
+                            except Exception:
+                                pass
+                
                 final_url = page.url
                 
                 # On the first subpage, capture banner state
                 if idx == 0 and 'banner' in self.monitors:
-                    # print(f"[DEBUG] Visit #{visit} - Triggering banner monitor capture for {self.base_domain}")
                     try:
                         # Pass current values as fallbacks
                         await self.monitors['banner'].capture_on_subpage(
@@ -245,7 +355,6 @@ class WebsiteCrawler:
                 tqdm.write(f"Error visiting {url}: {e}")
                 visited_in_this_cycle.append({"original": url, "error": str(e)})
                 
-        # print(f"[DEBUG] Visit #{visit} - Completed visiting URLs")
         return visited_in_this_cycle
 
     async def _collect_visit_results(self, visit, visited_in_this_cycle):

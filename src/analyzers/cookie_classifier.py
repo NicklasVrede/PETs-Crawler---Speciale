@@ -3,7 +3,7 @@ import json
 import sys
 from typing import Dict, Any, Set
 from tqdm import tqdm
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime
 
 # Add project root to path
@@ -213,92 +213,160 @@ class CookieClassifier:
         # Initialize cookie statistics
         stats = {
             'total_cookies': 0,
+            'unique_cookies': 0,
             'identified_cookies': 0,
+            'unidentified_cookies': 0, 
             'categories': {},
             'scripts': {},
             'analyzed_at': datetime.now().isoformat()
         }
         
-        # Extract all cookies from the site data
+        # Sets to track unique cookies
         all_cookies = []
-        if 'cookies' in site_data and isinstance(site_data['cookies'], dict):
-            # Format: {'visit1': [cookies], 'visit2': [cookies]}
-            for visit_cookies in site_data['cookies'].values():
-                all_cookies.extend(visit_cookies)
-        elif 'cookies' in site_data and isinstance(site_data['cookies'], list):
-            # Simple list format
-            all_cookies = site_data['cookies']
+        unique_cookie_names = set()
+        identified_cookie_names = set()
+        unidentified_cookie_names = set()  # Track unidentified cookies
+        category_counts = defaultdict(set)
+        script_counts = defaultdict(set)
         
-        stats['total_cookies'] = len(all_cookies)
+        # Process cookies based on their structure
+        if 'cookies' in site_data:
+            if isinstance(site_data['cookies'], dict):
+                # Format: {'visit1': [cookies], 'visit2': [cookies]}
+                # Create a new dict to hold classified cookies with same structure
+                classified_cookies_dict = {}
+                
+                for visit_id, visit_cookies in site_data['cookies'].items():
+                    all_cookies.extend(visit_cookies)
+                    classified_cookies_dict[visit_id] = []
+                    
+                    # Classify cookies for this visit
+                    for cookie in visit_cookies:
+                        cookie_name = cookie.get('name', '')
+                        if cookie_name:
+                            unique_cookie_names.add(cookie_name)
+                        
+                        classified_cookie = self._classify_cookie(cookie, stats, 
+                                                                identified_cookie_names,
+                                                                unidentified_cookie_names,
+                                                                category_counts, 
+                                                                script_counts)
+                        classified_cookies_dict[visit_id].append(classified_cookie)
+                
+                # Update site data with classified cookies
+                site_data['cookies'] = classified_cookies_dict
+                
+            elif isinstance(site_data['cookies'], list):
+                # Simple list format
+                all_cookies = site_data['cookies']
+                classified_cookies = []
+                
+                # Classify each cookie
+                for cookie in all_cookies:
+                    cookie_name = cookie.get('name', '')
+                    if cookie_name:
+                        unique_cookie_names.add(cookie_name)
+                    
+                    classified_cookie = self._classify_cookie(cookie, stats,
+                                                            identified_cookie_names,
+                                                            unidentified_cookie_names,
+                                                            category_counts,
+                                                            script_counts)
+                    classified_cookies.append(classified_cookie)
+                
+                # Update site data with classified cookies
+                site_data['cookies'] = classified_cookies
         
-        # Create a set to track unique cookies by name+domain
-        unique_cookies = set()
-        classified_cookies = []
+            # Set cookie counts in stats
+            stats['total_cookies'] = len(all_cookies)
+            stats['unique_cookies'] = len(unique_cookie_names)
+            stats['identified_cookies'] = len(identified_cookie_names)
+            stats['unidentified_cookies'] = len(unidentified_cookie_names)
+            
+            # Update category and script counts with the correct unique count
+            for category, cookies in category_counts.items():
+                stats['categories'][category] = len(cookies)
+            
+            for script, cookies in script_counts.items():
+                stats['scripts'][script] = len(cookies)
         
-        # Analyze each cookie
-        for cookie in all_cookies:
-            cookie_name = cookie.get('name', '')
-            cookie_domain = cookie.get('domain', '')
-            
-            # Skip if no name
-            if not cookie_name:
-                continue
-                
-            # Normalize the domain by removing leading dot and www
-            if cookie_domain:
-                cookie_domain = cookie_domain.lstrip('.')
-                if cookie_domain.startswith('www.'):
-                    cookie_domain = cookie_domain[4:]
-            
-            # Skip if we've already analyzed this cookie
-            cookie_key = f"{cookie_name}:{cookie_domain}"
-            if cookie_key in unique_cookies:
-                continue
-            unique_cookies.add(cookie_key)
-            
-            # Get cookie information from database
-            cookie_info = self.cookie_manager.get(cookie_name)
-            
-            # Create a copy of the cookie data
-            classified_cookie = cookie.copy()
-            
-            if cookie_info:
-                # Found in database
-                category = cookie_info.get('category', 'Unknown')
-                script = cookie_info.get('script', 'Not specified')
-                
-                # Add classification details
-                classified_cookie['classification'] = {
-                    'category': category,
-                    'script': script,
-                    'script_url': cookie_info.get('script_url', 'Not specified'),
-                    'description': cookie_info.get('description', 'Not specified'),
-                    'match_type': cookie_info.get('match_type', 'none')
-                }
-                
-                # Update statistics
-                stats['identified_cookies'] += 1
-                stats['categories'][category] = stats['categories'].get(category, 0) + 1
-                stats['scripts'][script] = stats['scripts'].get(script, 0) + 1
-            else:
-                # Not found in database
-                classified_cookie['classification'] = {
-                    'category': 'Unknown',
-                    'script': 'Not specified',
-                    'script_url': 'Not specified',
-                    'description': 'No match found in database',
-                    'match_type': 'none'
-                }
-                
-                # Update statistics
-                stats['categories']['Unknown'] = stats['categories'].get('Unknown', 0) + 1
-                stats['scripts']['Not specified'] = stats['scripts'].get('Not specified', 0) + 1
-                
-            classified_cookies.append(classified_cookie)
+            # Add note about categories representing cookies across all visits
+            stats['note'] = "Category and script counts represent unique cookies across all visits"
         
-        # Update site data
-        site_data['cookies'] = classified_cookies
+        # Add cookie analysis to site data
         site_data['cookie_analysis'] = stats
+    
+    def _classify_cookie(self, cookie: Dict[str, Any], stats: Dict[str, Any], 
+                        identified_cookies: Set[str], unidentified_cookies: Set[str],
+                        category_counts: Dict[str, Set[str]], 
+                        script_counts: Dict[str, Set[str]]) -> Dict[str, Any]:
+        """
+        Classify a single cookie and update statistics.
+        
+        Args:
+            cookie: Cookie data
+            stats: Statistics dictionary to update
+            identified_cookies: Set of cookie names that have been identified
+            unidentified_cookies: Set of cookie names that were not identified
+            category_counts: Dictionary mapping categories to sets of cookie names
+            script_counts: Dictionary mapping scripts to sets of cookie names
+            
+        Returns:
+            Classified cookie data
+        """
+        cookie_name = cookie.get('name', '')
+        cookie_domain = cookie.get('domain', '')
+        
+        # Create a copy of the cookie data
+        classified_cookie = cookie.copy()
+        
+        # Skip if no name
+        if not cookie_name:
+            return classified_cookie
+        
+        # Normalize the domain by removing leading dot and www
+        if cookie_domain:
+            cookie_domain = cookie_domain.lstrip('.')
+            if cookie_domain.startswith('www.'):
+                cookie_domain = cookie_domain[4:]
+        
+        # Get cookie information from database
+        cookie_info = self.cookie_manager.get(cookie_name)
+        
+        if cookie_info:
+            # Found in database
+            category = cookie_info.get('category', 'Unknown')
+            script = cookie_info.get('script', 'Not specified')
+            
+            # Add classification details
+            classified_cookie['classification'] = {
+                'category': category,
+                'script': script,
+                'script_url': cookie_info.get('script_url', 'Not specified'),
+                'description': cookie_info.get('description', 'Not specified'),
+                'match_type': cookie_info.get('match_type', 'none')
+            }
+            
+            # Update statistics tracking sets
+            identified_cookies.add(cookie_name)
+            category_counts[category].add(cookie_name)
+            script_counts[script].add(cookie_name)
+        else:
+            # Not found in database - explicitly mark as Unidentified
+            classified_cookie['classification'] = {
+                'category': 'Unidentified',  # Changed from Unknown to Unidentified
+                'script': 'Not specified',
+                'script_url': 'Not specified',
+                'description': 'No match found in database',
+                'match_type': 'none'
+            }
+            
+            # Update statistics tracking sets
+            unidentified_cookies.add(cookie_name)
+            category_counts['Unidentified'].add(cookie_name)  # Use Unidentified category
+            script_counts['Not specified'].add(cookie_name)
+        
+        return classified_cookie
     
     def close(self):
         """Close resources"""
