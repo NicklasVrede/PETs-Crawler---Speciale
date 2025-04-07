@@ -177,20 +177,23 @@ class CookieClassifier:
         main_site = site_data.get('domain', '')
         
         tqdm.write(f"\nCookie analysis for {main_site}:")
-        tqdm.write(f"Total cookies: {analysis.get('total_cookies', 0)}")
+        tqdm.write(f"Unique cookies: {analysis.get('unique_cookies', 0)}")
+        
+        if 'overlapping_cookies' in analysis:
+            tqdm.write(f"Cookies present in multiple visits: {analysis.get('overlapping_cookies', 0)}")
         
         identified = analysis.get('identified_cookies', 0)
-        total = analysis.get('total_cookies', 0)
-        if total > 0:
-            percentage = (identified/total*100)
+        unique = analysis.get('unique_cookies', 0)
+        if unique > 0:
+            percentage = (identified/unique*100)
             tqdm.write(f"Identified cookies: {identified} ({percentage:.1f}%)")
         
         if 'categories' in analysis:
             tqdm.write("\nTop cookie categories:")
             sorted_categories = sorted(analysis['categories'].items(), key=lambda x: x[1], reverse=True)
             for category, count in sorted_categories[:5]:
-                if total > 0:
-                    percentage = (count/total*100)
+                if unique > 0:
+                    percentage = (count/unique*100)
                     tqdm.write(f"  - {category}: {count} ({percentage:.1f}%)")
                 else:
                     tqdm.write(f"  - {category}: {count}")
@@ -199,8 +202,8 @@ class CookieClassifier:
             tqdm.write("\nTop cookie providers:")
             sorted_scripts = sorted(analysis['scripts'].items(), key=lambda x: x[1], reverse=True)
             for script, count in sorted_scripts[:5]:
-                if script != "Not specified" and total > 0:
-                    percentage = (count/total*100)
+                if script != "Not specified" and unique > 0:
+                    percentage = (count/unique*100)
                     tqdm.write(f"  - {script}: {count} ({percentage:.1f}%)")
     
     def _classify_site(self, site_data: Dict[str, Any]) -> None:
@@ -212,8 +215,8 @@ class CookieClassifier:
         """
         # Initialize cookie statistics
         stats = {
-            'total_cookies': 0,
             'unique_cookies': 0,
+            'overlapping_cookies': 0,
             'identified_cookies': 0,
             'unidentified_cookies': 0, 
             'categories': {},
@@ -228,6 +231,9 @@ class CookieClassifier:
         unidentified_cookie_names = set()  # Track unidentified cookies
         category_counts = defaultdict(set)
         script_counts = defaultdict(set)
+        
+        # Track cookies by visit for overlap analysis
+        cookies_by_visit = defaultdict(set)
         
         # Process cookies based on their structure
         if 'cookies' in site_data:
@@ -245,6 +251,7 @@ class CookieClassifier:
                         cookie_name = cookie.get('name', '')
                         if cookie_name:
                             unique_cookie_names.add(cookie_name)
+                            cookies_by_visit[visit_id].add(cookie_name)
                         
                         classified_cookie = self._classify_cookie(cookie, stats, 
                                                                 identified_cookie_names,
@@ -266,6 +273,7 @@ class CookieClassifier:
                     cookie_name = cookie.get('name', '')
                     if cookie_name:
                         unique_cookie_names.add(cookie_name)
+                        cookies_by_visit['visit0'].add(cookie_name)  # Single visit
                     
                     classified_cookie = self._classify_cookie(cookie, stats,
                                                             identified_cookie_names,
@@ -277,9 +285,20 @@ class CookieClassifier:
                 # Update site data with classified cookies
                 site_data['cookies'] = classified_cookies
         
+            # Calculate overlap between visits
+            overlapping_cookies = set()
+            if len(cookies_by_visit) > 1:
+                # Find cookies that appear in multiple visits
+                visit_ids = list(cookies_by_visit.keys())
+                for i in range(len(visit_ids)):
+                    for j in range(i+1, len(visit_ids)):
+                        overlapping_cookies.update(
+                            cookies_by_visit[visit_ids[i]] & cookies_by_visit[visit_ids[j]]
+                        )
+            
             # Set cookie counts in stats
-            stats['total_cookies'] = len(all_cookies)
             stats['unique_cookies'] = len(unique_cookie_names)
+            stats['overlapping_cookies'] = len(overlapping_cookies)  # Moved here to maintain order
             stats['identified_cookies'] = len(identified_cookie_names)
             stats['unidentified_cookies'] = len(unidentified_cookie_names)
             

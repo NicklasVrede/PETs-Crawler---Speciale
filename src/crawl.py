@@ -117,7 +117,3 @@ if __name__ == "__main__":
             print(f"Error crawling {domain}: {str(e)}")
     else:
         print("No sites available to crawl")
-
-    #Run the identify_sources script
-    #identify_site_sources("data/adguard_non_headless")
-    

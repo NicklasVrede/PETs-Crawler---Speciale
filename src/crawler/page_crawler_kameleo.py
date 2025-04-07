@@ -9,24 +9,43 @@ import random
 import asyncio
 from utils.page_collector import load_site_pages
 from utils.user_simulator import UserSimulator
-from playwright_stealth import Stealth
 import os
 import json
+from kameleo.local_api_client import KameleoLocalApiClient
+from pprint import pprint
+import time
 
 
 class WebsiteCrawler:
-    def __init__(self, subpages_nr=20, visits=2, verbose=False, monitors=None, extension_name=None, headless=False, viewport=None, domain=None):
-        """Initialize the crawler with configuration parameters"""
+    def __init__(self, domain, profile_name, profile_id, subpages_nr=20, visits=2, verbose=False, monitors=None, extension_name=None, headless=False, viewport=None, kameleo_client=None):
+        """
+        Initialize website crawler with specified parameters
+        
+        Args:
+            domain: Website domain to crawl
+            profile_name: Name of the Kameleo profile
+            profile_id: ID of the Kameleo profile
+            subpages_nr: Number of subpages to visit
+            visits: Number of times to visit the domain
+            verbose: Whether to print verbose logs
+            monitors: Dictionary of monitors to use
+            extension_name: Name of the extension to monitor
+            headless: Whether to run the browser in headless mode
+            viewport: Viewport size for the browser
+            kameleo_client: Existing KameleoLocalApiClient instance (optional)
+        """
+        self.domain = domain
+        self.profile_name = profile_name
+        self.profile_id = profile_id
         self.subpages_nr = subpages_nr
         self.visits = visits
         self.verbose = verbose
         self.base_domain = domain.lower().replace('www.', '')
-        self.extension_name = extension_name or "no_extension"
+        self.extension_name = extension_name
         self.headless = headless
         self.viewport = viewport
         self.user_simulator = UserSimulator()
-        self.stealth = Stealth()
-        
+
         # Use provided monitors or create defaults
         self.monitors = monitors or {
             'network': NetworkMonitor(verbose=verbose),
@@ -34,6 +53,16 @@ class WebsiteCrawler:
             'fingerprint': FingerprintCollector(verbose=verbose),
             'banner': BannerMonitor(verbose=verbose)
         }
+
+        # Use provided client or create a new one if not provided
+        if kameleo_client:
+            self.kameleo_client = kameleo_client
+        else:
+            # Create a new client only if needed
+            self.kameleo_client = KameleoLocalApiClient(
+                endpoint="http://localhost:5050",
+                retry_total=0
+            )
 
     async def populate_cache(self, page, urls):
         """Pre-populate browser cache with resources from the target site"""
@@ -57,35 +86,29 @@ class WebsiteCrawler:
         except Exception as e:
             tqdm.write(f"Error during cache population: {e}")
 
-    async def _setup_browser(self, p, user_data_dir, full_extension_path, headless, viewport):
-        """Setup browser with context"""
-        browser_args = {}
-        
-        # Only add extension arguments if an extension is specified
-        if full_extension_path and full_extension_path != "no_extension":
-            browser_args["args"] = [
-                f'--disable-extensions-except={full_extension_path}',
-                f'--load-extension={full_extension_path}'
-            ]
-
-        context = await p.chromium.launch_persistent_context(
-            user_data_dir=user_data_dir,
-            headless=self.headless,
-            viewport=self.viewport or {'width': 1280, 'height': 800},
-            **browser_args
-        )
-        
-        # Apply stealth to the context (this will affect all pages created from this context)
-        await self.stealth.apply_stealth_async(context)
-        
-        # Close any extra tabs that might have been opened by extensions
-        await self._close_extra_tabs(context)
-        
-        # Set up tab monitoring if using certain extensions
-        if self._requires_tab_monitoring():
-            self._setup_tab_monitoring(context)
-        
-        return context
+    async def _setup_browser(self, p):
+        """Setup browser with context and handle unstable connections"""
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                browserWSEndpoint = f"ws://localhost:5050/playwright/{self.profile_id}"
+                browser = await p.chromium.connect_over_cdp(browserWSEndpoint)
+                context = browser.contexts[0]
+                await self._close_extra_tabs(context)
+                return context, browser
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    tqdm.write(f"Connection attempt {attempt+1} failed: {e}. Retrying...")
+                    # Stop and restart the profile
+                    try:
+                        self.kameleo_client.stop_profile(self.profile_id)
+                        time.sleep(2)
+                        self.kameleo_client.start_profile(self.profile_id)
+                        time.sleep(3)
+                    except Exception as restart_error:
+                        tqdm.write(f"Error restarting profile: {restart_error}")
+                else:
+                    raise  # Re-raise the exception if all retries failed
 
     def _requires_tab_monitoring(self):
         """Check if the current extension requires ongoing tab monitoring"""
@@ -106,7 +129,7 @@ class WebsiteCrawler:
         # Flag to control the monitoring loop
         self._continue_monitoring = True
         
-        # Start the monitoring task
+        # Start the monitoring tasks    
         asyncio.create_task(self._monitor_tabs_task())
 
     async def _monitor_tabs_task(self):
@@ -181,7 +204,7 @@ class WebsiteCrawler:
         """Clear browser data"""
         await context.clear_cookies()
         await context.clear_permissions()
-        
+
         # Use page-level JavaScript to clear storage with error handling
         page = context.pages[0] if context.pages else None
         if page:
@@ -207,6 +230,89 @@ class WebsiteCrawler:
             except Exception as e:
                 tqdm.write(f"Note: Could not clear page storage: {e}")
 
+    async def _stop_profile(self):
+        """Stop the Kameleo profile"""
+        # IMPORTANT: Stop the Kameleo profile using the client
+        try:
+            # First check if the profile is running at all
+            try:
+                profile_status = self.kameleo_client.get_profile_status(self.profile_id)
+                profile_running = profile_status.lifetime_state == "running"
+                
+                if not profile_running:
+                    if self.verbose:
+                        print(f"Profile {self.profile_id} is already stopped (state: {profile_status.lifetime_state})")
+                    return  # Profile already stopped, no need to do anything else
+                    
+            except Exception as e:
+                if self.verbose:
+                    print(f"Error checking initial profile status: {e}")
+                # If we can't check, assume it's running and try to stop it
+                profile_running = True
+            
+            if profile_running:
+                if self.verbose:
+                    print(f"Stopping running profile {self.profile_id}")
+                
+                # Try to stop the profile once
+                try:
+                    # Check profile status first (no await - this returns a StatusResponse object)
+                    status = self.kameleo_client.get_profile_status(self.profile_id)
+                    
+                    # Only try to stop if it's in a running state
+                    if status.lifetime_state == "running":
+                        if self.verbose:
+                            print(f"Profile {self.profile_id} is running, stopping it now")
+                        
+                        # Don't use await here - this is a synchronous method
+                        self.kameleo_client.stop_profile(self.profile_id)
+                        
+                        if self.verbose:
+                            print(f"Stop command issued for profile {self.profile_id}")
+                    else:
+                        if self.verbose:
+                            print(f"Profile {self.profile_id} is not running (state: {status.lifetime_state})")
+                        
+                except Exception as e:
+                    error_str = str(e)
+                    
+                    # Check for specific error messages
+                    if "409" in error_str or "Profile not running" in error_str:
+                        if self.verbose:
+                            print(f"Profile {self.profile_id} was already stopped (409 Conflict)")
+                    elif "404" in error_str:
+                        if self.verbose:
+                            print(f"Profile {self.profile_id} not found (404 Not Found)")
+                    else:
+                        print(f"Unexpected error stopping profile: {e}")
+                
+                # Wait to ensure the profile has time to stop
+                await asyncio.sleep(3)
+                
+                # Verify the profile actually stopped
+                try:
+                    profile_status = self.kameleo_client.get_profile_status(self.profile_id)
+                    if profile_status.lifetime_state != "running":
+                        if self.verbose:
+                            print(f"Successfully stopped profile {self.profile_id}")
+                    else:
+                        error_msg = f"FATAL ERROR: Profile {self.profile_id} still running after stop command"
+                        print(error_msg)
+                        print("FORCING PROCESS TERMINATION TO PREVENT FURTHER ISSUES")
+                        # Force process exit
+                        import sys
+                        sys.exit(1)
+                except Exception as e:
+                    print(f"Error verifying profile stopped: {e}")
+                    # If we can't verify, assume it's ok to continue
+                
+        except Exception as e:
+            print(f"CRITICAL ERROR in profile stopping process: {e}")
+            # Re-raise the exception to ensure it's handled properly
+            raise
+    
+    
+
     async def crawl_site(self, domain, user_data_dir=None, full_extension_path=None, headless=False, viewport=None):
         """Crawl a website multiple times to analyze cookie persistence"""
         self.base_domain = domain.lower().replace('www.', '')
@@ -218,19 +324,20 @@ class WebsiteCrawler:
         if not urls:
             return {'null': 'no urls found'}
 
-        # Initial browser setup
-        await self._initial_browser_setup(user_data_dir, full_extension_path, headless, viewport)
+        # Initial browser setup and data clearing
+        await self._initial_browser_setup()
 
         for visit in range(self.visits):
             visited_in_this_cycle = []
 
             # Browser session for this visit
             async with async_playwright() as p:
-                context = await self._setup_browser(p, user_data_dir, full_extension_path, headless, viewport)
+                # Set up browser for this visit
+                context, browser = await self._setup_browser(p)
                 
                 # Use the existing page instead of creating a new one
-                page = context.pages[0]  # Get the first page that's automatically created
-
+                page = context.pages[0]
+                
                 # Setup monitoring
                 await self._setup_monitoring(page, visit)
 
@@ -243,8 +350,12 @@ class WebsiteCrawler:
                 # Collect visit results
                 visit_results.append(await self._collect_visit_results(visit, visited_in_this_cycle))
 
+                # Clean up this visit's resources
                 await context.close()
-
+                
+                # Stop the Kameleo profile after each visit
+                await self._stop_profile()
+        
         # Construct and save the final data structure
         return await self._construct_final_data(domain, visit_results)
 
@@ -260,18 +371,21 @@ class WebsiteCrawler:
             tqdm.write(f"Loaded {len(urls)} pre-collected URLs for {domain}")
         return urls
 
-    async def _initial_browser_setup(self, user_data_dir, full_extension_path, headless, viewport):
+    async def _initial_browser_setup(self):
         """Perform initial browser setup and clear data"""
         if self.verbose:
             tqdm.write("\nInitial browser session to clear data and visit homepage...")
         async with async_playwright() as p:
-            context = await self._setup_browser(p, user_data_dir, full_extension_path, headless, viewport)
+            context, browser = await self._setup_browser(p)
+
             if self.verbose:
                 tqdm.write("\nClearing browser data...")
             await self._clear_browser_data(context)
+
             if self.verbose:
                 tqdm.write("✓ Browser data cleared")
             await context.close()
+
 
     async def _setup_monitoring(self, page, visit):
         """Setup network, fingerprint, and storage monitoring"""
@@ -348,7 +462,7 @@ class WebsiteCrawler:
                 if 'storage' in self.monitors:
                     await self.monitors['storage'].capture_snapshot(page, visit_number=visit)
                     
-                # Simulate user interaction - PASS THE URL PARAMETER
+                # Simulate user interaction
                 await self.user_simulator.simulate_interaction(page, url=url)
                 
             except Exception as e:
