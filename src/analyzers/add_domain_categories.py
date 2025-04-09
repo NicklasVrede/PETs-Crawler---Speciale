@@ -69,7 +69,7 @@ def add_categories_to_files(data_directory, categories_file="data/db+ref/domain_
                 if save_json(new_data, json_path):
                     modified_count += 1
     
-    print(f"Added categories to {modified_count} files")
+    #tqdm.write(f"Added domain categories to {modified_count} files")
 
 if __name__ == "__main__":
     # Check if data directory is provided as an argument

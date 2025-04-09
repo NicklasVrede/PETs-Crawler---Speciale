@@ -4,6 +4,7 @@ import csv
 import re
 from urllib.parse import urlparse
 from collections import defaultdict
+from tqdm import tqdm  # Import tqdm for progress bars
 
 def extract_domain_from_url(url):
     """Extract base domain from URL"""
@@ -35,46 +36,6 @@ def get_resource_type_counts(requests):
             types[resource_type] = types.get(resource_type, 0) + 1
     return types
 
-def count_potential_cname_cloaking(requests, base_domain):
-    """
-    Estimate potential CNAME cloaking by looking for first-party domains
-    loading typical tracker resources
-    """
-    potential_cname_candidates = 0
-    first_party_domains = set()
-    
-    # Find all subdomains of the main domain
-    for req in requests:
-        req_domain = req.get('domain', '')
-        if base_domain in req_domain:
-            first_party_domains.add(req_domain)
-    
-    # Check each first-party domain for tracker-like behavior
-    for domain in first_party_domains:
-        # Check for suspicious resource patterns from this domain
-        suspicious_paths = 0
-        resources_from_domain = [r for r in requests if r.get('domain') == domain]
-        
-        for resource in resources_from_domain:
-            url = resource.get('url', '')
-            path = urlparse(url).path
-            
-            # Patterns often seen in tracking endpoints
-            suspicious_patterns = [
-                '/collect', '/pixel', '/track', '/beacon', '/analytics', '/event', 
-                '/stats', '/log', '/ping', '/metric', '/hit', '/g/collect'
-            ]
-            
-            for pattern in suspicious_patterns:
-                if pattern in path:
-                    suspicious_paths += 1
-                    break
-                    
-        # If domain serves suspicious resources, it might be using CNAME cloaking
-        if suspicious_paths > 0:
-            potential_cname_candidates += 1
-    
-    return potential_cname_candidates
 
 def analyze_crawler_data(json_file):
     """Extract key metrics from a crawler data file"""
@@ -90,6 +51,13 @@ def analyze_crawler_data(json_file):
         # Basic data
         domain = data.get('domain', '')
         timestamp = data.get('timestamp', '')
+        
+        # If domain is empty, extract it from the filename
+        if not domain:
+             # Get the filename from the path
+            filename = os.path.basename(json_file)
+            # Remove the .json extension to get the domain
+            domain = filename[:-5]  # Remove '.json'
         
         # Extract website categories
         categories = data.get('categories', [])
@@ -130,7 +98,7 @@ def analyze_crawler_data(json_file):
         filter_matches = 0
         potential_cname_cloaking = 0
         banner_removed = False
-        page_loaded = True
+        page_loaded = False
         
         # Initialize domain analysis metrics
         first_party_requests = 0
@@ -202,10 +170,6 @@ def analyze_crawler_data(json_file):
             css_requests = resource_types.get('stylesheet', 0)
             image_requests = resource_types.get('image', 0)
             
-            # Only calculate CNAME cloaking if not already provided in statistics
-            if not statistics or 'cname_cloaking' not in statistics:
-                potential_cname_cloaking = count_potential_cname_cloaking(requests, domain)
-        
         # Cookie Data
         cookies_data = get_visit_data('cookies', visit_id, fallback_id)
         
@@ -526,7 +490,7 @@ def analyze_crawler_data(json_file):
         }
         
     except Exception as e:
-        print(f"Error processing {json_file}: {e}")
+        tqdm.write(f"Error processing {json_file}: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -550,15 +514,12 @@ def process_folder(folder_path, extension_name):
             if file.endswith('.json'):
                 json_files.append(os.path.join(root, file))
     
-    print(f"Processing folder '{extension_name}': {len(json_files)} JSON files")
+    tqdm.write(f"Processing folder '{extension_name}': {len(json_files)} JSON files")
     
-    for i, json_file in enumerate(json_files):
-        if i % 10 == 0:
-            print(f"  Processing file {i+1}/{len(json_files)}: {os.path.basename(json_file)}")
+    # Use tqdm to create a progress bar for files
+    for json_file in tqdm(json_files, desc=f"Processing {extension_name}", unit="file"):
         result = analyze_crawler_data(json_file)
         if result:
-            # Add the extension name to the result
-            result['extension'] = extension_name
             results.append(result)
             
     return results
@@ -568,23 +529,23 @@ def process_single_folder(json_dir, output_csv, folder_name):
     folder_path = os.path.join(json_dir, folder_name)
     
     if not os.path.isdir(folder_path):
-        print(f"Error: {folder_path} is not a valid directory")
+        tqdm.write(f"Error: {folder_path} is not a valid directory")
         return
         
     results = process_folder(folder_path, folder_name)
     
     if not results:
-        print("No valid data extracted")
+        tqdm.write("No valid data extracted")
         return
     
-    # Write to CSV, ensuring extension is the first column
-    fieldnames = ['extension'] + [f for f in results[0].keys() if f != 'extension']
+    # Write to CSV, removing extension from fieldnames
+    fieldnames = list(results[0].keys())
     with open(output_csv, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(results)
     
-    print(f"Successfully created CSV file: {output_csv} with {len(results)} rows")
+    tqdm.write(f"Successfully created CSV file: {output_csv} with {len(results)} rows")
 
 def process_all_folders(json_dir, output_csv):
     """Process all folders in the directory and combine results to a single CSV"""
@@ -592,27 +553,31 @@ def process_all_folders(json_dir, output_csv):
     extension_dirs = [d for d in os.listdir(json_dir) if os.path.isdir(os.path.join(json_dir, d))]
     extension_dirs.sort()  # Sort by extension name
     
-    print(f"Found {len(extension_dirs)} extension directories to process")
+    tqdm.write(f"Found {len(extension_dirs)} extension directories to process")
     
     # Process each extension directory and collect all results
     all_results = []
-    for ext_dir in extension_dirs:
+    
+    # Use tqdm to create a progress bar for folders
+    for ext_dir in tqdm(extension_dirs, desc="Processing folders", unit="folder"):
         ext_path = os.path.join(json_dir, ext_dir)
         results = process_folder(ext_path, ext_dir)
         all_results.extend(results)
     
     if not all_results:
-        print("No valid data extracted")
+        tqdm.write("No valid data extracted")
         return
     
-    # Write to CSV, ensuring extension is the first column
-    fieldnames = ['extension'] + [f for f in all_results[0].keys() if f != 'extension']
+    tqdm.write(f"Writing {len(all_results)} results to CSV...")
+    
+    # Write to CSV, without explicitly placing extension column first
+    fieldnames = list(all_results[0].keys())
     with open(output_csv, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(all_results)
     
-    print(f"Successfully created CSV file: {output_csv} with {len(all_results)} rows")
+    tqdm.write(f"Successfully created CSV file: {output_csv} with {len(all_results)} rows")
 
 if __name__ == "__main__":
     # Base directory for crawler data
@@ -622,4 +587,13 @@ if __name__ == "__main__":
     # Ensure output directory exists
     os.makedirs(os.path.dirname(output_csv), exist_ok=True)
     
-    process_all_folders(json_dir, output_csv) 
+    # Choose whether to process a single folder or all folders
+    process_single = False  # Set to False to process all folders
+    specific_folder = "test"
+    
+    if process_single:
+        tqdm.write(f"Processing specific folder: {specific_folder}")
+        process_single_folder(json_dir, output_csv, specific_folder)
+    else:
+        tqdm.write(f"Processing all extension folders in: {json_dir}")
+        process_all_folders(json_dir, output_csv) 

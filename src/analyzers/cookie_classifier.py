@@ -85,9 +85,9 @@ class CookieClassifier:
                     
             return site_data
         except Exception as e:
-            self._log(f"Error classifying file {file_path}: {str(e)}")
+            tqdm.write(f"Error classifying file {file_path}: {str(e)}")
             import traceback
-            self._log(traceback.format_exc())
+            tqdm.write(traceback.format_exc())
             return {}
     
     def _extract_unknown_cookies(self, site_data: Dict[str, Any]) -> Set[str]:

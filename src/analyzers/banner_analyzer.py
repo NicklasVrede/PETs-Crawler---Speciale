@@ -295,7 +295,7 @@ class BannerAnalyzer:
                         site_data["banner_analysis"] = {}
                     
                     # Add extension-specific results
-                    site_data["banner_analysis"] = ext_results
+                    site_data["banner_analysis"].update(ext_results)
                     
                     # Save the updated data
                     if not test_run:

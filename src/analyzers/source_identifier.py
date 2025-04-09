@@ -163,7 +163,7 @@ class SourceIdentifier:
                 tqdm.write(f"Error checking CNAME chain: {e}")
         else:
             # Mark as browser extension
-            tqdm.write(f"DEBUG: Marking as browser extension: {parsed_url}")
+            #tqdm.write(f"DEBUG: Marking as browser extension: {parsed_url}")
             analysis_result['categories'].append('browser_extension')
             analysis_result['infrastructure_type'] = 'browser_extension'
         
