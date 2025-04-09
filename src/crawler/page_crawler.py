@@ -35,9 +35,14 @@ class WebsiteCrawler:
             'banner': BannerMonitor(verbose=verbose)
         }
 
+    def _log(self, message):
+        """Log message if verbose mode is enabled"""
+        if self.verbose:
+            tqdm.write(message)
+
     async def populate_cache(self, page, urls):
         """Pre-populate browser cache with resources from the target site"""
-        tqdm.write("\nPre-populating cache with site resources...")
+        self._log("\nPre-populating cache with site resources...")
         try:
             # Visit homepage first to cache common resources
             domain = self.base_domain
@@ -51,11 +56,11 @@ class WebsiteCrawler:
                     await page.goto(url, timeout=40000)
                     await page.wait_for_load_state('domcontentloaded')
                 except Exception as e:
-                    tqdm.write(f"Error pre-caching {url}: {e}")
+                    self._log(f"Error pre-caching {url}: {e}")
                 
-            tqdm.write("✓ Cache populated with site resources")
+            self._log("✓ Cache populated with site resources")
         except Exception as e:
-            tqdm.write(f"Error during cache population: {e}")
+            self._log(f"Error during cache population: {e}")
 
     async def _setup_browser(self, p, user_data_dir, full_extension_path, headless, viewport):
         """Setup browser with context"""
@@ -97,8 +102,7 @@ class WebsiteCrawler:
 
     def _setup_tab_monitoring(self, context):
         """Set up a task to periodically check for and close extra tabs"""
-        if self.verbose:
-            tqdm.write(f"Setting up continuous tab monitoring for {self.extension_name}")
+        self._log(f"Setting up continuous tab monitoring for {self.extension_name}")
         
         # Store context for later access by monitoring task
         self._monitored_context = context
@@ -126,8 +130,7 @@ class WebsiteCrawler:
                     
                     # Close any tabs beyond the first one
                     if len(pages) > 1:
-                        if self.verbose:
-                            tqdm.write(f"Tab monitor: Found {len(pages) - 1} extra tab(s). Closing them.")
+                        self._log(f"Tab monitor: Found {len(pages) - 1} extra tab(s). Closing them.")
                         
                         # Close all but the first tab
                         for i in range(1, len(pages)):
@@ -140,7 +143,7 @@ class WebsiteCrawler:
                     # Ignore errors since this is a background task
                     pass
         except Exception as e:
-            tqdm.write(f"Tab monitoring task error: {e}")
+            self._log(f"Tab monitoring task error: {e}")
         finally:
             self._continue_monitoring = False
 
@@ -151,8 +154,7 @@ class WebsiteCrawler:
         # For AdBlock extensions, wait longer for initial tab to appear
         if "adblock" in self.extension_name.lower():
             wait_time = 3.0
-            if self.verbose:
-                tqdm.write(f"Using longer wait time for {self.extension_name} tabs")
+            self._log(f"Using longer wait time for {self.extension_name} tabs")
         
         # Wait for extension tabs to fully open
         await asyncio.sleep(wait_time)
@@ -161,20 +163,18 @@ class WebsiteCrawler:
         pages = context.pages
         
         if len(pages) > 1:
-            if self.verbose:
-                tqdm.write(f"Found {len(pages) - 1} extra tab(s) opened by extensions. Closing them.")
+            self._log(f"Found {len(pages) - 1} extra tab(s) opened by extensions. Closing them.")
             
             # Close all pages except the first one
             for i in range(1, len(pages)):
                 try:
                     await pages[i].close()
                 except Exception as e:
-                    tqdm.write(f"Error closing tab {i}: {str(e)}")
+                    self._log(f"Error closing tab {i}: {str(e)}")
         
         # Make sure we have at least one page open
         if len(context.pages) == 0:
-            if self.verbose:
-                tqdm.write("Creating a new page as all were closed")
+            self._log("Creating a new page as all were closed")
             await context.new_page()
 
     async def _clear_browser_data(self, context):
@@ -250,27 +250,22 @@ class WebsiteCrawler:
 
     async def _load_pre_collected_urls(self, domain):
         """Load pre-collected URLs from a specified directory"""
-        if self.verbose:
-            tqdm.write("\nLoading pre-collected URLs...")
+        self._log("\nLoading pre-collected URLs...")
         urls = load_site_pages(domain, input_dir="data/site_pages", count=self.subpages_nr)
         if not urls or len(urls) == 0:
             tqdm.write(f"ERROR: No pre-collected URLs found for {domain}")
             return None
-        if self.verbose:
-            tqdm.write(f"Loaded {len(urls)} pre-collected URLs for {domain}")
+        self._log(f"Loaded {len(urls)} pre-collected URLs for {domain}")
         return urls
 
     async def _initial_browser_setup(self, user_data_dir, full_extension_path, headless, viewport):
         """Perform initial browser setup and clear data"""
-        if self.verbose:
-            tqdm.write("\nInitial browser session to clear data and visit homepage...")
+        self._log("\nInitial browser session to clear data and visit homepage...")
         async with async_playwright() as p:
             context = await self._setup_browser(p, user_data_dir, full_extension_path, headless, viewport)
-            if self.verbose:
-                tqdm.write("\nClearing browser data...")
+            self._log("\nClearing browser data...")
             await self._clear_browser_data(context)
-            if self.verbose:
-                tqdm.write("✓ Browser data cleared")
+            self._log("✓ Browser data cleared")
             await context.close()
 
     async def _setup_monitoring(self, page, visit):
@@ -284,15 +279,13 @@ class WebsiteCrawler:
 
     async def _visit_homepage(self, page, domain):
         """Visit the homepage and handle any errors"""
-        if self.verbose:
-            tqdm.write("\nVisiting homepage...")
+        self._log("\nVisiting homepage...")
         homepage_url = f"https://{domain}"
         try:
             await page.goto(homepage_url, timeout=30000)
             await page.wait_for_timeout(5000)
         except Exception as e:
-            if self.verbose:
-                tqdm.write(f"Error visiting homepage: {e}")
+            self._log(f"Error visiting homepage: {e}")
 
     async def _visit_urls(self, page, urls, visit):
         """Visit each URL and simulate user interaction"""
@@ -317,8 +310,7 @@ class WebsiteCrawler:
                 if self._requires_tab_monitoring():
                     context = page.context
                     if len(context.pages) > 1:
-                        if self.verbose:
-                            tqdm.write(f"Found new tab(s) after loading {display_url}. Closing...")
+                        self._log(f"Found new tab(s) after loading {display_url}. Closing...")
                         
                         # Close all tabs after the first one
                         for i in range(1, len(context.pages)):
@@ -352,7 +344,7 @@ class WebsiteCrawler:
                 await self.user_simulator.simulate_interaction(page, url=url)
                 
             except Exception as e:
-                tqdm.write(f"Error visiting {url}: {e}")
+                self._log(f"Error visiting {url}: {e}")
                 visited_in_this_cycle.append({"original": url, "error": str(e)})
                 
         return visited_in_this_cycle

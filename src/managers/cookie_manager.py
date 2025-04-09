@@ -10,11 +10,18 @@ class CookieManager:
     Provides methods for retrieving, adding, and updating cookie information.
     """
     
-    def __init__(self, db_file='data/db+ref/cookie_database.json'):
+    def __init__(self, db_file='data/db+ref/cookie_database.json', verbose=False):
         """Initialize the cookie database."""
         self.db_file = db_file
         self.cookies = {}
+        self.verbose = verbose
         self._load()
+
+
+    def _log(self, message):
+        """Log message if verbose mode is enabled"""
+        if self.verbose:
+            tqdm.write(message)
     
     def _load(self) -> None:
         """Load the cookie database from file."""
@@ -22,11 +29,11 @@ class CookieManager:
             if os.path.exists(self.db_file):
                 with open(self.db_file, 'r', encoding='utf-8') as f:
                     self.cookies = json.load(f)
-                tqdm.write(f"Loaded {len(self.cookies)} cookie definitions from {self.db_file}")
+                self._log(f"Loaded {len(self.cookies)} cookie definitions from {self.db_file}")
             else:
-                tqdm.write(f"Cookie database file not found at {self.db_file}. Starting with empty database.")
+                self._log(f"Cookie database file not found at {self.db_file}. Starting with empty database.")
         except Exception as e:
-            tqdm.write(f"Error loading cookie database: {str(e)}")
+            self._log(f"Error loading cookie database: {str(e)}")
     
     def save(self) -> None:
         """Save the cookie database to file."""
@@ -35,7 +42,7 @@ class CookieManager:
                 os.makedirs(os.path.dirname(self.db_file), exist_ok=True)
                 with open(self.db_file, 'w', encoding='utf-8') as f:
                     json.dump(self.cookies, f, indent=2)
-                tqdm.write(f"Saved {len(self.cookies)} cookie definitions to {self.db_file}")
+                self._log(f"Saved {len(self.cookies)} cookie definitions to {self.db_file}")
         except Exception as e:
             tqdm.write(f"Error saving cookie database: {str(e)}")
     
@@ -122,6 +129,8 @@ class CookieManager:
             True if cookie exists, False otherwise
         """
         return name in self.cookies
+
+
 
 
 # Example usage

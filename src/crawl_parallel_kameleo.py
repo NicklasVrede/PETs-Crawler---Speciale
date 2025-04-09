@@ -8,10 +8,7 @@ from collections import defaultdict
 from kameleo.local_api_client import KameleoLocalApiClient
 
 # Create a single Kameleo client to reuse across all crawlers
-kameleo_client = KameleoLocalApiClient(
-    endpoint="http://localhost:5050",
-    retry_total=0
-)
+kameleo_client = KameleoLocalApiClient(urls_endpoint="http://localhost:5050")
 
 async def crawl_with_profile(config, profile_name, profile_id, sites, subpages_nr=2, verbose=False, overall_progress=None):
     """
@@ -40,7 +37,7 @@ async def crawl_with_profile(config, profile_name, profile_id, sites, subpages_n
             try:
                 if verbose:
                     print(f"Crawling {domain} with profile {profile_name}")
-                    
+                        
                 await crawl_domain(
                     profile_name=profile_name,
                     profile_id=profile_id,
@@ -63,6 +60,8 @@ async def crawl_with_profile(config, profile_name, profile_id, sites, subpages_n
                 print(f"Error crawling {domain} with profile {profile_name}: {str(e)}")
     except Exception as e:
         print(f"Error in crawl_with_profile for {profile_name}: {str(e)}")
+
+    tqdm.write(f"Crawl with profile {profile_name} completed, visiting {sites_to_crawl[0][1]}")
 
 def precheck_existing_data(profiles, sites, verbose=False):
     """

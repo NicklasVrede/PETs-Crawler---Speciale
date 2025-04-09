@@ -49,7 +49,7 @@ async def crawl_domain(profile_name, profile_id, site_info, data_dir=None,
     crawl_data_manager = CrawlDataManager(profile_name)
     rank, domain = site_info
     
-    # Crawl site - pass verbose flag to control internal printing
+    # Crawl site
     crawler = WebsiteCrawler(
         domain=domain,
         profile_name=profile_name,
@@ -93,9 +93,6 @@ if __name__ == "__main__":
     rank, domain = site_info
 
     # Create a single Kameleo client to reuse
-    kameleo_client = KameleoLocalApiClient(
-    endpoint="http://localhost:5050",
-    retry_total=0
-    )
+    kameleo_client = KameleoLocalApiClient(url_endpoint="http://localhost:5050")
 
     asyncio.run(crawl_domain(profile_name, profile_id, site_info, verbose=False, kameleo_client=kameleo_client, extension_name=profile_name))

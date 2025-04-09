@@ -144,16 +144,28 @@ class SourceIdentifier:
             analysis_result['tracking_evidence'].append(f"Domain found in {filter_name}: {rule}")
         
         # Check CNAME chain - Using dns_resolver
-        cname_chain = self.dns_resolver.get_cname_chain(parsed_url)
-        if cname_chain:
-            analysis_result['cname_chain'] = cname_chain
-            # Check each CNAME in chain against filters
-            for cname in cname_chain:
-                filter_name, rule = self.filter_manager.is_domain_in_filters(cname)
-                if filter_name:
-                    analysis_result['direct_cname'] = True
-                    analysis_result['is_first_party_domain'] = False
-                    analysis_result['tracking_evidence'].append(f"CNAME chain member {cname} found in {filter_name}: {rule}")
+        # Skip DNS checks for browser extension URLs but still include them in the final results
+        is_browser_extension = base_url.startswith(('chrome-extension://', 'chrome://', 'edge://', 'brave://', 'about:'))
+        
+        if not is_browser_extension:
+            try:
+                cname_chain = self.dns_resolver.get_cname_chain(parsed_url)
+                if cname_chain:
+                    analysis_result['cname_chain'] = cname_chain
+                    # Check each CNAME in chain against filters
+                    for cname in cname_chain:
+                        filter_name, rule = self.filter_manager.is_domain_in_filters(cname)
+                        if filter_name:
+                            analysis_result['direct_cname'] = True
+                            analysis_result['is_first_party_domain'] = False
+                            analysis_result['tracking_evidence'].append(f"CNAME chain member {cname} found in {filter_name}: {rule}")
+            except Exception as e:
+                tqdm.write(f"Error checking CNAME chain: {e}")
+        else:
+            # Mark as browser extension
+            tqdm.write(f"DEBUG: Marking as browser extension: {parsed_url}")
+            analysis_result['categories'].append('browser_extension')
+            analysis_result['infrastructure_type'] = 'browser_extension'
         
         # Always check Ghostery DB for additional info, regardless of filter matches
         tracker_info = self._get_tracker_categorization(parsed_url)
@@ -167,8 +179,8 @@ class SourceIdentifier:
                     analysis_result['provider'] = tracker_info['organizations'][0]
         
         # Also check CNAME chain members for additional categorization
-        if cname_chain:
-            for cname in cname_chain:
+        if not is_browser_extension and 'cname_chain' in analysis_result and analysis_result['cname_chain']:
+            for cname in analysis_result['cname_chain']:
                 cname_info = self._get_tracker_categorization(cname)
                 if cname_info:
                     analysis_result['categories'].extend(cname_info['categories'])
@@ -587,7 +599,7 @@ class SourceIdentifier:
 
 
 if __name__ == "__main__":
-    data_directory = 'data/crawler_data/test'
+    data_directory = 'data/crawler_data non-kameleo/adguard'
     
     # Validate directory exists
     if not os.path.exists(data_directory):

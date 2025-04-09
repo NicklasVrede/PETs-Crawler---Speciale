@@ -37,11 +37,15 @@ class CookieClassifier:
         self.unknown_cookies = set()  # Track unknown cookies for batch lookup
         self.verbose = verbose
     
+    def _log(self, message):
+        """Log message if verbose mode is enabled"""
+        if self.verbose:
+            tqdm.write(message)
+    
     def _init_crawler(self):
         """Initialize the crawler if it doesn't exist already"""
         if self.crawler is None:
-            if self.verbose:
-                tqdm.write("Initializing browser for cookie lookups...")
+            self._log("Initializing browser for cookie lookups...")
             self.crawler = CookieCrawler(database=self.cookie_manager)
     
     def classify_file(self, file_path: str, save_result=True, lookup_unknown=True) -> Dict[str, Any]:
@@ -63,15 +67,13 @@ class CookieClassifier:
             
             # Get the site name for display
             site_name = site_data.get('domain', os.path.basename(file_path).replace('.json', ''))
-            if self.verbose:
-                tqdm.write(f"\nProcessing site: {site_name}")
+            self._log(f"\nProcessing site: {site_name}")
                 
             # Extract and track unknown cookies
             unknown_cookies = self._extract_unknown_cookies(site_data)
             if unknown_cookies:
                 self.unknown_cookies.update(unknown_cookies)
-                if self.verbose:
-                    tqdm.write(f"Found {len(unknown_cookies)} unknown cookies in {site_name}")
+                self._log(f"Found {len(unknown_cookies)} unknown cookies in {site_name}")
                 
             # Classify cookies using current database
             self._classify_site(site_data)
@@ -83,9 +85,9 @@ class CookieClassifier:
                     
             return site_data
         except Exception as e:
-            tqdm.write(f"Error classifying file {file_path}: {str(e)}")
+            self._log(f"Error classifying file {file_path}: {str(e)}")
             import traceback
-            tqdm.write(traceback.format_exc())
+            self._log(traceback.format_exc())
             return {}
     
     def _extract_unknown_cookies(self, site_data: Dict[str, Any]) -> Set[str]:
@@ -129,32 +131,28 @@ class CookieClassifier:
         
         # Get all JSON files in the directory
         json_files = [f for f in os.listdir(directory) if f.endswith('.json')]
-        if self.verbose:
-            tqdm.write(f"Found {len(json_files)} JSON files to process")
+        self._log(f"Found {len(json_files)} JSON files to process")
         
         # First pass: classify with existing database and gather unknown cookies
-        for file_name in tqdm(json_files, desc="Classifying websites (first pass)"):
+        for file_name in tqdm(json_files, desc="Classifying cookies (first pass)"):
             file_path = os.path.join(directory, file_name)
             site_data = self.classify_file(file_path, lookup_unknown=False)
             results[file_name] = site_data
         
         # Look up unknown cookies if requested
         if lookup_unknown and self.unknown_cookies:
-            if self.verbose:
-                tqdm.write(f"\nFound {len(self.unknown_cookies)} unique unknown cookies across all sites")
+            self._log(f"\nFound {len(self.unknown_cookies)} unique unknown cookies across all sites")
             
             # Initialize crawler if needed
             self._init_crawler()
             
             # Look up unknown cookies
-            if self.verbose:
-                tqdm.write("Looking up unknown cookies...")
+            self._log("Looking up unknown cookies...")
             self.crawler.lookup_cookies_batch(list(self.unknown_cookies))
             
             # Second pass: re-classify with updated database
-            if self.verbose:
-                tqdm.write("\nRe-classifying websites with updated database...")
-            for file_name in tqdm(json_files, desc="Classifying websites (final pass)"):
+            self._log("\nRe-classifying websites with updated database...")
+            for file_name in tqdm(json_files, desc="Classifying cookies (final pass)"):
                 file_path = os.path.join(directory, file_name)
                 site_data = self.classify_file(file_path, lookup_unknown=False)
                 results[file_name] = site_data
@@ -176,35 +174,35 @@ class CookieClassifier:
         analysis = site_data.get('cookie_analysis', {})
         main_site = site_data.get('domain', '')
         
-        tqdm.write(f"\nCookie analysis for {main_site}:")
-        tqdm.write(f"Unique cookies: {analysis.get('unique_cookies', 0)}")
+        self._log(f"\nCookie analysis for {main_site}:")
+        self._log(f"Unique cookies: {analysis.get('unique_cookies', 0)}")
         
         if 'overlapping_cookies' in analysis:
-            tqdm.write(f"Cookies present in multiple visits: {analysis.get('overlapping_cookies', 0)}")
+            self._log(f"Cookies present in multiple visits: {analysis.get('overlapping_cookies', 0)}")
         
         identified = analysis.get('identified_cookies', 0)
         unique = analysis.get('unique_cookies', 0)
         if unique > 0:
             percentage = (identified/unique*100)
-            tqdm.write(f"Identified cookies: {identified} ({percentage:.1f}%)")
+            self._log(f"Identified cookies: {identified} ({percentage:.1f}%)")
         
         if 'categories' in analysis:
-            tqdm.write("\nTop cookie categories:")
+            self._log("\nTop cookie categories:")
             sorted_categories = sorted(analysis['categories'].items(), key=lambda x: x[1], reverse=True)
             for category, count in sorted_categories[:5]:
                 if unique > 0:
                     percentage = (count/unique*100)
-                    tqdm.write(f"  - {category}: {count} ({percentage:.1f}%)")
+                    self._log(f"  - {category}: {count} ({percentage:.1f}%)")
                 else:
-                    tqdm.write(f"  - {category}: {count}")
+                    self._log(f"  - {category}: {count}")
         
         if 'scripts' in analysis:
-            tqdm.write("\nTop cookie providers:")
+            self._log("\nTop cookie providers:")
             sorted_scripts = sorted(analysis['scripts'].items(), key=lambda x: x[1], reverse=True)
             for script, count in sorted_scripts[:5]:
                 if script != "Not specified" and unique > 0:
                     percentage = (count/unique*100)
-                    tqdm.write(f"  - {script}: {count} ({percentage:.1f}%)")
+                    self._log(f"  - {script}: {count} ({percentage:.1f}%)")
     
     def _classify_site(self, site_data: Dict[str, Any]) -> None:
         """

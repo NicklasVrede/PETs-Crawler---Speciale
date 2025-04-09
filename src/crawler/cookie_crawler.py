@@ -26,7 +26,7 @@ class CookieCrawler:
     Uses Playwright for browser automation and stores results in CookieDatabase.
     """
     
-    def __init__(self, database=None, headless=False, slow_mo=50):
+    def __init__(self, database=None, headless=False, slow_mo=50, verbose=False):
         """
         Initialize the cookie crawler with a browser instance.
         
@@ -34,10 +34,12 @@ class CookieCrawler:
             database: CookieDatabase instance to use (creates a new one if None)
             headless: Whether to run the browser in headless mode
             slow_mo: Slow down browser interactions by this amount (ms)
+            verbose: Whether to output detailed progress information
         """
         self.database = database or CookieManager()
         self.headless = headless
         self.slow_mo = slow_mo
+        self.verbose = verbose
         self.playwright = None
         self.browser = None
         self.page = None
@@ -46,15 +48,20 @@ class CookieCrawler:
         # Register cleanup at exit
         atexit.register(self.close)
         
+    def _log(self, message):
+        """Log message if verbose mode is enabled"""
+        if self.verbose:
+            tqdm.write(message)
+            
     def _init_browser(self):
         """Initialize the browser instance and page"""
         try:
             self.playwright = sync_playwright().start()
             self.browser = self.playwright.chromium.launch(headless=self.headless, slow_mo=self.slow_mo)
             self.page = self.browser.new_page()
-            tqdm.write("Browser session initialized.")
+            self._log("Browser session initialized.")
         except Exception as e:
-            tqdm.write(f"Error initializing browser: {str(e)}")
+            self._log(f"Error initializing browser: {str(e)}")
             self.close()
             raise
             
@@ -81,7 +88,7 @@ class CookieCrawler:
                 pass
             self.playwright = None
             
-        tqdm.write("Browser session closed.")
+        self._log("Browser session closed.")
     
     def lookup_cookies_batch(self, cookie_names: List[str]) -> Dict[str, Dict[str, Any]]:
         """
@@ -105,7 +112,7 @@ class CookieCrawler:
             # Skip if already in database and classified as unknown
             if (self.database.contains(name) and 
                     self.database.get(name).get('category', '').lower() == 'unknown'):
-                tqdm.write(f"Skipping previously classified unknown cookie: {name}")
+                self._log(f"Skipping previously classified unknown cookie: {name}")
                 results[name] = self.database.get(name)
                 continue
                 
@@ -117,7 +124,7 @@ class CookieCrawler:
                 if len(cookie_names) == 1:
                     self.database.save()
             except Exception as e:
-                tqdm.write(f"Error processing {name}: {str(e)}")
+                self._log(f"Error processing {name}: {str(e)}")
                 results[name] = self.database.create_unknown(name)
         
         # Save once at the end if we processed multiple cookies
@@ -143,7 +150,7 @@ class CookieCrawler:
                 
             # Always try direct lookup first
             url = f"https://cookiesearch.org/cookies/?search-term={name}&filter-type=cookie-name&sort=asc&cookie-id={name}"
-            tqdm.write(f"Looking up cookie: {name}")
+            self._log(f"Looking up cookie: {name}")
             
             # Use domcontentloaded for faster page loading
             self.page.goto(url, wait_until='domcontentloaded')
@@ -154,7 +161,7 @@ class CookieCrawler:
                 cookie_id = self._get_field_value('Cookie ID')
                 if cookie_id != "Not specified":
                     # Direct lookup succeeded
-                    tqdm.write(f"Direct lookup successful for: {name}")
+                    self._log(f"Direct lookup successful for: {name}")
                     info = {
                         'name': name,
                         'cookie_id': cookie_id,
@@ -169,7 +176,7 @@ class CookieCrawler:
                     return info
             
             # If direct lookup failed, try with the simplified name
-            tqdm.write(f"Direct lookup failed for: {name}, trying with simplified name")
+            self._log(f"Direct lookup failed for: {name}, trying with simplified name")
             
             # Try progressively simplifying the name
             simplified_name = name
@@ -185,7 +192,7 @@ class CookieCrawler:
                 if last_special_idx > 0:
                     # Keep everything before the last special character
                     new_simplified_name = simplified_name[:last_special_idx]
-                    tqdm.write(f"Simplifying from '{simplified_name}' to '{new_simplified_name}'")
+                    self._log(f"Simplifying from '{simplified_name}' to '{new_simplified_name}'")
                     simplified_name = new_simplified_name
                     
                     # Try lookup with this simplified name
@@ -200,7 +207,7 @@ class CookieCrawler:
             return self.database.create_unknown(name)
             
         except Exception as e:
-            tqdm.write(f"Error looking up cookie {name}: {str(e)}")
+            self._log(f"Error looking up cookie {name}: {str(e)}")
             return self.database.create_unknown(name)
             
     def _simplified_lookup(self, original_name: str, simplified_name: str) -> Optional[Dict[str, Any]]:
@@ -214,7 +221,7 @@ class CookieCrawler:
         Returns:
             Cookie information if found, None otherwise
         """
-        tqdm.write(f"Trying lookup with: {simplified_name}")
+        self._log(f"Trying lookup with: {simplified_name}")
         
         # First try direct lookup
         simple_url = f"https://cookiesearch.org/cookies/?search-term={simplified_name}&filter-type=cookie-name&sort=asc&cookie-id={simplified_name}"
@@ -226,7 +233,7 @@ class CookieCrawler:
             cookie_id = self._get_field_value('Cookie ID')
             if cookie_id != "Not specified":
                 # Simplified name lookup succeeded
-                tqdm.write(f"Simplified name direct lookup successful for: {simplified_name}")
+                self._log(f"Simplified name direct lookup successful for: {simplified_name}")
                 info = {
                     'name': original_name,
                     'cookie_id': cookie_id,
@@ -241,20 +248,20 @@ class CookieCrawler:
                 return info
         
         # If direct lookup failed, try searching
-        tqdm.write(f"Direct lookup failed for simplified name, trying search: {simplified_name}")
+        self._log(f"Direct lookup failed for simplified name, trying search: {simplified_name}")
         search_url = f"https://cookiesearch.org/cookies/?search-term={simplified_name}&filter-type=cookie-name&sort=asc"
         self.page.goto(search_url, wait_until='domcontentloaded')
         
         # Check if any results found
         no_results = self.page.locator('text=No results found').count() > 0
         if no_results:
-            tqdm.write(f"No search results found for simplified name: {simplified_name}")
+            self._log(f"No search results found for simplified name: {simplified_name}")
             return None
         
         # Process search results
         cookie_links = self.page.locator('.result-single')
         results_count = cookie_links.count()
-        tqdm.write(f"Found {results_count} search results for {simplified_name}")
+        self._log(f"Found {results_count} search results for {simplified_name}")
         
         # Look for exact match in the results
         result = self._process_search_results(cookie_links, results_count, original_name, simplified_name)
@@ -266,10 +273,10 @@ class CookieCrawler:
         for i in range(results_count):
             try:
                 cookie_text = cookie_links.nth(i).locator('.cookie-name').inner_text()
-                tqdm.write(f"Result {i+1}: {cookie_text}")
+                self._log(f"Result {i+1}: {cookie_text}")
                 
                 if cookie_text == search_term:
-                    tqdm.write(f"Found exact match in search results: {cookie_text}")
+                    self._log(f"Found exact match in search results: {cookie_text}")
                     cookie_links.nth(i).click()
                     self.page.wait_for_load_state('domcontentloaded')
                     
@@ -292,14 +299,14 @@ class CookieCrawler:
                             return info
                     return None
             except Exception as e:
-                tqdm.write(f"Error processing search result {i+1}: {str(e)}")
+                self._log(f"Error processing search result {i+1}: {str(e)}")
         
         # If no exact match, try the first result that starts with our search term
         for i in range(results_count):
             try:
                 cookie_text = cookie_links.nth(i).locator('.cookie-name').inner_text()
                 if cookie_text.startswith(search_term):
-                    tqdm.write(f"Found partial match in search results: {cookie_text}")
+                    self._log(f"Found partial match in search results: {cookie_text}")
                     cookie_links.nth(i).click()
                     self.page.wait_for_load_state('domcontentloaded')
                     
@@ -322,7 +329,7 @@ class CookieCrawler:
                             return info
                     return None
             except Exception as e:
-                tqdm.write(f"Error processing partial match {i+1}: {str(e)}")
+                self._log(f"Error processing partial match {i+1}: {str(e)}")
         
         # No match found
         return None
@@ -358,7 +365,7 @@ class CookieCrawler:
 # Example usage
 if __name__ == "__main__":
     # Create a crawler instance
-    crawler = CookieCrawler()
+    crawler = CookieCrawler(verbose=True)
     
     try:
         # Example: Look up some common cookies

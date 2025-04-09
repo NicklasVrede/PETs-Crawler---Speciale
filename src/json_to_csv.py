@@ -531,36 +531,54 @@ def analyze_crawler_data(json_file):
         traceback.print_exc()
         return None
 
-def convert_to_csv(json_dir, output_csv):
-    """Convert all JSON files to a single CSV"""
-    # Get all JSON files from all subdirectories
+def process_folder(folder_path, extension_name):
+    """
+    Process all JSON files in a single folder
+    
+    Args:
+        folder_path: Path to the folder containing JSON files
+        extension_name: Name of the extension/folder to include in results
+        
+    Returns:
+        List of dictionaries containing the processed data
+    """
+    results = []
     json_files = []
-    for root, dirs, files in os.walk(json_dir):
+    
+    for root, dirs, files in os.walk(folder_path):
         for file in files:
             if file.endswith('.json'):
                 json_files.append(os.path.join(root, file))
     
-    if not json_files:
-        print(f"No JSON files found in {json_dir}")
-        return
+    print(f"Processing folder '{extension_name}': {len(json_files)} JSON files")
     
-    print(f"Found {len(json_files)} JSON files to process")
-    
-    # Process each file
-    results = []
     for i, json_file in enumerate(json_files):
         if i % 10 == 0:
-            print(f"Processing file {i+1}/{len(json_files)}: {json_file}")
+            print(f"  Processing file {i+1}/{len(json_files)}: {os.path.basename(json_file)}")
         result = analyze_crawler_data(json_file)
         if result:
+            # Add the extension name to the result
+            result['extension'] = extension_name
             results.append(result)
+            
+    return results
+
+def process_single_folder(json_dir, output_csv, folder_name):
+    """Process a single folder and save results to CSV"""
+    folder_path = os.path.join(json_dir, folder_name)
+    
+    if not os.path.isdir(folder_path):
+        print(f"Error: {folder_path} is not a valid directory")
+        return
+        
+    results = process_folder(folder_path, folder_name)
     
     if not results:
         print("No valid data extracted")
         return
     
-    # Write to CSV
-    fieldnames = results[0].keys()
+    # Write to CSV, ensuring extension is the first column
+    fieldnames = ['extension'] + [f for f in results[0].keys() if f != 'extension']
     with open(output_csv, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
@@ -568,15 +586,40 @@ def convert_to_csv(json_dir, output_csv):
     
     print(f"Successfully created CSV file: {output_csv} with {len(results)} rows")
 
+def process_all_folders(json_dir, output_csv):
+    """Process all folders in the directory and combine results to a single CSV"""
+    # Get all extension directories
+    extension_dirs = [d for d in os.listdir(json_dir) if os.path.isdir(os.path.join(json_dir, d))]
+    extension_dirs.sort()  # Sort by extension name
+    
+    print(f"Found {len(extension_dirs)} extension directories to process")
+    
+    # Process each extension directory and collect all results
+    all_results = []
+    for ext_dir in extension_dirs:
+        ext_path = os.path.join(json_dir, ext_dir)
+        results = process_folder(ext_path, ext_dir)
+        all_results.extend(results)
+    
+    if not all_results:
+        print("No valid data extracted")
+        return
+    
+    # Write to CSV, ensuring extension is the first column
+    fieldnames = ['extension'] + [f for f in all_results[0].keys() if f != 'extension']
+    with open(output_csv, 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(all_results)
+    
+    print(f"Successfully created CSV file: {output_csv} with {len(all_results)} rows")
+
 if __name__ == "__main__":
-    # Use the specific directory as requested
-    json_dir = "data/crawler_data non-kameleo/test"
-    output_csv = "data/csv/main_data.csv"
+    # Base directory for crawler data
+    json_dir = "data/crawler_data non-kameleo"
+    output_csv = "data/csv/non-kameleo.csv"
     
     # Ensure output directory exists
     os.makedirs(os.path.dirname(output_csv), exist_ok=True)
     
-    print(f"Processing JSON files from: {json_dir}")
-    print(f"Output will be saved to: {output_csv}")
-    
-    convert_to_csv(json_dir, output_csv) 
+    process_all_folders(json_dir, output_csv) 

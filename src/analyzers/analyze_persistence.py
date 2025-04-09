@@ -27,6 +27,13 @@ class StorageAnalyzer:
         """
         self.testing = testing
         self.verbose = verbose
+        self.data_path = None
+        self.data = None
+        
+    def _log(self, message):
+        """Log message if verbose mode is enabled"""
+        if self.verbose:
+            tqdm.write(message)
         
     def analyze_file(self, data_path):
         """Analyze a single file"""
@@ -58,12 +65,10 @@ class StorageAnalyzer:
         json_files = glob.glob(os.path.join(directory_path, '*.json'))
         
         if not json_files:
-            if self.verbose:
-                tqdm.write(f"No JSON files found in {directory_path}")
+            self._log(f"No JSON files found in {directory_path}")
             return
         
-        if self.verbose:
-            tqdm.write(f"Analyzing persistence for {len(json_files)} files...")
+        self._log(f"Analyzing persistence for {len(json_files)} files...")
         
         # Use tqdm only if verbose is True
         files_iter = tqdm(json_files, desc="Analyzing web tracking", unit="file") if self.verbose else json_files
@@ -77,12 +82,10 @@ class StorageAnalyzer:
                 self.data = json.load(file)
             return True
         except FileNotFoundError:
-            if self.verbose:
-                tqdm.write(f"Error: File not found at {self.data_path}")
+            self._log(f"Error: File not found at {self.data_path}")
             return False
         except json.JSONDecodeError:
-            if self.verbose:
-                tqdm.write(f"Error: Invalid JSON at {self.data_path}")
+            self._log(f"Error: Invalid JSON at {self.data_path}")
             return False
     
     def _save_data(self):
@@ -92,21 +95,24 @@ class StorageAnalyzer:
             output_path = self.data_path.replace('.json', '_enhanced.json')
             with open(output_path, 'w') as file:
                 json.dump(self.data, file, indent=2)
-            if self.verbose:
-                tqdm.write(f"Enhanced data saved to new file: {output_path}")
+            self._log(f"Enhanced data saved to new file: {output_path}")
         else:
             # Save enhanced data back to the original file
             with open(self.data_path, 'w') as file:
                 json.dump(self.data, file, indent=2)
-            if self.verbose:
-                tqdm.write(f"Enhanced data saved to original file: {self.data_path}")
+            self._log(f"Enhanced data saved to original file: {self.data_path}")
     
     def _mark_persistent_storage(self):
         """Mark localStorage items as persistent (private method)"""
         if 'storage' not in self.data:
-            if self.verbose:
-                tqdm.write("No storage data found")
+            self._log("No storage data found")
             return
+        
+        # Add verification print
+        self._log("Processing persistent storage marking...")
+        
+        local_storage_count = 0
+        session_storage_count = 0
         
         # Process each visit's storage data
         for visit_key, visit_data in self.data['storage'].items():
@@ -115,19 +121,24 @@ class StorageAnalyzer:
             
             # Mark localStorage items as persistent (they typically persist between sessions)
             if 'local_storage' in visit_data:
+                local_storage_count += len(visit_data['local_storage'])
                 for item in visit_data['local_storage']:
                     item['persistent'] = True
             
             # SessionStorage items are not persistent by definition
             if 'session_storage' in visit_data:
+                session_storage_count += len(visit_data['session_storage'])
                 for item in visit_data['session_storage']:
                     item['persistent'] = False
+        
+        # Add verification print
+        self._log(f"Marked {local_storage_count} localStorage items as persistent")
+        self._log(f"Marked {session_storage_count} sessionStorage items as non-persistent")
 
     def _mark_persistent_cookies(self):
         """Mark cookies as persistent if they have a future expiration date (private method)"""
         if 'cookies' not in self.data:
-            if self.verbose:
-                tqdm.write("No cookie data found")
+            self._log("No cookie data found")
             return
         
         current_time = datetime.datetime.now().timestamp()
@@ -176,8 +187,7 @@ class StorageAnalyzer:
     def _check_identical_cookies(self):
         """Check if cookies have identical values across visits (private method)"""
         if 'network_data' not in self.data:
-            if self.verbose:
-                tqdm.write("No network data found for cookie value comparison")
+            self._log("No network data found for cookie value comparison")
             return
         
         # Track cookie values across visits
@@ -332,13 +342,12 @@ class StorageAnalyzer:
             for cookie in cookies:
                 cookie['is_potential_identifier'] = is_potential_tracker
         
-        if self.verbose:
-            tqdm.write(f"Tracking cookies analysis results:")
-            tqdm.write(f"  Total potential trackers found: {potential_trackers_count}")
-            tqdm.write(f"  Failed persistence check: {failed_checks['persistent']}")
-            tqdm.write(f"  Failed entropy check: {failed_checks['entropy']}")
-            tqdm.write(f"  Failed length consistency check: {failed_checks['length']}")
-            tqdm.write(f"  Failed similarity check: {failed_checks['similarity']}")
+        self._log(f"Tracking cookies analysis results:")
+        self._log(f"  Total potential trackers found: {potential_trackers_count}")
+        self._log(f"  Failed persistence check: {failed_checks['persistent']}")
+        self._log(f"  Failed entropy check: {failed_checks['entropy']}")
+        self._log(f"  Failed length consistency check: {failed_checks['length']}")
+        self._log(f"  Failed similarity check: {failed_checks['similarity']}")
         
         # Add summary statistics about potential tracking cookies
         self._add_potential_tracking_cookies_summary()
@@ -380,8 +389,7 @@ class StorageAnalyzer:
         with special focus on third-party sharing (private method).
         """
         if 'network_data' not in self.data or 'domain_analysis' not in self.data:
-            if self.verbose:
-                tqdm.write("Missing network_data or domain_analysis for cookie sharing analysis")
+            self._log("Missing network_data or domain_analysis for cookie sharing analysis")
             return
         
         # Create lookup table for domain classification
@@ -483,6 +491,9 @@ class StorageAnalyzer:
         if 'storage' not in self.data:
             return
         
+        # Add verification print
+        self._log("Analyzing storage for potential tracking identifiers...")
+        
         # Track storage items across visits
         storage_items = {
             'localStorage': defaultdict(list),  # Structure: {key: [values across visits]}
@@ -506,6 +517,10 @@ class StorageAnalyzer:
                     value = item.get('value', '')
                     if key:
                         storage_items['sessionStorage'][key].append(value)
+        
+        # Add verification print
+        self._log(f"Found {len(storage_items['localStorage'])} unique localStorage keys")
+        self._log(f"Found {len(storage_items['sessionStorage'])} unique sessionStorage keys")
         
         # Counters for potential identifiers
         potential_identifiers = {
@@ -611,17 +626,16 @@ class StorageAnalyzer:
             }
         }
         
-        if self.verbose:
-            tqdm.write(f"Storage tracking analysis results:")
-            tqdm.write(f"  Total potential trackers found: {potential_trackers_count}")
-            tqdm.write(f"  Failed session/persistence check: {failed_checks['session']}")
-            tqdm.write(f"  Failed entropy check: {failed_checks['entropy']}")
-            tqdm.write(f"  Failed length consistency check: {failed_checks['length']}")
-            tqdm.write(f"  Failed similarity check: {failed_checks['similarity']}")
+        self._log(f"Storage tracking analysis results:")
+        self._log(f"  Total potential trackers found: {potential_trackers_count}")
+        self._log(f"  Failed session/persistence check: {failed_checks['session']}")
+        self._log(f"  Failed entropy check: {failed_checks['entropy']}")
+        self._log(f"  Failed length consistency check: {failed_checks['length']}")
+        self._log(f"  Failed similarity check: {failed_checks['similarity']}")
 
 if __name__ == "__main__":
     # Directory with test files
-    data_directory = 'data/crawler_data/test'
+    data_directory = 'data/crawler_data non-kameleo/test'
     
     # Validate directory exists
     if not os.path.exists(data_directory):
