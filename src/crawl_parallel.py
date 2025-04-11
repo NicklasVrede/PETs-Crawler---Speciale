@@ -78,9 +78,10 @@ async def crawl_with_profile(config, profile, sites, subpages_nr=2, verbose=Fals
             import shutil
             shutil.rmtree(temp_profile_dir, ignore_errors=True)
 
+
 def precheck_existing_data(profiles, sites, verbose=False):
     """
-    Pre-check which domain+extension combinations already have data
+    Pre-check which domain+extension combinations already have data and screenshots
     
     Args:
         profiles: List of profiles/extensions to check
@@ -91,11 +92,12 @@ def precheck_existing_data(profiles, sites, verbose=False):
         Dictionary mapping profile -> set of domains with existing data
     """
     if verbose:
-        print("Pre-checking existing data files...")
+        print("Pre-checking existing data files and screenshots...")
     
     # Create a dictionary to store results
     existing_data = defaultdict(set)
     base_dir = "data/crawler_data"
+    screenshot_base_dir = "data/banner_data/screenshots"
     
     # Check each profile directory
     with tqdm(total=len(profiles), desc="Checking profiles", unit="profile") as pbar:
@@ -103,45 +105,32 @@ def precheck_existing_data(profiles, sites, verbose=False):
             profile_dir = os.path.join(base_dir, profile)
             if not os.path.exists(profile_dir):
                 if verbose:
-                    print(f"  Creating directory for {profile}")
-                os.makedirs(profile_dir, exist_ok=True)
+                    print(f"Profile directory {profile_dir} does not exist")
                 pbar.update(1)
                 continue
                 
-            # Get all existing files for this profile
-            try:
-                existing_files = [f for f in os.listdir(profile_dir) if f.endswith('.json')]
-                
-                # Use nested progress bar for files within each profile
-                with tqdm(total=len(existing_files), desc=f"Checking {profile}", 
-                          unit="file", leave=False) as file_pbar:
-                    for filename in existing_files:
-                        # Extract domain name from filename
-                        domain = filename[:-5]  # Remove .json extension
-                        
-                        # Check if file has more than 10 lines
-                        file_path = os.path.join(profile_dir, filename)
-                        with open(file_path, 'r', encoding='utf-8') as f:
-                            line_count = sum(1 for _ in f)
-                        
-                        if line_count > 10:
-                            existing_data[profile].add(domain)
-                        elif verbose:
-                            print(f"  Skipping {filename} for {profile} - only has {line_count} lines")
-                        
-                        file_pbar.update(1)
-                        
-            except Exception as e:
-                print(f"Error checking {profile_dir}: {e}")
+            # Check each domain
+            with tqdm(total=len(sites), desc=f"Checking {profile}", unit="site", leave=False) as domain_pbar:
+                for rank, domain in sites:
+                    domain_file = os.path.join(profile_dir, f"{domain}.json")
+                    
+                    # Check for both visit0 and visit1 screenshots
+                    visit0_screenshot = os.path.join(screenshot_base_dir, domain, f"visit0_{profile}.png")
+                    visit1_screenshot = os.path.join(screenshot_base_dir, domain, f"visit1_{profile}.png")
+                    
+                    # Only consider it complete if data file and BOTH screenshots exist
+                    if (os.path.exists(domain_file) and 
+                        os.path.exists(visit0_screenshot) and 
+                        os.path.exists(visit1_screenshot)):
+                        existing_data[profile].add(domain)
+                    
+                    domain_pbar.update(1)
             
             pbar.update(1)
     
-    # Statistics for verbose output
     if verbose:
-        total_existing = sum(len(domains) for domains in existing_data.values())
-        total_possible = len(profiles) * len(sites)
-        print(f"Found {total_existing} existing data files out of {total_possible} possible combinations")
-        print(f"Remaining to crawl: {total_possible - total_existing}")
+        for profile, domains in existing_data.items():
+            print(f"Profile {profile} has complete data (JSON + both screenshots) for {len(domains)} domains")
     
     return existing_data
 
@@ -234,7 +223,7 @@ if __name__ == "__main__":
         config=config,
         profiles=profiles,
         sites=sites,
-        max_concurrent=16,
+        max_concurrent=3,
         subpages_nr=20,
         verbose=verbose
     ))

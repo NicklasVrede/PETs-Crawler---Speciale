@@ -326,7 +326,8 @@ async def collect_all_site_pages(setup='i_dont_care_about_cookies', max_pages=40
     try:
         with open('data/study-sites.csv', 'r') as f:
             reader = csv.DictReader(f)
-            domains = [row['domain'].lower().replace('.', '_') for row in reader]
+            # Remove 'www.' from domains before replacing dots with underscores
+            domains = [row['domain'].lower().replace('www.', '').replace('.', '_') for row in reader]
     except Exception as e:
         tqdm.write(f"Error loading study-sites.csv: {e}")
         return
@@ -348,7 +349,7 @@ async def collect_all_site_pages(setup='i_dont_care_about_cookies', max_pages=40
         original_domain = domain.replace('_', '.')
         pages = await collect_site_pages(original_domain, max_pages=max_pages, homepage_links=homepage_links, setup=setup)
         if pages:
-            save_site_pages(domain, pages)
+            save_site_pages(original_domain, pages)  # Use original_domain here to match PageCollector's behavior
             tqdm.write(f"✓ Saved {len(pages)} pages for {domain}")
         else:
             tqdm.write(f"✗ No pages collected for {domain}")

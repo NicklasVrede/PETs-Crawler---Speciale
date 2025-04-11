@@ -125,30 +125,43 @@ def analyze_screenshots(directory="data/banner_data/screenshots/active.com", ver
                 if not found_keywords:
                     if verbose:
                         tqdm.write("No baseline keywords to compare against - can't determine if banner was removed")
-                    json_results["screenshot_check"][f"visit{visit_num}"]["extensions"][ext_file] = None
+                    # Using removal_indicated which will be used for consistency
+                    json_results["screenshot_check"][f"visit{visit_num}"]["extensions"][ext_file] = {
+                        "screenshot": [],
+                        "removal_indicated": False
+                    }
                     continue
                 
                 # Check if keywords from baseline are missing
                 missing_keywords = []
+                matched_keywords = []
                 for keyword in found_keywords:
-                    if keyword.lower() not in ext_text:
+                    if keyword.lower() in ext_text:
+                        matched_keywords.append(keyword)
+                    else:
                         missing_keywords.append(keyword)
+                
+                # Update the JSON structure to match our new format
+                json_results["screenshot_check"][f"visit{visit_num}"]["extensions"][ext_file] = {
+                    "screenshot": matched_keywords,
+                    "removal_indicated": len(missing_keywords) > 0
+                }
                 
                 if missing_keywords:
                     if verbose:
                         tqdm.write(f"Keywords missing in extension screenshot: {', '.join(missing_keywords)}")
                         tqdm.write("This indicates the cookie banner was likely handled by the extension")
-                    # If any keywords are missing, set the boolean to false (banner removed)
-                    json_results["screenshot_check"][f"visit{visit_num}"]["extensions"][ext_file] = False
                 else:
                     if verbose:
                         tqdm.write("No keywords are missing - banner may still be present")
-                    # If all keywords are present, set the boolean to true (banner still present)
-                    json_results["screenshot_check"][f"visit{visit_num}"]["extensions"][ext_file] = True
             except Exception as e:
                 print(f"Error processing {ext_file}: {e}")
                 # Mark as error in the results
-                json_results["screenshot_check"][f"visit{visit_num}"]["extensions"][ext_file] = "error"
+                json_results["screenshot_check"][f"visit{visit_num}"]["extensions"][ext_file] = {
+                    "screenshot": [],
+                    "removal_indicated": False,
+                    "error": str(e)
+                }
     
     return json_results
 

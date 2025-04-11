@@ -34,23 +34,28 @@ class SourceIdentifier:
         import atexit
         atexit.register(self._save_analysis_cache)
 
+    def _log(self, message):
+        """Log a message if verbose is True."""
+        if self.verbose:
+            tqdm.write(message)
+
     def _load_json(self, file_path):
-        """Load JSON data from file (private method)."""
+        """Load JSON data from file."""
         with open(file_path, 'r', encoding='utf-8') as f:
             return json.load(f)
 
     def _save_json(self, data, file_path):
-        """Save data to JSON file (private method)."""
+        """Save data to JSON file."""
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, default=str)
 
     def _get_base_url(self, url: str) -> str:
-        """Extract the base URL from a full URL (private method)."""
+        """Extract the base URL from a full URL."""
         parsed = urlparse(url)
         return f"{parsed.scheme}://{parsed.netloc}"
 
     def _check_tracking_cname(self, cname: str, tracking_list: list) -> bool:
-        """Check if the CNAME resolution matches a known tracking domain (private method)."""
+        """Check if the CNAME resolution matches a known tracking domain."""
         if cname:
             for tracker in tracking_list:
                 if tracker in cname:
@@ -63,10 +68,9 @@ class SourceIdentifier:
             if os.path.exists(self.subdomain_cache_file):
                 with open(self.subdomain_cache_file, 'rb') as f:
                     self.subdomain_analysis_cache = pickle.load(f)
-                if self.verbose:
-                    tqdm.write(f"Loaded {len(self.subdomain_analysis_cache)} subdomain analysis entries from cache")
+                self._log(f"Loaded {len(self.subdomain_analysis_cache)} subdomain analysis entries from cache")
         except Exception as e:
-            tqdm.write(f"Error loading subdomain analysis cache: {e}")
+            self._log(f"Error loading subdomain analysis cache: {e}")
             self.subdomain_analysis_cache = {}
 
     def _save_analysis_cache(self):
@@ -78,8 +82,7 @@ class SourceIdentifier:
             with open(self.subdomain_cache_file, 'wb') as f:
                 pickle.dump(self.subdomain_analysis_cache, f)
             
-            if self.verbose:
-                tqdm.write(f"Saved {len(self.subdomain_analysis_cache)} subdomain analysis entries to cache")
+            self._log(f"Saved {len(self.subdomain_analysis_cache)} subdomain analysis entries to cache")
         except Exception as e:
             tqdm.write(f"Error saving subdomain analysis cache: {e}")
 
@@ -91,7 +94,7 @@ class SourceIdentifier:
         return f"{main_site}:{domain}"
 
     def _analyze_subdomain(self, main_site, base_url, request_count):
-        """Analyze a single subdomain (private method)."""
+        """Analyze a single subdomain."""
         # Try to use cached result if available
         cache_key = self._get_cache_key(main_site, base_url)
         
@@ -99,8 +102,7 @@ class SourceIdentifier:
             cached_result = self.subdomain_analysis_cache[cache_key].copy()
             # Update the request count which can change
             cached_result['request_count'] = request_count
-            if self.verbose:
-                tqdm.write(f"Cache hit for {base_url} (main site: {main_site})")
+            self._log(f"Cache hit for {base_url} (main site: {main_site})")
             return cached_result
         
         # Perform full analysis if not cached
@@ -197,7 +199,7 @@ class SourceIdentifier:
         return analysis_result
 
     def _initialize_site_analysis(self, file_path):
-        """Initialize analysis for a site by loading data and counting requests (private method)."""
+        """Initialize analysis for a site by loading data and counting requests."""
         # Load existing data
         site_data = self._load_json(file_path)
         
@@ -223,7 +225,7 @@ class SourceIdentifier:
         return site_data, source_analysis, subdomain_requests
 
     def _finalize_site_analysis(self, site_data, source_analysis, file_path):
-        """Finalize analysis by sorting results, saving data, and printing summary (private method)."""
+        """Finalize analysis by sorting results, saving data, and printing summary."""
         # Sort identified sources by request count (most frequent first)
         source_analysis['identified_sources'].sort(key=lambda x: x['request_count'], reverse=True)
         source_analysis['filter_matches'].sort(key=lambda x: x['request_count'], reverse=True)
@@ -236,13 +238,14 @@ class SourceIdentifier:
         self._save_json(site_data, file_path)
         
         # Print analysis summary
-        self._print_analysis_summary(site_data, source_analysis)
+        if self.verbose:
+            self._print_analysis_summary(site_data, source_analysis)
 
     def identify_site_sources(self, data_dir):
         """Identify the sources/origins of URLs in site data (public method)."""
         json_files = [f for f in os.listdir(data_dir) if f.endswith('.json')]
         
-        for filename in tqdm(json_files, desc="Analyzing sites", unit="site"):
+        for filename in tqdm(json_files, desc="Analysing Sources", unit="site"):
             file_path = os.path.join(data_dir, filename)
             
             try:
@@ -265,12 +268,10 @@ class SourceIdentifier:
                 
                 # Skip if no domains found
                 if not unique_domains:
-                    if self.verbose:
-                        tqdm.write(f"No domains found in {filename}")
+                    self._log(f"No domains found in {filename}")
                     continue
                     
-                if self.verbose:
-                    tqdm.write(f"Found {len(unique_domains)} unique domains in {filename}")
+                self._log(f"Found {len(unique_domains)} unique domains in {filename}")
                 
                 # Initialize statistics
                 stats = {
@@ -400,9 +401,6 @@ class SourceIdentifier:
                 }
                 self._save_json(site_data, file_path)
                 
-                if self.verbose:
-                    self._print_domain_statistics(main_site, stats)
-                
             except Exception as e:
                 tqdm.write(f"Error processing {filename}: {str(e)}")
                 import traceback
@@ -435,7 +433,7 @@ class SourceIdentifier:
                 tqdm.write(f"  - {match['url']}{cname_info} ({status})")
 
     def _is_first_party_cname_chain(self, subdomain, main_site, cname_chain, public_suffixes, verbose=False):
-        """Check if a CNAME chain is first-party (private method).
+        """Check if a CNAME chain is first-party.
         
         Args:
             subdomain: The full subdomain being checked (e.g., dnklry.plushbeds.com)
@@ -454,21 +452,20 @@ class SourceIdentifier:
         final_cname = cname_chain[-1]
         final_base, final_suffix = get_base_domain(final_cname, public_suffixes)
         
-        if verbose:
-            tqdm.write(f"\nFirst-party check debug:")
-            tqdm.write(f"Subdomain: {subdomain}")
-            tqdm.write(f"Main site: {main_site} -> base='{main_base}', suffix='{main_suffix}'")
-            tqdm.write(f"Final CNAME: {final_cname} -> base='{final_base}', suffix='{final_suffix}'")
+
+        self._log(f"\nFirst-party check debug:")
+        self._log(f"Subdomain: {subdomain}")
+        self._log(f"Main site: {main_site} -> base='{main_base}', suffix='{main_suffix}'")
+        self._log(f"Final CNAME: {final_cname} -> base='{final_base}', suffix='{final_suffix}'")
         
         # Check if final CNAME matches main site domain
         domains_match = main_base == final_base and main_suffix == final_suffix
-        if verbose:
-            tqdm.write(f"Domains match: {domains_match}")
+        self._log(f"Domains match: {domains_match}")
         
         return domains_match
 
     def _get_tracker_categorization(self, domain):
-        """Get detailed categorization of a domain using Ghostery's trackerdb (private method)."""
+        """Get detailed categorization of a domain using Ghostery's trackerdb."""
         result = self.ghostery.analyze_request(f"https://{domain}")
         
         if result.get('matches'):
@@ -490,7 +487,7 @@ class SourceIdentifier:
         return None
 
     def _analyze_cname_chain(self, subdomain, main_site, cname_chain, public_suffixes, verbose=False):
-        """Analyze each node in the CNAME chain for tracking behavior (private method).
+        """Analyze each node in the CNAME chain for tracking behavior.
         First checks filter lists, then falls back to Ghostery for detailed categorization.
         
         Args:
@@ -509,11 +506,10 @@ class SourceIdentifier:
         evidence = []
         categorization = {}
         
-        if verbose:
-            tqdm.write("\nCNAME chain analysis:")
-            tqdm.write(f"Original: {subdomain}")
-            for i, cname in enumerate(cname_chain, 1):
-                tqdm.write(f"  {i}. → {cname}")
+        self._log(f"\nCNAME chain analysis:")
+        self._log(f"Original: {subdomain}")
+        for i, cname in enumerate(cname_chain, 1):
+            self._log(f"  {i}. → {cname}")
         
         # First check if chain is first-party
         is_first_party = self._is_first_party_cname_chain(
@@ -524,69 +520,60 @@ class SourceIdentifier:
             verbose=verbose
         )
         
-        if verbose:
-            tqdm.write(f"\nIs first-party chain? {is_first_party}")
+        self._log(f"\nIs first-party chain? {is_first_party}")
         
         if not is_first_party:
-            if verbose:
-                tqdm.write("\nAnalyzing domains for tracking behavior:")
+            self._log("\nAnalyzing domains for tracking behavior:")
             
             # Check the original subdomain
-            if verbose:
-                tqdm.write(f"\nOriginal domain: {subdomain}")
             filter_name, rule = self.filter_manager.is_domain_in_filters(subdomain)
             if filter_name:
-                if verbose:
-                    tqdm.write(f"  Found in filter: {filter_name}")
-                    tqdm.write(f"  Matching rule: {rule}")
+                self._log(f"  Found in filter: {filter_name}")
+                self._log(f"  Matching rule: {rule}")
                 evidence.append(f"{subdomain} found in {filter_name}")
             
             # Always check Ghostery for categorization
             tracker_info = self._get_tracker_categorization(subdomain)
             if tracker_info:
                 categorization[subdomain] = tracker_info
-                if verbose:
-                    tqdm.write(f"  Categories: {', '.join(tracker_info['categories'])}")
-                    tqdm.write(f"  Organizations: {', '.join(tracker_info['organizations'])}")
+                self._log(f"  Categories: {', '.join(tracker_info['categories'])}")
+                self._log(f"  Organizations: {', '.join(tracker_info['organizations'])}")
                 evidence.append(f"{subdomain} identified as {'/'.join(tracker_info['categories'])} tracker by Ghostery")
-            elif verbose:
-                tqdm.write("  No Ghostery matches found")
+            else:
+                self._log("  No Ghostery matches found")
             
             # Check each CNAME in the chain
             for cname in cname_chain:
-                if verbose:
-                    tqdm.write(f"\nAnalyzing CNAME: {cname}")
+                self._log(f"\nAnalyzing CNAME: {cname}")
                 filter_name, rule = self.filter_manager.is_domain_in_filters(cname)
                 if filter_name:
-                    if verbose:
-                        tqdm.write(f"  Found in filter: {filter_name}")
-                        tqdm.write(f"  Matching rule: {rule}")
+                    self._log(f"  Found in filter: {filter_name}")
+                    self._log(f"  Matching rule: {rule}")
                     evidence.append(f"{cname} found in {filter_name}")
                 
                 # Always check Ghostery for categorization
                 tracker_info = self._get_tracker_categorization(cname)
                 if tracker_info:
                     categorization[cname] = tracker_info
-                    if verbose:
-                        tqdm.write(f"  Categories: {', '.join(tracker_info['categories'])}")
-                        tqdm.write(f"  Organizations: {', '.join(tracker_info['organizations'])}")
+                    self._log(f"  Categories: {', '.join(tracker_info['categories'])}")
+                    self._log(f"  Organizations: {', '.join(tracker_info['organizations'])}")
                     evidence.append(f"{cname} identified as {'/'.join(tracker_info['categories'])} tracker by Ghostery")
-                elif verbose:
-                    tqdm.write("  No Ghostery matches found")
+                else:
+                    self._log("  No Ghostery matches found")
         
         # Flag as tracking if any node in the chain was identified as a tracker
         is_tracking = len(evidence) > 0
         
         if is_tracking and verbose:
-            tqdm.write("\nCNAME chain classified as tracking due to:")
+            self._log("\nCNAME chain classified as tracking due to:")
             for finding in evidence:
-                tqdm.write(f"- {finding}")
+                self._log(f"- {finding}")
             
-            tqdm.write("\nDetailed categorization:")
+            self._log("\nDetailed categorization:")
             for domain, info in categorization.items():
-                tqdm.write(f"\n{domain}:")
-                tqdm.write(f"  Categories: {', '.join(info['categories'])}")
-                tqdm.write(f"  Organizations: {', '.join(info['organizations'])}")
+                self._log(f"\n{domain}:")
+                self._log(f"  Categories: {', '.join(info['categories'])}")
+                self._log(f"  Organizations: {', '.join(info['organizations'])}")
         
         return is_tracking, evidence, categorization
 

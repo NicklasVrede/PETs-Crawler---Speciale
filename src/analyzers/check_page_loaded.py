@@ -45,17 +45,22 @@ CAPTCHA_PHRASES = [
 ]
 
 ERROR_PHRASES = [
-    "404", 
-    "not found", 
-    "error",
+    "404 error", 
+    "404 not found",
+    "page not found", 
     "page doesn't exist",
     "something went wrong",
     "server error",
-    "500",
-    "unavailable",
-    "cannot connect",
+    "500 error",
+    "500 server error",
+    "internal server error",
+    "service unavailable",
+    "cannot connect to",
     "connection refused",
-    "an error occurred",
+    "an error occurred while",
+    "service Unavailable",
+    "temporaily unable",
+    "please try again later",
 ]
 
 def extract_text_from_image(image_path):
@@ -113,7 +118,7 @@ def check_page_loaded(screenshot_path):
         "status": "unknown",
         "word_count": word_count,
         "detected_phrases": [],
-        "text": text[:50] + "..."
+        "text": text[:200] + ("..." if len(text) > 200 else "")  # Capture more text for context
     }
     
     # Check for bot detection
@@ -130,7 +135,7 @@ def check_page_loaded(screenshot_path):
             result["status"] = "captcha"
             return result
     
-    # Check for errors
+    # Check for errors - use more context-aware checking
     for phrase in ERROR_PHRASES:
         if phrase.lower() in text.lower():
             result["detected_phrases"].append(phrase)
@@ -244,12 +249,12 @@ def test_domain(screenshots_base_dir, domain_name):
 
 if __name__ == "__main__":
     # Simple configuration - edit these values to run different functions
-    SCREENSHOTS_BASE_DIR = "data/banner_data/screenshots"
+    SCREENSHOTS_BASE_DIR = "data/banner_data Non-kameleo/screenshots"
     OUTPUT_FILE = "page_loading_results.json"
     
     # To test a single domain, set TEST_DOMAIN to the domain name
     # To process all domains, leave it as None
-    TEST_DOMAIN = "reuters.com"  # or None
+    TEST_DOMAIN = "indeed.co.uk"  # or None
     
     if TEST_DOMAIN:
         print(f"Testing domain: {TEST_DOMAIN}")

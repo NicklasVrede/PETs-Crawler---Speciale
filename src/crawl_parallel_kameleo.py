@@ -65,7 +65,7 @@ async def crawl_with_profile(config, profile_name, profile_id, sites, subpages_n
 
 def precheck_existing_data(profiles, sites, verbose=False):
     """
-    Pre-check which domain+extension combinations already have data
+    Pre-check which domain+extension combinations already have data and screenshots
     
     Args:
         profiles: List of profiles/extensions to check
@@ -76,11 +76,12 @@ def precheck_existing_data(profiles, sites, verbose=False):
         Dictionary mapping profile -> set of domains with existing data
     """
     if verbose:
-        print("Pre-checking existing data files...")
+        print("Pre-checking existing data files and screenshots...")
     
     # Create a dictionary to store results
     existing_data = defaultdict(set)
     base_dir = "data/crawler_data"
+    screenshot_base_dir = "data/banner_data/screenshots"
     
     # Check each profile directory
     with tqdm(total=len(profiles), desc="Checking profiles", unit="profile") as pbar:
@@ -97,7 +98,14 @@ def precheck_existing_data(profiles, sites, verbose=False):
                 for rank, domain in sites:
                     domain_file = os.path.join(profile_dir, f"{domain}.json")
                     
-                    if os.path.exists(domain_file):
+                    # Check for both visit0 and visit1 screenshots
+                    visit0_screenshot = os.path.join(screenshot_base_dir, domain, f"visit0_{profile}.png")
+                    visit1_screenshot = os.path.join(screenshot_base_dir, domain, f"visit1_{profile}.png")
+                    
+                    # Only consider it complete if data file and BOTH screenshots exist
+                    if (os.path.exists(domain_file) and 
+                        os.path.exists(visit0_screenshot) and 
+                        os.path.exists(visit1_screenshot)):
                         existing_data[profile].add(domain)
                     
                     domain_pbar.update(1)
@@ -106,7 +114,7 @@ def precheck_existing_data(profiles, sites, verbose=False):
     
     if verbose:
         for profile, domains in existing_data.items():
-            print(f"Profile {profile} has data for {len(domains)} domains")
+            print(f"Profile {profile} has complete data (JSON + both screenshots) for {len(domains)} domains")
     
     return existing_data
 

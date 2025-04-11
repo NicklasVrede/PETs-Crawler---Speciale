@@ -64,28 +64,41 @@ def analyze_crawler_data(json_file):
         primary_category = categories[0] if categories else ""
         additional_categories = "|".join(categories[1:]) if len(categories) > 1 else ""
         
-        # Helper to get specific visit data
-        def get_visit_data(section, preferred_visit="1", fallback_visit="0"):
-            if section not in data:
-                return None
+        # Get page loaded status - check multiple possible locations
+        page_loaded = True  # Default to True
+        page_loaded_info = data.get('page_loaded', {})
+        if page_loaded_info and isinstance(page_loaded_info, dict):
+            page_loaded = page_loaded_info.get('loaded', True)
+        elif page_loaded_info is not None and not isinstance(page_loaded_info, dict):
+            page_loaded = bool(page_loaded_info)
+        
+        # Get banner removal status from the new flattened structure
+        banner_removed = None  # Default to None (will become NULL in CSV/PowerBI)
+        banner_analysis = data.get('banner_analysis', {})
+        if banner_analysis:
+            # Check for summary_status in the flattened structure
+            summary_status = banner_analysis.get('summary_status', '')
             
-            section_data = data[section]
-            # Try to get the preferred visit
-            if preferred_visit in section_data:
-                return section_data[preferred_visit]
-            # Fall back to an alternative visit
-            elif fallback_visit in section_data:
-                return section_data[fallback_visit]
-            # Try any available numeric key
-            for key in section_data:
-                if isinstance(key, (int, str)) and (isinstance(key, int) or key.isdigit()):
-                    return section_data[key]
+            if summary_status == 'removed' or summary_status == 'likely_removed':
+                banner_removed = True
+            elif summary_status == 'not_removed':
+                banner_removed = False
+            # For 'unknown' or any other status, keep as None
+        
+        # Get the visit ID from the JSON if available, otherwise use default
+        visit_id = data.get('visit_id', '0')
+        fallback_id = '0' if visit_id != '0' else '1'  # If primary is 0, try 1 as fallback
+        
+        # Function to get visit-specific data or fall back to another visit
+        def get_visit_data(key, primary_id, fallback_id):
+            data_by_visit = data.get(key, {})
+            if primary_id in data_by_visit:
+                return data_by_visit[primary_id]
+            elif fallback_id in data_by_visit:
+                return data_by_visit[fallback_id]
             return None
         
         # Network Data - Use visit 1
-        visit_id = "1"  # Prefer visit 1
-        fallback_id = "0"  # Fallback to visit 0 if needed
-        
         network_data = get_visit_data('network_data', visit_id, fallback_id)
         
         # Default values in case data is missing
@@ -97,8 +110,6 @@ def analyze_crawler_data(json_file):
         image_requests = 0
         filter_matches = 0
         potential_cname_cloaking = 0
-        banner_removed = False
-        page_loaded = False
         
         # Initialize domain analysis metrics
         first_party_requests = 0

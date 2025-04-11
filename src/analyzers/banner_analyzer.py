@@ -1,7 +1,6 @@
 import os
 import json
 import sys
-import logging
 from tqdm import tqdm
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -17,19 +16,20 @@ from src.analyzers.screenshot_analyzer import analyze_screenshots
 from src.analyzers.html_analyzer import analyze_cookie_consent_text
 from src.analyzers.check_page_loaded import check_domain_screenshots
 
-
-# Configure logging - only show warnings and above by default
-logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
 class BannerAnalyzer:
     """Class to analyze banner data from screenshots and HTML"""
     
-    def __init__(self, banner_data_dir="data/banner_data", crawler_data_dir="data/crawler_data"):
+    def __init__(self, banner_data_dir="data/banner_data", crawler_data_dir="data/crawler_data", verbose=False):
         """Initialize with paths to data directories"""
         self.banner_data_dir = banner_data_dir
         self.crawler_data_dir = crawler_data_dir
         self.extension_folders = self.get_extension_folders()
+        self.verbose = verbose
+
+    def _log(self, message):
+        """Log a message if verbose is True"""
+        if self.verbose:
+            print(message)
     
     def get_domains_to_analyze(self, test_domain=None, test_count=None):
         """Get the list of domains to analyze based on available data"""
@@ -52,11 +52,11 @@ class BannerAnalyzer:
             if test_domain in domains:
                 domains = [test_domain]
             else:
-                logger.warning(f"Test domain '{test_domain}' not found in available domains.")
+                self._log(f"Test domain '{test_domain}' not found in available domains.")
                 return []
         
         if not domains:
-            logger.warning("No domains found to analyze.")
+            self._log("No domains found to analyze.")
         
         # Limit to test_count domains if specified
         if test_count and not test_domain and len(domains) > test_count:
@@ -67,14 +67,14 @@ class BannerAnalyzer:
     def get_extension_folders(self):
         """Get the list of extension folders from the crawler data directory"""
         if not os.path.exists(self.crawler_data_dir):
-            logger.error(f"Crawler data directory not found: {self.crawler_data_dir}")
+            self._log(f"Crawler data directory not found: {self.crawler_data_dir}")
             return []
             
         extension_folders = [f for f in os.listdir(self.crawler_data_dir) 
                             if os.path.isdir(os.path.join(self.crawler_data_dir, f))]
         
         if not extension_folders:
-            logger.warning(f"No extension folders found in {self.crawler_data_dir}")
+            self._log(f"No extension folders found in {self.crawler_data_dir}")
         
         return extension_folders
     
@@ -92,7 +92,7 @@ class BannerAnalyzer:
         html_exists = os.path.exists(domain_html_dir)
         
         if not screenshots_exist and not html_exists:
-            logger.warning(f"No data found for domain {domain}, skipping")
+            self._log(f"No data found for domain {domain}, skipping")
             return {}
         
         # Analyze screenshots
@@ -163,7 +163,7 @@ class BannerAnalyzer:
         return False
     
     def process_domain_results(self, screenshot_results, html_results, page_loaded_results):
-        """Process domain results to create a structured banner_results dictionary"""
+        """Process domain results to create a structured banner_results dictionary by visit"""
         # Create a banner results structure keyed by extension
         banner_results = {}
         
@@ -173,83 +173,157 @@ class BannerAnalyzer:
             ext_key = ext_folder.replace(" ", "_").lower()
             
             # Initialize results for this extension
-            banner_results[ext_key] = {
-                "img_match": {},
-                "text_match": {},
-                "page_loaded": {}
-            }
+            banner_results[ext_key] = {}
             
-            # Process screenshot analysis results
+            # Collect all visit IDs from all data sources
+            all_visit_ids = set()
             if screenshot_results and "screenshot_check" in screenshot_results:
-                for visit_id, visit_data in screenshot_results["screenshot_check"].items():
-                    # Get the keywords found in the baseline
+                all_visit_ids.update(screenshot_results["screenshot_check"].keys())
+            if html_results and "html_check" in html_results:
+                all_visit_ids.update(html_results["html_check"].keys())
+            if page_loaded_results:
+                all_visit_ids.update(page_loaded_results.keys())
+            
+            # Process each visit
+            for visit_id in all_visit_ids:
+                # Initialize the visit data structure
+                banner_results[ext_key][visit_id] = {}
+                
+                # Process screenshot analysis results for this visit
+                if screenshot_results and "screenshot_check" in screenshot_results and visit_id in screenshot_results["screenshot_check"]:
+                    visit_data = screenshot_results["screenshot_check"][visit_id]
                     keywords = visit_data.get("keywords", [])
                     
                     # Check each extension's screenshot results
-                    for screenshot_file, banner_present in visit_data.get("extensions", {}).items():
+                    for screenshot_file, ext_data in visit_data.get("extensions", {}).items():
                         # Check if this file belongs to this extension
-                        if not self.is_file_for_extension(screenshot_file, ext_key):
-                            continue
-                            
-                        # If we reach here, this file belongs to the current extension
-                        if visit_id not in banner_results[ext_key]["img_match"]:
-                            banner_results[ext_key]["img_match"][visit_id] = {
-                                "matched": banner_present,
-                                "keywords": keywords
-                            }
-            
-            # Process HTML analysis results
-            if html_results and "html_check" in html_results:
-                for visit_id, visit_data in html_results["html_check"].items():
-                    # Get the baseline matches and keywords
-                    baseline_matches = visit_data.get("no_extension", {}).get("matches", [])
-                    html_keywords = visit_data.get("keywords", [])
+                        if self.is_file_for_extension(screenshot_file, ext_key):
+                            # Determine image match status - updated field names
+                            if not keywords:
+                                status = "no_baseline_keywords"
+                            elif ext_data.get("removal_indicated", False):
+                                status = "some_keywords_missing"
+                            else:
+                                status = "all_keywords_found"
+                                
+                            banner_results[ext_key][visit_id]["screenshot"] = status
+                
+                # Process HTML analysis results for this visit
+                if html_results and "html_check" in html_results and visit_id in html_results["html_check"]:
+                    visit_data = html_results["html_check"][visit_id]
+                    keywords = visit_data.get("keywords", [])
                     
                     # Check each extension's HTML results
-                    for html_file, html_data in visit_data.get("extensions", {}).items():
-                        # Skip the baseline
-                        if "no_extension" in html_file:
-                            continue
-                            
+                    for html_file, ext_data in visit_data.get("extensions", {}).items():
                         # Check if this file belongs to this extension
-                        if not self.is_file_for_extension(html_file, ext_key):
-                            continue
-                        
-                        matches = html_data.get("matches", [])
-                        missing = html_data.get("missing", [])
-                        
-                        # Compare with baseline to determine if banner was removed
-                        if baseline_matches and not matches:
-                            banner_removed = True
-                        elif not baseline_matches:
-                            banner_removed = None  # Can't determine
-                        else:
-                            banner_removed = False
-                        
-                        if visit_id not in banner_results[ext_key]["text_match"]:
-                            banner_results[ext_key]["text_match"][visit_id] = {
-                                "baseline_matches": baseline_matches,
-                                "extension_matches": matches,
-                                "missing_matches": missing,
-                                "banner_removed": banner_removed,
-                                "keywords": html_keywords
-                            }
+                        if self.is_file_for_extension(html_file, ext_key):
+                            # Determine text match status - updated field names
+                            if not keywords:
+                                status = "no_baseline_keywords"
+                            elif ext_data.get("removal_indicated", False):
+                                status = "some_keywords_missing"
+                            else:
+                                status = "all_keywords_found"
+                            
+                            banner_results[ext_key][visit_id]["html"] = status
+                
+                # Process page loaded results for this visit
+                if page_loaded_results and visit_id in page_loaded_results:
+                    for screenshot_file, screenshot_data in page_loaded_results[visit_id].items():
+                        # Check if this file belongs to this extension
+                        if self.is_file_for_extension(screenshot_file, ext_key):
+                            banner_results[ext_key][visit_id]["page_loaded"] = screenshot_data.get("loaded", False)
+                            banner_results[ext_key][visit_id]["page_status"] = screenshot_data.get("status", "unknown")
+                
+                # Generate conclusion for this visit
+                page_loaded = banner_results[ext_key][visit_id].get("page_loaded", False)
+                html = banner_results[ext_key][visit_id].get("html", "unknown")
+                screenshot = banner_results[ext_key][visit_id].get("screenshot", "unknown")
+                
+                # Determine conclusion
+                conclusion = "unknown"
+                reason = ["Could not determine banner status"]
+                
+                if not page_loaded:
+                    conclusion = "not_loaded"
+                    reason = ["Page did not load properly"]
+                elif html == "no_baseline_keywords" or screenshot == "no_baseline_keywords":
+                    conclusion = "unknown"
+                    reason = ["No banner keywords detected in baseline, cannot determine if banner was removed"]
+                elif html == "no_keywords_found" or html == "some_keywords_missing":
+                    conclusion = "removed"
+                    reason = ["HTML analysis confirms banner elements were removed"]
+                elif screenshot == "some_keywords_missing":
+                    conclusion = "likely_removed"
+                    reason = ["Screenshot analysis suggests banner is not visible but HTML elements may remain"]
+                else:
+                    conclusion = "not_removed"
+                    reason = ["Both HTML and screenshot analyses indicate banner is still present"]
+                
+                # Add flattened conclusion to results
+                banner_results[ext_key][visit_id]["conclusion"] = conclusion
+                banner_results[ext_key][visit_id]["reason"] = reason
             
-            # Process page loaded results
-            if page_loaded_results:
-                for visit_id, visit_data in page_loaded_results.items():
-                    for screenshot_file, screenshot_data in visit_data.items():
-                        # Check if this file belongs to this extension
-                        if not self.is_file_for_extension(screenshot_file, ext_key):
-                            continue
-                            
-                        if visit_id not in banner_results[ext_key]["page_loaded"]:
-                            banner_results[ext_key]["page_loaded"][visit_id] = {
-                                "loaded": screenshot_data.get("loaded", False),
-                                "status": screenshot_data.get("status", "unknown")
-                            }
+            # Add a flattened summary at the top level (not under a visit)
+            summary_status, summary_reason = self.generate_summary(banner_results[ext_key])
+            banner_results[ext_key]["summary_status"] = summary_status
+            banner_results[ext_key]["summary_reason"] = summary_reason
         
         return banner_results
+    
+    def generate_summary(self, ext_results):
+        """Generate a summary of results across all visits for an extension"""
+        # Get all visit IDs
+        all_visits = [v for v in ext_results.keys() if v not in ["summary_status", "summary_reason"]]
+        
+        if not all_visits:
+            return "unknown", ["No visit data available"]
+        
+        # First check if any visits loaded successfully
+        loaded_visits = [v for v in all_visits if ext_results.get(v, {}).get("page_loaded", False)]
+        
+        if not loaded_visits:
+            # No visits loaded successfully
+            return "not_loaded", ["None of the visits loaded successfully"]
+        
+        # Prioritize loaded visits for our conclusion
+        removed_count = 0
+        likely_removed_count = 0
+        not_removed_count = 0
+        unknown_count = 0
+        
+        for visit in loaded_visits:
+            # Updated to use the flattened structure
+            status = ext_results.get(visit, {}).get("conclusion", "unknown")
+            if status == "removed":
+                removed_count += 1
+            elif status == "likely_removed":
+                likely_removed_count += 1
+            elif status == "not_removed":
+                not_removed_count += 1
+            else:
+                unknown_count += 1
+        
+        # Determine overall conclusion
+        total_loaded = len(loaded_visits)
+        if removed_count > 0:
+            # If any visit shows definite removal, consider it removed
+            status = "removed"
+            reason = [f"{removed_count}/{total_loaded} loaded visits showed banner removal"]
+        elif likely_removed_count > 0:
+            # If any visit shows likely removal, consider it likely removed
+            status = "likely_removed"
+            reason = [f"{likely_removed_count}/{total_loaded} loaded visits showed likely banner removal"]
+        elif not_removed_count > 0:
+            # If any visit shows no removal, consider it not removed
+            status = "not_removed"
+            reason = [f"{not_removed_count}/{total_loaded} loaded visits showed banner was not removed"]
+        else:
+            status = "unknown"
+            reason = ["Could not determine if banner was removed"]
+        
+        # Return just the status and reason without confidence
+        return status, reason
     
     def update_extension_files(self, domain, banner_results, test_run=False):
         """Update the appropriate extension JSON files with banner analysis results"""
@@ -259,8 +333,12 @@ class BannerAnalyzer:
             f"{domain}.json",
             f"{domain.replace('.', '_')}.json",
             f"{domain.lower()}.json",
-            f"{domain.lower().replace('www.', '')}.json"
+            f"{domain.lower().replace('www.', '')}.json",
+            f"www.{domain}.json" if not domain.startswith('www.') else None
         ]
+        
+        # Remove None entries that might exist
+        domain_filenames = [f for f in domain_filenames if f]
         
         # Track how many extension folders we updated
         updated_count = 0
@@ -305,16 +383,23 @@ class BannerAnalyzer:
                     updated_count += 1
                     
                 except Exception as e:
-                    logger.error(f"Error updating {domain_file_path}: {e}")
+                    tqdm.write(f"Error updating {domain_file_path}: {e}")
             else:
-                logger.debug(f"No file found for {domain} in {ext_folder}")
+                self._log(f"No file found for {domain} in {ext_folder}")
         
         if updated_count == 0:
-            logger.warning(f"Could not update any files for domain {domain}")
+            self._log(f"Could not update any files for domain {domain}")
     
-    def process_domain_parallel(self, domain):
-        """Helper function for parallel domain processing"""
-        return domain, self.analyze_domain(domain)
+    def analyze_domain_wrapper(self, args):
+        """
+        A standalone wrapper function for multiprocessing that unpacks arguments and calls analyze_domain.
+        This avoids pickling class methods directly.
+        """
+        domain, banner_data_dir, crawler_data_dir, extension_folders = args
+        # Create a temporary analyzer just for this process
+        temp_analyzer = BannerAnalyzer(banner_data_dir=banner_data_dir, crawler_data_dir=crawler_data_dir)
+        temp_analyzer.extension_folders = extension_folders
+        return domain, temp_analyzer.analyze_domain(domain)
     
     def analyze_all_banners(self, test_run=True, test_domain=None, test_count=None, 
                            use_parallel=False, max_workers=None):
@@ -343,25 +428,31 @@ class BannerAnalyzer:
             
             # Process domains in parallel
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
-                # Submit all tasks - note we need to use a non-method function for parallel processing
-                future_to_domain = {
-                    executor.submit(analyze_domain_parallel, domain, self.banner_data_dir, self.extension_folders): domain 
+                # Prepare args tuples - each contains everything the function needs
+                args_list = [
+                    (domain, self.banner_data_dir, self.crawler_data_dir, self.extension_folders) 
                     for domain in domains
+                ]
+                
+                # Submit all tasks using the wrapper function
+                future_to_domain = {
+                    executor.submit(self.analyze_domain_wrapper, args): args[0] 
+                    for args in args_list
                 }
                 
                 # Process results as they complete
                 for future in as_completed(future_to_domain):
                     domain = future_to_domain[future]
                     try:
-                        banner_results = future.result()
-                        domain_results[domain] = banner_results
+                        domain_name, banner_results = future.result()
+                        domain_results[domain_name] = banner_results
                         
                         # Update progress bar
                         completed += 1
                         progress_bar.update(1)
                         progress_bar.set_postfix({"Current": domain})
                     except Exception as e:
-                        logger.error(f"Error processing domain {domain}: {e}")
+                        tqdm.write(f"Error processing domain {domain}: {e}")
             
             # Close progress bar
             progress_bar.close()
@@ -383,246 +474,71 @@ class BannerAnalyzer:
         
         # Report completion time
         elapsed_time = time.time() - start_time
-        print(f"\nCompleted analysis of {len(domains)} domains in {elapsed_time:.2f} seconds")
+        self._log(f"\nCompleted analysis of {len(domains)} domains in {elapsed_time:.2f} seconds")
         
         return domains  # Return the list of domains processed
 
     def analyze_single_extension(self, domain, extension_name, test_run=True):
-        """
-        Analyze a single domain with a specific extension for testing purposes
+        """Analyze a single domain with a specific extension"""
+        # Find the extension folder
+        ext_folder = None
+        for folder in self.extension_folders:
+            if folder.replace(" ", "_").lower() == extension_name.lower():
+                ext_folder = folder
+                break
         
-        Args:
-            domain (str): The domain to analyze
-            extension_name (str): The name of the extension to focus on
-            test_run (bool): Whether to actually update files or just test
-            
-        Returns:
-            dict: The banner analysis results
-        """
-        print(f"Analyzing domain {domain} with extension {extension_name}")
+        if not ext_folder:
+            self._log(f"Extension '{extension_name}' not found in available extensions.")
+            return None
         
         # Analyze the domain
-        banner_results = self.analyze_domain(domain)
+        results = self.analyze_domain(domain)
         
-        if not banner_results:
-            print(f"No results found for domain {domain}")
-            return {}
-            
-        # Extract just the extension we want to test
+        # Get results for this extension
         ext_key = extension_name.replace(" ", "_").lower()
-        if ext_key in banner_results:
-            filtered_results = {ext_key: banner_results[ext_key]}
+        if ext_key in results:
+            ext_results = results[ext_key]
             
-            # Display some results for verification
-            print(f"\nResults for {extension_name} on {domain}:")
-            
-            # Show image match results if available
-            img_matches = banner_results[ext_key].get("img_match", {})
-            if img_matches:
-                print(f"  Image matches: {len(img_matches)} visits analyzed")
-                for visit_id, data in img_matches.items():
-                    print(f"    Visit {visit_id}: {len(data)} screenshots")
-            else:
-                print("  No image matches found")
-                
-            # Show text match results if available
-            text_matches = banner_results[ext_key].get("text_match", {})
-            if text_matches:
-                print(f"  Text matches: {len(text_matches)} visits analyzed")
-                for visit_id, data in text_matches.items():
-                    print(f"    Visit {visit_id}: {len(data)} HTML files")
-            else:
-                print("  No text matches found")
-            
-            # Update extension files if requested
+            # Write results to file if not a test run
             if not test_run:
-                self.update_extension_files(domain, filtered_results, test_run=False)
-                print(f"Updated files for {domain} with {extension_name} results")
-            else:
-                print("Test run - no files updated")
-                
-            return filtered_results
+                self.write_extension_results(domain, ext_folder, ext_results)
+            
+            return ext_results
         else:
-            print(f"No results found for extension {extension_name}")
-            return {}
+            self._log(f"No results found for extension '{extension_name}' on domain '{domain}'")
+            return None
 
-
-# Helper function for parallel processing (needs to be outside the class)
-def analyze_domain_parallel(domain, banner_data_dir, extension_folders):
-    """
-    Helper function for parallel domain processing that doesn't rely on class methods
-    This is needed because class methods can't be pickled for multiprocessing
-    """
-
-    
-    screenshot_dir = os.path.join(banner_data_dir, "screenshots")
-    html_dir = os.path.join(banner_data_dir, "html")
-    
-    # Paths for this domain
-    domain_screenshot_dir = os.path.join(screenshot_dir, domain)
-    domain_html_dir = os.path.join(html_dir, domain)
-    
-    # Check if directories exist
-    screenshots_exist = os.path.exists(domain_screenshot_dir)
-    html_exists = os.path.exists(domain_html_dir)
-    
-    if not screenshots_exist and not html_exists:
-        logger.warning(f"No data found for domain {domain}, skipping")
-        return {}
-    
-    # Analyze screenshots
-    screenshot_results = {}
-    page_loaded_results = {}
-    if screenshots_exist and os.listdir(domain_screenshot_dir):
-        screenshot_results = analyze_screenshots(domain_screenshot_dir)
-        page_loaded_results = check_domain_screenshots(domain_screenshot_dir)
-    
-    # Analyze HTML
-    html_results = {}
-    if html_exists and os.listdir(domain_html_dir):
-        html_results = analyze_cookie_consent_text(domain_html_dir)
-    
-    # Process domain results
-    def process_domain_results(screenshot_results, html_results, page_loaded_results, extension_folders):
-        # Create a banner results structure keyed by extension
-        banner_results = {}
+    def write_extension_results(self, domain, extension_folder, results):
+        """Write extension results to a JSON file in the crawler data directory"""
+        # Create path for the extension folder
+        ext_dir = os.path.join(self.crawler_data_dir, extension_folder)
+        os.makedirs(ext_dir, exist_ok=True)
         
-        # Helper function for extension matching
-        def is_file_for_extension(filename, ext_key):
-            """
-            Determine if a file belongs to a specific extension based on filename pattern.
-            
-            Args:
-                filename (str): The filename to check
-                ext_key (str): The extension key (lowercase, normalized)
-                
-            Returns:
-                bool: True if the file belongs to this extension, False otherwise
-            """
-            # Get base filename without extension
-            base_name = os.path.basename(filename)
-            name_without_ext = os.path.splitext(base_name)[0]
-            
-            # Split by underscores and convert to lowercase
-            parts = name_without_ext.lower().split('_')
-            
-            # Skip the first part (visit number)
-            if len(parts) > 1:
-                parts = parts[1:]
-            
-            # Check exact extension match
-            if '_' in ext_key:
-                # For multi-word extensions like "ublock_origin_lite"
-                ext_parts = ext_key.split('_')
-                
-                # The filename should contain exactly these parts as a continuous sequence
-                for i in range(len(parts) - len(ext_parts) + 1):
-                    if parts[i:i+len(ext_parts)] == ext_parts:
-                        # We have an exact match, now check this isn't part of a longer extension name
-                        if (i+len(ext_parts) == len(parts)) or (ext_parts == ['adblock'] and parts[i:i+2] != ['adblock', 'plus']):
-                            return True
-            else:
-                # For single-word extensions like "adblock" or "ublock"
-                if ext_key in parts:
-                    if len(parts) == 1 or (ext_key == 'adblock' and parts != ['adblock', 'plus']) or \
-                       (ext_key == 'ublock' and parts != ['ublock', 'origin', 'lite']):
-                        return True
-                    
-            return False
+        # Create JSON filepath
+        json_file = os.path.join(ext_dir, f"{domain}.json")
         
-        # Process for each extension
-        for ext_folder in extension_folders:
-            # Create a normalized extension key
-            ext_key = ext_folder.replace(" ", "_").lower()
-            
-            # Initialize results for this extension
-            banner_results[ext_key] = {
-                "img_match": {},
-                "text_match": {},
-                "page_loaded": {}
-            }
-            
-            # Process screenshot analysis results
-            if screenshot_results and "screenshot_check" in screenshot_results:
-                for visit_id, visit_data in screenshot_results["screenshot_check"].items():
-                    # Get the keywords found in the baseline
-                    keywords = visit_data.get("keywords", [])
-                    
-                    # Check each extension's screenshot results
-                    for screenshot_file, banner_present in visit_data.get("extensions", {}).items():
-                        # Check if this file belongs to this extension
-                        if not is_file_for_extension(screenshot_file, ext_key):
-                            continue
-                            
-                        # If we reach here, this file belongs to the current extension
-                        if visit_id not in banner_results[ext_key]["img_match"]:
-                            banner_results[ext_key]["img_match"][visit_id] = {
-                                "matched": banner_present,
-                                "keywords": keywords
-                            }
-            
-            # Process HTML analysis results
-            if html_results and "html_check" in html_results:
-                for visit_id, visit_data in html_results["html_check"].items():
-                    # Get the baseline matches and keywords
-                    baseline_matches = visit_data.get("no_extension", {}).get("matches", [])
-                    html_keywords = visit_data.get("keywords", [])
-                    
-                    # Check each extension's HTML results
-                    for html_file, html_data in visit_data.get("extensions", {}).items():
-                        # Skip the baseline
-                        if "no_extension" in html_file:
-                            continue
-                            
-                        # Check if this file belongs to this extension
-                        if not is_file_for_extension(html_file, ext_key):
-                            continue
-                        
-                        matches = html_data.get("matches", [])
-                        missing = html_data.get("missing", [])
-                        
-                        # Compare with baseline to determine if banner was removed
-                        if baseline_matches and not matches:
-                            banner_removed = True
-                        elif not baseline_matches:
-                            banner_removed = None  # Can't determine
-                        else:
-                            banner_removed = False
-                        
-                        if visit_id not in banner_results[ext_key]["text_match"]:
-                            banner_results[ext_key]["text_match"][visit_id] = {
-                                "baseline_matches": baseline_matches,
-                                "extension_matches": matches,
-                                "missing_matches": missing,
-                                "banner_removed": banner_removed,
-                                "keywords": html_keywords
-                            }
-            
-            # Process page loaded results
-            if page_loaded_results:
-                for visit_id, visit_data in page_loaded_results.items():
-                    for screenshot_file, screenshot_data in visit_data.items():
-                        # Check if this file belongs to this extension
-                        if not is_file_for_extension(screenshot_file, ext_key):
-                            continue
-                            
-                        if visit_id not in banner_results[ext_key]["page_loaded"]:
-                            banner_results[ext_key]["page_loaded"][visit_id] = {
-                                "loaded": screenshot_data.get("loaded", False),
-                                "status": screenshot_data.get("status", "unknown")
-                            }
+        # Load existing data if available
+        existing_data = {}
+        if os.path.exists(json_file):
+            try:
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    existing_data = json.load(f)
+            except json.JSONDecodeError:
+                tqdm.write(f"Could not parse existing JSON file: {json_file}")
         
-        return banner_results
-    
-    # Process the results
-    banner_results = process_domain_results(
-        screenshot_results, 
-        html_results, 
-        page_loaded_results, 
-        extension_folders
-    )
-    
-    return banner_results
+        # Remove old banner_results key if it exists
+        if "banner_results" in existing_data:
+            del existing_data["banner_results"]
+            self._log(f"Removed old 'banner_results' data from {json_file}")
+        
+        # Update banner analysis data
+        existing_data["banner_analysis"] = results
+        
+        # Write updated data
+        with open(json_file, 'w', encoding='utf-8') as f:
+            json.dump(existing_data, f, indent=2)
+        
+        self._log(f"Updated banner analysis for {domain} with extension {extension_folder}")
 
 if __name__ == "__main__":
     # Comment out the default test configuration
@@ -643,7 +559,7 @@ if __name__ == "__main__":
     """
     
     # Single extension test code
-    analyzer = BannerAnalyzer()
+    analyzer = BannerAnalyzer(banner_data_dir="data/banner_data Non-kameleo", crawler_data_dir="data/crawler_data Non-kameleo")
     
     # Choose a domain and extension to test
     test_domain = "amazon.co.uk"  # Replace with an actual domain in your dataset

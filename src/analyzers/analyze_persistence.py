@@ -1,11 +1,16 @@
 import json
 import os
 import datetime
+import time  # Add this import
 from collections import Counter, defaultdict
 import glob
 import difflib  # For Ratcliff/Obershelp string comparison
 from tqdm import tqdm
 import sys
+
+SIMPLIFIED_COMPARISON_THRESHOLD = 20_000 
+# String length threshold above which simplified prefix/suffix comparison is used
+# Instead of full Ratcliff/Obershelp comparison, to prevent excessive CPU usage
 
 
 class StorageAnalyzer:
@@ -38,21 +43,59 @@ class StorageAnalyzer:
     def analyze_file(self, data_path):
         """Analyze a single file"""
         self.data_path = data_path
+        start_time = time.time()
+        self._log(f"Starting analysis of {os.path.basename(data_path)}")
+        
         self.data = None
         
         if not self._load_data():
             return False
+        
+        load_time = time.time() - start_time
+        self._log(f"Data loading completed in {load_time:.2f} seconds")
             
-        # Run all analysis functions
+        # Run all analysis functions with timing
+        analysis_times = {}
+        
+        t0 = time.time()
         self._mark_persistent_storage()
+        analysis_times['persistent_storage'] = time.time() - t0
+        
+        t0 = time.time()
         self._mark_persistent_cookies()
+        analysis_times['persistent_cookies'] = time.time() - t0
+        
+        t0 = time.time()
         self._check_identical_cookies()
+        analysis_times['identical_cookies'] = time.time() - t0
+        
+        t0 = time.time()
         self._identify_potential_tracking_cookies()
+        analysis_times['tracking_cookies'] = time.time() - t0
+        
+        t0 = time.time()
         self._analyze_cookie_sharing()
+        analysis_times['cookie_sharing'] = time.time() - t0
+        
+        t0 = time.time()
         self._analyze_storage_identifiers()
+        analysis_times['storage_identifiers'] = time.time() - t0
         
         # Save the enhanced data
+        t0 = time.time()
         self._save_data()
+        save_time = time.time() - t0
+        
+        total_time = time.time() - start_time + 1e-10  # Add epsilon to avoid division by zero
+        
+        # Log timing information
+        self._log(f"\nPerformance summary for {os.path.basename(data_path)}:")
+        self._log(f"  Total analysis time: {total_time:.2f} seconds")
+        self._log(f"  Data loading: {load_time:.2f} seconds")
+        for analysis, duration in analysis_times.items():
+            self._log(f"  {analysis.replace('_', ' ').title()}: {duration:.2f} seconds ({duration/total_time*100:.1f}%)")
+        self._log(f"  Data saving: {save_time:.2f} seconds")
+        
         return True
     
     def analyze_directory(self, directory_path):
@@ -240,18 +283,19 @@ class StorageAnalyzer:
 
     def _identify_potential_tracking_cookies(self):
         """
-        Identify cookies with characteristics that suggest they are being used for tracking:
-        - Persistent cookies with long lifetimes
-        - Cookies with sufficient entropy to uniquely identify users
-        - Cookies that have consistent or similarly structured values across visits
+        Identify cookies with characteristics that suggest they are being used for tracking.
         """
         if 'cookies' not in self.data:
             return
+        
+        start_time = time.time()
+        self._log("Starting potential tracking cookies analysis...")
         
         # Dictionary to store potential tracking cookies by their names
         cookies_by_name = {}
         
         # Group cookies by name across visits
+        t0 = time.time()
         for visit_key, visit_cookies in self.data['cookies'].items():
             for cookie in visit_cookies:
                 cookie_name = cookie.get('name', '')
@@ -261,6 +305,7 @@ class StorageAnalyzer:
                 if cookie_name not in cookies_by_name:
                     cookies_by_name[cookie_name] = []
                 cookies_by_name[cookie_name].append(cookie)
+        collection_time = time.time() - t0
         
         potential_trackers_count = 0
         failed_checks = {
@@ -270,8 +315,17 @@ class StorageAnalyzer:
             'similarity': 0
         }
         
+        # Time the analysis of each cookie separately
+        persistence_check_time = 0
+        entropy_check_time = 0
+        similarity_check_time = 0
+        
         # Analyze each cookie for tracking characteristics
+        cookies_analyzed = 0
+        similarity_pairs_checked = 0
         for cookie_name, cookies in cookies_by_name.items():
+            cookies_analyzed += 1
+            
             # Skip if only one occurrence
             if len(cookies) <= 1:
                 continue
@@ -280,6 +334,7 @@ class StorageAnalyzer:
             is_potential_tracker = False
             
             # Check 1: Long-lived persistent cookies
+            t0 = time.time()
             persistent_long_lived = False
             for cookie in cookies:
                 if cookie.get('persistent', False) and cookie.get('days_until_expiry', 0) > 90:
@@ -287,8 +342,10 @@ class StorageAnalyzer:
                     break
             if not persistent_long_lived:
                 failed_checks['persistent'] += 1
+            persistence_check_time += time.time() - t0
             
             # Check 2 & 4: Sufficient entropy and length difference
+            t0 = time.time()
             values = [cookie.get('value', '') for cookie in cookies]
             lengths = [len(value) for value in values]
             min_length = min(lengths) if lengths else 0
@@ -305,12 +362,19 @@ class StorageAnalyzer:
                 length_consistency = (max_length - min_length) / min_length <= 0.25
             if not length_consistency:
                 failed_checks['length'] += 1
+            entropy_check_time += time.time() - t0
             
             # Check 3 & 5: Different but similar values (Ratcliff/Obershelp)
+            t0 = time.time()
             values_similar = False
             if len(set(values)) > 1:  # If we have different values
+                # Count similarity checks for analysis
+                pairs_in_this_cookie = 0
                 for i in range(len(values)):
                     for j in range(i+1, len(values)):
+                        pairs_in_this_cookie += 1
+                        similarity_pairs_checked += 1
+                        
                         # Skip identical values
                         if values[i] == values[j]:
                             continue
@@ -326,6 +390,7 @@ class StorageAnalyzer:
                         break
             if not values_similar:
                 failed_checks['similarity'] += 1
+            similarity_check_time += time.time() - t0
             
             # A cookie is a tracker if ALL conditions are met
             is_potential_tracker = (
@@ -342,15 +407,34 @@ class StorageAnalyzer:
             for cookie in cookies:
                 cookie['is_potential_identifier'] = is_potential_tracker
         
+        # Add summary statistics about potential tracking cookies
+        t0 = time.time()
+        self._add_potential_tracking_cookies_summary()
+        summary_time = time.time() - t0
+        
+        total_time = time.time() - start_time
+        
+        self._log(f"Tracking cookies analysis performance:")
+        self._log(f"  Total cookies analyzed: {cookies_analyzed}")
+        self._log(f"  Total similarity pairs checked: {similarity_pairs_checked}")
+        
+        total_time = time.time() - start_time + 1e-10  # Add epsilon to avoid division by zero
+        
+        self._log(f"  Data collection: {collection_time:.2f}s ({collection_time/total_time*100:.1f}%)")
+        self._log(f"  Persistence checks: {persistence_check_time:.2f}s ({persistence_check_time/total_time*100:.1f}%)")
+        self._log(f"  Entropy/length checks: {entropy_check_time:.2f}s ({entropy_check_time/total_time*100:.1f}%)")
+        self._log(f"  Similarity checks: {similarity_check_time:.2f}s ({similarity_check_time/total_time*100:.1f}%)")
+        self._log(f"  Summary generation: {summary_time:.2f}s ({summary_time/total_time*100:.1f}%)")
+        
+        self._log(f"  Total tracking analysis time: {total_time:.2f}s")
+        
+        # Results summary
         self._log(f"Tracking cookies analysis results:")
         self._log(f"  Total potential trackers found: {potential_trackers_count}")
         self._log(f"  Failed persistence check: {failed_checks['persistent']}")
         self._log(f"  Failed entropy check: {failed_checks['entropy']}")
         self._log(f"  Failed length consistency check: {failed_checks['length']}")
         self._log(f"  Failed similarity check: {failed_checks['similarity']}")
-        
-        # Add summary statistics about potential tracking cookies
-        self._add_potential_tracking_cookies_summary()
 
     def _add_potential_tracking_cookies_summary(self):
         """
@@ -491,10 +575,11 @@ class StorageAnalyzer:
         if 'storage' not in self.data:
             return
         
-        # Add verification print
+        start_time = time.time()
         self._log("Analyzing storage for potential tracking identifiers...")
         
         # Track storage items across visits
+        t0 = time.time()
         storage_items = {
             'localStorage': defaultdict(list),  # Structure: {key: [values across visits]}
             'sessionStorage': defaultdict(list)
@@ -517,10 +602,25 @@ class StorageAnalyzer:
                     value = item.get('value', '')
                     if key:
                         storage_items['sessionStorage'][key].append(value)
+        collection_time = time.time() - t0
         
         # Add verification print
         self._log(f"Found {len(storage_items['localStorage'])} unique localStorage keys")
         self._log(f"Found {len(storage_items['sessionStorage'])} unique sessionStorage keys")
+        
+        # Add detailed statistics to help troubleshoot
+        for storage_type in ['localStorage', 'sessionStorage']:
+            for key, values in storage_items[storage_type].items():
+                if len(values) > 1:  # Only log keys with multiple values
+                    max_value_length = max(len(str(v)) for v in values)
+                    self._log(f"  {storage_type} key: '{key}' has {len(values)} values, max length: {max_value_length}")
+                    if max_value_length > 1000:  # Log a warning for very long values
+                        self._log(f"  WARNING: Very long value detected for {key}: {max_value_length} chars")
+        
+        # If no storage items found, return early
+        if len(storage_items['localStorage']) == 0 and len(storage_items['sessionStorage']) == 0:
+            self._log("No storage items to analyze, skipping storage analysis.")
+            return
         
         # Counters for potential identifiers
         potential_identifiers = {
@@ -534,63 +634,156 @@ class StorageAnalyzer:
             'length': 0,
             'similarity': 0
         }
+        
+        # Timing for each type of check
+        persistence_check_time = 0
+        entropy_check_time = 0
+        similarity_check_time = 0
         potential_trackers_count = 0
         
+        # Tracking for performance monitoring
+        total_items_analyzed = 0
+        similarity_pairs_checked = 0
+        simplified_comparisons = 0
+        simplified_by_key = {}
+        
         # Second pass: analyze each item for tracking characteristics
+        self._log("Starting detailed storage analysis...")
+
         for storage_type in ['localStorage', 'sessionStorage']:
-            for key, values in storage_items[storage_type].items():
+            self._log(f"Analyzing {storage_type} items...")
+            keys_to_analyze = list(storage_items[storage_type].keys())
+            
+            for key_idx, key in enumerate(keys_to_analyze):
+                values = storage_items[storage_type][key]
+                total_items_analyzed += 1
+                simplified_by_key[key] = 0  # Initialize counter for this key
+                
+                # Log progress periodically
+                if key_idx % 5 == 0 or key_idx == len(keys_to_analyze) - 1:
+                    self._log(f"  Processing {storage_type} key {key_idx+1}/{len(keys_to_analyze)}: '{key}'")
+                
                 # Skip if only one occurrence
                 if len(values) <= 1:
                     continue
                 
                 # Step 1: Check persistence - localStorage is always persistent, sessionStorage never is
+                t0 = time.time()
                 persistent = (storage_type == 'localStorage')
                 if not persistent:
                     failed_checks['session'] += 1
                     continue  # Skip sessionStorage items as they fail the first condition
+                persistence_check_time += time.time() - t0
                 
                 # Step 2: Check entropy (length ≥ 8 bytes)
-                lengths = [len(str(v)) for v in values]
-                min_length = min(lengths) if lengths else 0
-                max_length = max(lengths) if lengths else 0
-                
-                entropy_sufficient = min_length >= 8
-                if not entropy_sufficient:
-                    failed_checks['entropy'] += 1
+                t0 = time.time()
+                try:
+                    # Convert values to strings and get lengths
+                    lengths = [len(str(v)) for v in values]
+                    min_length = min(lengths) if lengths else 0
+                    max_length = max(lengths) if lengths else 0
+                    
+                    entropy_sufficient = min_length >= 8
+                    if not entropy_sufficient:
+                        failed_checks['entropy'] += 1
+                        continue
+                    
+                    # Step 3: Check length consistency (variation ≤ 25%)
+                    length_consistency = True
+                    if min_length > 0:
+                        length_consistency = (max_length - min_length) / min_length <= 0.25
+                    if not length_consistency:
+                        failed_checks['length'] += 1
+                        continue
+                except Exception as e:
+                    self._log(f"Error in entropy check for key '{key}': {str(e)}")
                     continue
-                
-                # Step 3: Check length consistency (variation ≤ 25%)
-                length_consistency = True
-                if min_length > 0:
-                    length_consistency = (max_length - min_length) / min_length <= 0.25
-                if not length_consistency:
-                    failed_checks['length'] += 1
-                    continue
+                entropy_check_time += time.time() - t0
                 
                 # Step 4: Check for similar values (similarity ≥ 60%)
+                self._log(f"  Running similarity check for '{key}' with {len(values)} values...")
+                t0 = time.time()
                 values_similar = False
                 if len(set(values)) > 1:  # If we have different values
+                    # Calculate number of pairs to check
+                    num_pairs = (len(values) * (len(values) - 1)) // 2
+                    self._log(f"  Need to check {num_pairs} pairs for '{key}'")
+                    
+
+                    # Count similarity checks for analysis
+                    pairs_checked = 0
+                    local_simplified = 0  # Track simplified comparisons for this key
                     for i in range(len(values)):
                         for j in range(i+1, len(values)):
+                            pairs_checked += 1
+                            
+                            if pairs_checked % 1000 == 0:
+                                self._log(f"  Checked {pairs_checked}/{num_pairs} pairs for '{key}' (simplified: {local_simplified})")
+                            
                             # Skip identical values
                             if values[i] == values[j]:
                                 continue
                             
-                            # Use difflib to calculate similarity ratio
-                            similarity = difflib.SequenceMatcher(None, str(values[i]), str(values[j])).ratio()
+                            # Check if the strings are too long for reasonable comparison
+                            len_i = len(str(values[i]))
+                            len_j = len(str(values[j]))
+                            if len_i > SIMPLIFIED_COMPARISON_THRESHOLD or len_j > SIMPLIFIED_COMPARISON_THRESHOLD:
+                                self._log(f"  Performing simplified comparison for long values ({len_i}, {len_j}) for '{key}'")
+                                
+                                # Simplified comparison: check prefix and suffix similarity
+                                prefix_size = 100  # Compare first 100 chars
+                                suffix_size = 100  # Compare last 100 chars
+                                
+                                str_i = str(values[i])
+                                str_j = str(values[j])
+                                
+                                # Get prefix and suffix of each string
+                                prefix_i = str_i[:prefix_size]
+                                prefix_j = str_j[:prefix_size]
+                                suffix_i = str_i[-suffix_size:] if len(str_i) >= suffix_size else str_i
+                                suffix_j = str_j[-suffix_size:] if len(str_j) >= suffix_size else str_j
+                                
+                                # Calculate similarity of prefixes and suffixes
+                                prefix_similarity = difflib.SequenceMatcher(None, prefix_i, prefix_j).ratio()
+                                suffix_similarity = difflib.SequenceMatcher(None, suffix_i, suffix_j).ratio()
+                                
+                                # Consider similar if either prefix or suffix is similar
+                                if prefix_similarity >= 0.6 or suffix_similarity >= 0.6:
+                                    values_similar = True
+                                    break
+                                
+                                # Count as simplified comparison for reporting purposes
+                                simplified_comparisons += 1
+                                local_simplified += 1
+                                simplified_by_key[key] += 1
+                                continue
                             
-                            # If values are similar but not identical (similarity ≥ 60%)
-                            if similarity >= 0.6:
-                                values_similar = True
-                                break
+                            # Use difflib to calculate similarity ratio
+                            try:
+                                similarity_pairs_checked += 1
+                                similarity = difflib.SequenceMatcher(None, str(values[i]), str(values[j])).ratio()
+                                
+                                # If values are similar but not identical (similarity ≥ 60%)
+                                if similarity >= 0.6:
+                                    values_similar = True
+                                    break
+                            except Exception as e:
+                                self._log(f"  Error comparing values for '{key}': {str(e)}")
+                                continue
                         if values_similar:
                             break
+                    
+                    self._log(f"  For key '{key}': checked {pairs_checked} pairs, used simplified comparison for {local_simplified} long values")
+                
+                self._log(f"  Completed similarity check for '{key}': {'similar' if values_similar else 'not similar'}")
                 if not values_similar:
                     failed_checks['similarity'] += 1
                     continue
+                similarity_check_time += time.time() - t0
                 
                 # If we reach here, all conditions are met
                 potential_trackers_count += 1
+                self._log(f"  Found potential tracking identifier: '{key}'")
                 
                 # Mark items in the original data
                 for visit_key, visit_data in self.data['storage'].items():
@@ -608,6 +801,7 @@ class StorageAnalyzer:
                 })
         
         # Add summary to data
+        t0 = time.time()
         if 'storage_analysis' not in self.data:
             self.data['storage_analysis'] = {}
         
@@ -615,6 +809,7 @@ class StorageAnalyzer:
         local_storage_names = [item['key'] for item in potential_identifiers['localStorage']]
         session_storage_names = [item['key'] for item in potential_identifiers['sessionStorage']]
         
+        # Add simplified comparisons to the storage analysis
         self.data['storage_analysis']['potential_identifiers'] = {
             'total': len(potential_identifiers['localStorage']) + len(potential_identifiers['sessionStorage']),
             'localStorage': len(potential_identifiers['localStorage']),
@@ -625,6 +820,38 @@ class StorageAnalyzer:
                 'sessionStorage': session_storage_names
             }
         }
+        
+        # Add performance data to the output
+        self.data['storage_analysis']['performance'] = {
+            'items_analyzed': total_items_analyzed,
+            'similarity_pairs_checked': similarity_pairs_checked,
+            'simplified_comparisons': simplified_comparisons,
+            'simplified_by_key': {k: v for k, v in simplified_by_key.items() if v > 0}  # Only include keys with simplified comparisons
+        }
+        
+        summary_time = time.time() - t0
+        
+        total_time = time.time() - start_time
+        
+        self._log(f"Storage analysis performance:")
+        self._log(f"  Total items analyzed: {total_items_analyzed}")
+        self._log(f"  Total similarity pairs checked: {similarity_pairs_checked}")
+        self._log(f"  Total comparisons using simplified method: {simplified_comparisons}")
+        
+        # Show all keys where simplified comparisons were used
+        for key, count in simplified_by_key.items():
+            if count > 0:
+                self._log(f"  - Used simplified comparison for {count} value pairs with key '{key}'")
+        
+        total_time = time.time() - start_time + 1e-10  # Add epsilon to avoid division by zero
+        
+        self._log(f"  Data collection: {collection_time:.2f}s ({collection_time/total_time*100:.1f}%)")
+        self._log(f"  Persistence checks: {persistence_check_time:.2f}s ({persistence_check_time/total_time*100:.1f}%)")
+        self._log(f"  Entropy/length checks: {entropy_check_time:.2f}s ({entropy_check_time/total_time*100:.1f}%)")
+        self._log(f"  Similarity checks: {similarity_check_time:.2f}s ({similarity_check_time/total_time*100:.1f}%)")
+        self._log(f"  Summary generation: {summary_time:.2f}s ({summary_time/total_time*100:.1f}%)")
+        
+        self._log(f"  Total storage analysis time: {total_time:.2f}s")
         
         self._log(f"Storage tracking analysis results:")
         self._log(f"  Total potential trackers found: {potential_trackers_count}")

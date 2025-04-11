@@ -1,6 +1,7 @@
 import os
 import json
 import sys
+import re
 from pathlib import Path
 from tqdm import tqdm
 
@@ -25,51 +26,91 @@ def save_json(data, file_path):
 
 def add_categories_to_files(data_directory, categories_file="data/db+ref/domain_categories.json", verbose=False):
     """Add domain categories to JSON files in the specified directory"""
+    # Time the operation if verbose
+    start_time = 0
+    if verbose:
+        import time
+        start_time = time.time()
+    
     # Load domain categories
-    categories = load_json(categories_file)
-    if not categories:
-        print(f"Error: Could not load categories from {categories_file}")
+    try:
+        with open(categories_file, 'r', encoding='utf-8') as f:
+            categories = json.load(f)
+    except Exception as e:
+        print(f"Error loading categories from {categories_file}: {e}")
         return
     
     if verbose:
-        tqdm.write(f"Loaded categories for {len(categories)} domains")
+        print(f"Loaded categories for {len(categories)} domains")
     
     # Find all JSON files in the directory (recursively)
     json_files = list(Path(data_directory).glob("**/*.json"))
     if verbose:
-        tqdm.write(f"Found {len(json_files)} JSON files to process")
+        print(f"Found {len(json_files)} JSON files to process")
+    
+    # Regex to extract domain from the first few lines
+    domain_pattern = re.compile(r'"domain"\s*:\s*"([^"]+)"')
     
     # Process each file
     modified_count = 0
-    for json_path in tqdm(json_files, desc="Processing files"):
-        # Load the file
-        data = load_json(json_path)
-        if not data:
+    for json_path in tqdm(json_files, desc="Adding domain categories"):
+        # Quick check - read just the first few lines to check if processing is needed
+        domain = None
+        needs_processing = False
+        
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                # Read first 10 lines or until we find both domain and categories
+                header = ""
+                for _ in range(10):
+                    line = f.readline()
+                    if not line:
+                        break
+                    header += line
+                    
+                # Check if it already has categories (skip if it does)
+                if '"categories":' in header:
+                    continue
+                    
+                # Check if it has domain field
+                domain_match = domain_pattern.search(header)
+                if domain_match:
+                    domain = domain_match.group(1)
+                    # Only process if we have categories for this domain
+                    if domain in categories:
+                        needs_processing = True
+        except Exception as e:
+            if verbose:
+                print(f"Error checking {json_path}: {e}")
             continue
-        
-        # Skip files that don't have a domain field
-        if "domain" not in data:
+                
+        # Skip if no domain or we don't need to process
+        if not domain or not needs_processing:
             continue
-        
-        domain = data["domain"]
-        
-        # Check if we have categories for this domain
-        if domain in categories:
-            # Create a new dictionary with domain and categories at the beginning
-            new_data = {}
-            for key in data:
-                new_data[key] = data[key]
-                # Insert categories right after domain
-                if key == "domain":
-                    new_data["categories"] = categories[domain]
             
-            # Only save if we made changes and don't already have categories
-            if "categories" not in data:
-                # Save the modified file
-                if save_json(new_data, json_path):
-                    modified_count += 1
+        # Now we know we need to process this file, load and modify it
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                
+            # Insert categories right after domain
+            modified = content.replace(
+                f'"domain": "{domain}"', 
+                f'"domain": "{domain}",\n  "categories": {json.dumps(categories[domain])}'
+            )
+            
+            # Save modified content
+            with open(json_path, 'w', encoding='utf-8') as f:
+                f.write(modified)
+                
+            modified_count += 1
+        except Exception as e:
+            if verbose:
+                print(f"Error processing {json_path}: {e}")
     
-    #tqdm.write(f"Added domain categories to {modified_count} files")
+    if verbose:
+        end_time = time.time()
+        print(f"Added domain categories to {modified_count} files in {end_time-start_time:.2f} seconds")
 
 if __name__ == "__main__":
     # Check if data directory is provided as an argument
@@ -90,4 +131,4 @@ if __name__ == "__main__":
     else:
         categories_file = "data/domain_categories.json"
     
-    add_categories_to_files(data_directory, categories_file) 
+    add_categories_to_files(data_directory, categories_file, verbose=True) 
