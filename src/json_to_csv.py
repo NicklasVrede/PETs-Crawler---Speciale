@@ -6,6 +6,10 @@ from urllib.parse import urlparse
 from collections import defaultdict
 from tqdm import tqdm  # Import tqdm for progress bars
 
+# Global sets to collect all unique categories and unmatched categories
+ALL_CATEGORIES_ENCOUNTERED = set()
+UNMATCHED_CATEGORIES = set()
+
 def extract_domain_from_url(url):
     """Extract base domain from URL"""
     try:
@@ -64,29 +68,50 @@ def analyze_crawler_data(json_file):
         primary_category = categories[0] if categories else ""
         additional_categories = "|".join(categories[1:]) if len(categories) > 1 else ""
         
-        # Get page loaded status - check multiple possible locations
-        page_loaded = True  # Default to True
-        page_loaded_info = data.get('page_loaded', {})
-        if page_loaded_info and isinstance(page_loaded_info, dict):
-            page_loaded = page_loaded_info.get('loaded', True)
-        elif page_loaded_info is not None and not isinstance(page_loaded_info, dict):
-            page_loaded = bool(page_loaded_info)
-        
-        # Get banner removal status from the new flattened structure
-        banner_removed = None  # Default to None (will become NULL in CSV/PowerBI)
-        banner_analysis = data.get('banner_analysis', {})
-        if banner_analysis:
-            # Check for summary_status in the flattened structure
-            summary_status = banner_analysis.get('summary_status', '')
-            
-            if summary_status == 'removed' or summary_status == 'likely_removed':
-                banner_removed = True
-            elif summary_status == 'not_removed':
-                banner_removed = False
-            # For 'unknown' or any other status, keep as None
+        # Get page loaded status directly from banner_analysis if available
+        page_loaded = None  # Start with None (no assumption)
         
         # Get the visit ID from the JSON if available, otherwise use default
         visit_id = data.get('visit_id', '0')
+        visit_key = f"visit{visit_id}"  # Format as visit0, visit1, etc.
+        
+        # Enhanced banner analysis extraction - simplified
+        banner_analysis = data.get('banner_analysis', {})
+        banner_removed = None
+        page_status = None
+        banner_conclusion = None
+        
+        if banner_analysis:
+            # Try to get data from specific visit
+            if visit_key in banner_analysis:
+                visit_data = banner_analysis[visit_key]
+                if 'page_loaded' in visit_data:
+                    page_loaded = visit_data['page_loaded']
+                
+                # Extract only the essential banner details
+                page_status = visit_data.get('page_status', None)
+                banner_conclusion = visit_data.get('conclusion', None)
+            
+            # If not found but summary_status exists, use that for overall banner status
+            if 'summary_status' in banner_analysis:
+                summary_status = banner_analysis['summary_status']
+                
+                if summary_status == 'removed' or summary_status == 'likely_removed':
+                    banner_removed = True
+                elif summary_status == 'not_removed':
+                    banner_removed = False
+                # Leave as None for other values
+        
+        # Fall back to original page_loaded field if banner_analysis doesn't have it
+        if page_loaded is None and 'page_loaded' in data:
+            page_loaded_info = data['page_loaded']
+            if isinstance(page_loaded_info, dict):
+                if 'loaded' in page_loaded_info:
+                    page_loaded = page_loaded_info['loaded']
+            elif page_loaded_info is not None:
+                page_loaded = bool(page_loaded_info)
+        
+        # Get the visit ID from the JSON if available, otherwise use default
         fallback_id = '0' if visit_id != '0' else '1'  # If primary is 0, try 1 as fallback
         
         # Function to get visit-specific data or fall back to another visit
@@ -113,7 +138,6 @@ def analyze_crawler_data(json_file):
         
         # Initialize domain analysis metrics
         first_party_requests = 0
-        infrastructure_service_requests = 0
         third_party_requests = 0
         advertising_requests = 0
         uncategorized_requests = 0
@@ -130,6 +154,8 @@ def analyze_crawler_data(json_file):
                 total_requests = domain_requests_total
             
             # Count by domain type
+            cname_cloaking_count = 0
+            
             for d in domains:
                 req_count = d.get('request_count', 0)
                 categories = d.get('categories', [])
@@ -138,13 +164,14 @@ def analyze_crawler_data(json_file):
                 if d.get('filter_match', False):
                     filter_match_requests += req_count
                 
+                # Count CNAME cloaking instances using the new field name
+                if d.get('cname_cloaking', False):
+                    cname_cloaking_count += 1
+                
                 # Count by first-party/third-party status
                 if d.get('is_first_party_domain', False):
                     first_party_requests += req_count
-                elif d.get('infrastructure_type') is not None:
-                    infrastructure_service_requests += req_count
                 else:
-                    # True third-party: not first party and not infrastructure
                     third_party_requests += req_count
                 
                 # Count advertising requests
@@ -157,20 +184,34 @@ def analyze_crawler_data(json_file):
             
             # Count unique domains
             unique_domains = len(domains)
+            
+            # Update potential_cname_cloaking value if we counted it from the domains
+            if cname_cloaking_count > 0:
+                potential_cname_cloaking = cname_cloaking_count
         
-        # Check for pre-calculated statistics
+        # Check for pre-calculated statistics - kept for backward compatibility
         statistics = data.get('statistics', {})
         if statistics:
             # Use pre-calculated values from the JSON
             filter_matches = statistics.get('filter_matches', 0)
             
-            # Get CNAME cloaking stats
+            # Get resource type counts directly from statistics if available
+            request_types = statistics.get('request_types', {})
+            if request_types:
+                js_requests = request_types.get('script', 0)
+                css_requests = request_types.get('stylesheet', 0)
+                image_requests = request_types.get('image', 0)
+                # If total_requests is not set yet, set it from statistics
+                if not total_requests and 'total_requests' in statistics:
+                    total_requests = statistics.get('total_requests', 0)
+            
+            # Get CNAME cloaking stats - keep this for backward compatibility
             cname_data = statistics.get('cname_cloaking', {})
             if cname_data:
                 potential_cname_cloaking = cname_data.get('total', 0)
         
-        if network_data and not domain_analysis:
-            # Only use network_data if domain_analysis isn't available
+        if network_data and not domain_analysis and not (statistics and statistics.get('request_types')):
+            # Only use network_data if domain_analysis and statistics aren't available
             requests = network_data.get('requests', [])
             total_requests = len(requests)
             unique_domains = count_unique_domains(requests)
@@ -180,7 +221,7 @@ def analyze_crawler_data(json_file):
             js_requests = resource_types.get('script', 0)
             css_requests = resource_types.get('stylesheet', 0)
             image_requests = resource_types.get('image', 0)
-            
+        
         # Cookie Data
         cookies_data = get_visit_data('cookies', visit_id, fallback_id)
         
@@ -188,7 +229,6 @@ def analyze_crawler_data(json_file):
         unique_cookies = 0
         overlapping_cookies = 0
         identified_cookies = 0
-        unidentified_cookies = 0
         secure_cookies = 0
         httponly_cookies = 0
         third_party_cookies = 0
@@ -201,7 +241,6 @@ def analyze_crawler_data(json_file):
         
         # Initialize tracking cookie variables
         potential_tracking_cookies_count = 0
-        potential_tracking_cookie_names = ""
         
         # Extract cookie analysis data if available
         cookie_analysis = data.get('cookie_analysis', {})
@@ -210,14 +249,12 @@ def analyze_crawler_data(json_file):
             unique_cookies = cookie_analysis.get('unique_cookies', 0)
             overlapping_cookies = cookie_analysis.get('overlapping_cookies', 0)
             identified_cookies = cookie_analysis.get('identified_cookies', 0)
-            unidentified_cookies = cookie_analysis.get('unidentified_cookies', 0)
             
             # Get potential tracking cookies information
             potential_tracking = cookie_analysis.get('potential_tracking_cookies', {})
             if potential_tracking:
                 potential_tracking_cookies_count = potential_tracking.get('total', 0)
                 cookie_names = potential_tracking.get('cookie_names', [])
-                potential_tracking_cookie_names = '|'.join(cookie_names)
             
             # Get category counts if available
             categories = cookie_analysis.get('categories', {})
@@ -289,13 +326,25 @@ def analyze_crawler_data(json_file):
             local_storage_count = storage_data.get('local_storage_count', 0)
             session_storage_count = storage_data.get('session_storage_count', 0)
             
-            # Get API usage counts if available
+            # Get API usage counts - check both "api_usage" and "api_count" locations
             api_usage = storage_data.get('api_usage', {})
-            local_storage_api = api_usage.get('localStorage', {})
-            session_storage_api = api_usage.get('sessionStorage', {})
+            api_count = storage_data.get('api_count', {})
             
-            local_storage_get = local_storage_api.get('getItem_count', 0)
-            session_storage_get = session_storage_api.get('getItem_count', 0)
+            # First try api_usage (old format)
+            if api_usage:
+                local_storage_api = api_usage.get('localStorage', {})
+                session_storage_api = api_usage.get('sessionStorage', {})
+                
+                local_storage_get = local_storage_api.get('getItem_count', 0)
+                session_storage_get = session_storage_api.get('getItem_count', 0)
+            
+            # Then try api_count (new format)
+            elif api_count:
+                local_storage_api = api_count.get('localStorage', {})
+                session_storage_api = api_count.get('sessionStorage', {})
+                
+                local_storage_get = local_storage_api.get('getItem_count', 0)
+                session_storage_get = session_storage_api.get('getItem_count', 0)
         
         # Check for storage analysis data
         storage_analysis = data.get('storage_analysis', {})
@@ -303,97 +352,107 @@ def analyze_crawler_data(json_file):
             potential_identifiers = storage_analysis.get('potential_identifiers', {})
             storage_potential_identifiers_count = potential_identifiers.get('total', 0)
         
-        # Service categorization
-        # Initialize service counts
-        advertising_services = 0
-        analytics_services = 0
-        social_media_services = 0
-        content_delivery_services = 0
-        hosting_services = 0
-        cdn_services = 0
-        other_services = 0
-        
         # Track top organizations and providers
         top_organizations = defaultdict(int)
-        top_providers = defaultdict(int)
         
-        # Get unique domains from the requests
-        domains = set()
-        for req in requests:
-            if 'domain' in req:
-                domains.add(req['domain'])
+        # Initialize service counters for unique domains
+        advertising_domains = 0
+        analytics_domains = 0
+        social_media_domains = 0
+        essential_domains = 0
+        hosting_domains = 0
+        customer_interaction_domains = 0
+        audio_video_domains = 0
+        extensions_domains = 0
+        adult_advertising_domains = 0
+        consent_management_domains = 0
+        miscellaneous_domains = 0
+        utilities_domains = 0  # Added for "Utilities" category
+        uncategorized_domains = 0
         
-        # Categorize each domain
-        for domain_name in domains:
-            category = "unknown"
-            organization = "unknown"
-            provider = "unknown"
-            
-            # Simple classification - this would be more comprehensive in practice
-            if "ad" in domain_name or "ads" in domain_name or "doubleclick" in domain_name:
-                category = "advertising"
-                if "google" in domain_name:
-                    organization = "Google"
-                    provider = "DoubleClick"
-            elif "analytics" in domain_name or "stats" in domain_name:
-                category = "analytics"
-                if "google" in domain_name:
-                    organization = "Google"
-                    provider = "Google Analytics"
-            elif "facebook" in domain_name or "twitter" in domain_name or "linkedin" in domain_name:
-                category = "social media"
-                if "facebook" in domain_name:
-                    organization = "Meta"
-                    provider = "Facebook"
-                elif "twitter" in domain_name:
-                    organization = "Twitter"
-                    provider = "Twitter"
-            elif "cdn" in domain_name or "cloudfront" in domain_name or "cloudflare" in domain_name:
-                category = "cdn"
-                if "cloudfront" in domain_name:
-                    organization = "Amazon"
-                    provider = "CloudFront"
-                elif "cloudflare" in domain_name:
-                    organization = "Cloudflare"
-                    provider = "Cloudflare CDN"
-            elif "aws" in domain_name or "azure" in domain_name or "gcp" in domain_name:
-                category = "hosting"
-                if "aws" in domain_name or "amazon" in domain_name:
-                    organization = "Amazon"
-                    provider = "AWS"
-                elif "azure" in domain_name or "microsoft" in domain_name:
-                    organization = "Microsoft"
-                    provider = "Azure"
-            
-            # Record the organization and provider
-            if organization != "unknown":
-                top_organizations[organization] += 1
-            if provider != "unknown":
-                top_providers[provider] += 1
-            
-            # Increment category counters
-            if category == "advertising":
-                advertising_services += 1
-            elif category == "analytics":
-                analytics_services += 1
-            elif category == "social media":
-                social_media_services += 1
-            elif category == "content delivery":
-                content_delivery_services += 1
-            elif category == "hosting":
-                hosting_services += 1
-            elif "cdn" in category.lower():
-                cdn_services += 1
-            else:
-                other_services += 1
+        # Initialize service counters for request counts
+        advertising_requests = 0
+        analytics_requests = 0
+        social_media_requests = 0
+        essential_requests = 0
+        hosting_requests = 0
+        customer_interaction_requests = 0
+        audio_video_requests = 0
+        extensions_requests = 0
+        adult_advertising_requests = 0
+        consent_management_requests = 0
+        miscellaneous_requests = 0
+        utilities_requests = 0  # Added for "Utilities" category
+        uncategorized_requests = 0
         
-        # Format top organizations and providers
-        # Format with counts: "Org1:42|Org2:23|Org3:17"
-        top_organizations_str = '|'.join([f"{org}:{count}" for org, count in 
-                                        sorted(top_organizations.items(), key=lambda x: x[1], reverse=True)[:3]])
+        # Process domain analysis if available
+        if domain_analysis and 'domains' in domain_analysis:
+            # Get the categories from each domain
+            for domain_data in domain_analysis['domains']:
+                # Get request count (default to 1 if missing)
+                request_count = domain_data.get('request_count', 1)
+                
+                # Track organizations
+                for org in domain_data.get('organizations', []):
+                    top_organizations[org] += request_count
+                
+                # Count services by category
+                categories = domain_data.get('categories', [])
+                if categories:
+                    for category in categories:
+                        # Add to our global set of encountered categories
+                        ALL_CATEGORIES_ENCOUNTERED.add(category)
+                        
+                        # Handle each category - exact matches only
+                        if category == "Advertising":
+                            advertising_domains += 1
+                            advertising_requests += request_count
+                        elif category == "Site Analytics":
+                            analytics_domains += 1
+                            analytics_requests += request_count
+                        elif category == "Social Media":
+                            social_media_domains += 1
+                            social_media_requests += request_count
+                        elif category == "Essential":
+                            essential_domains += 1
+                            essential_requests += request_count
+                        elif category == "Hosting":
+                            hosting_domains += 1
+                            hosting_requests += request_count
+                        elif category == "Customer Interaction":
+                            customer_interaction_domains += 1
+                            customer_interaction_requests += request_count
+                        elif category == "Audio/Video Player":
+                            audio_video_domains += 1
+                            audio_video_requests += request_count
+                        elif category == "Extensions":
+                            extensions_domains += 1
+                            extensions_requests += request_count
+                        elif category == "Adult Advertising":
+                            adult_advertising_domains += 1
+                            adult_advertising_requests += request_count
+                        elif category == "Consent Management":
+                            consent_management_domains += 1
+                            consent_management_requests += request_count
+                        elif category == "Misc":
+                            miscellaneous_domains += 1
+                            miscellaneous_requests += request_count
+                        elif category == "Utilities":
+                            utilities_domains += 1
+                            utilities_requests += request_count
+                        else:
+                            # Category not explicitly handled
+                            UNMATCHED_CATEGORIES.add(category)
+                            uncategorized_domains += 1
+                            uncategorized_requests += request_count
+                else:
+                    # If no categories, count as uncategorized
+                    uncategorized_domains += 1
+                    uncategorized_requests += request_count
         
-        top_providers_str = '|'.join([f"{provider}:{count}" for provider, count in 
-                                    sorted(top_providers.items(), key=lambda x: x[1], reverse=True)[:3]])
+        # Get the top organizations (limit to top 5)
+        top_orgs_list = sorted(top_organizations.items(), key=lambda x: x[1], reverse=True)[:5]
+        top_orgs_str = "|".join([f"{org}:{count}" for org, count in top_orgs_list])
         
         # Fingerprinting metrics - Use visit 1
         fingerprinting_data = get_visit_data('fingerprinting', visit_id, fallback_id)
@@ -445,10 +504,11 @@ def analyze_crawler_data(json_file):
             'timestamp': timestamp,
             'page_loaded': page_loaded,
             'banner_removed': banner_removed,
+            'page_status': page_status,
+            'banner_conclusion': banner_conclusion,
             'total_requests': total_requests,
             'unique_domains': unique_domains,
             'first_party_requests': first_party_requests,
-            'infrastructure_service_requests': infrastructure_service_requests,
             'third_party_requests': third_party_requests,
             'advertising_requests': advertising_requests,
             'uncategorized_requests': uncategorized_requests,
@@ -459,7 +519,6 @@ def analyze_crawler_data(json_file):
             'unique_cookies': unique_cookies,
             'overlapping_cookies': overlapping_cookies,
             'identified_cookies': identified_cookies,
-            'unidentified_cookies': unidentified_cookies,
             'secure_cookies': secure_cookies,
             'httponly_cookies': httponly_cookies,
             'third_party_cookies': third_party_cookies,
@@ -470,7 +529,6 @@ def analyze_crawler_data(json_file):
             'statistics_cookies': statistics_cookies,
             'unclassified_cookies': unclassified_cookies,
             'potential_tracking_cookies_count': potential_tracking_cookies_count,
-            'potential_tracking_cookie_names': potential_tracking_cookie_names,
             'filter_matches': filter_matches,
             'potential_cname_cloaking': potential_cname_cloaking,
             'local_storage_count': local_storage_count,
@@ -478,15 +536,31 @@ def analyze_crawler_data(json_file):
             'local_storage_get': local_storage_get,
             'session_storage_get': session_storage_get,
             'storage_potential_identifiers_count': storage_potential_identifiers_count,
-            'advertising_services': advertising_services,
-            'analytics_services': analytics_services,
-            'social_media_services': social_media_services,
-            'content_delivery_services': content_delivery_services,
-            'hosting_services': hosting_services,
-            'cdn_services': cdn_services,
-            'other_services': other_services,
-            'top_organizations': top_organizations_str,
-            'top_providers': top_providers_str,
+            'advertising_domains': advertising_domains,
+            'analytics_domains': analytics_domains,
+            'social_media_domains': social_media_domains,
+            'essential_domains': essential_domains,
+            'hosting_domains': hosting_domains,
+            'customer_interaction_domains': customer_interaction_domains,
+            'audio_video_domains': audio_video_domains,
+            'extensions_domains': extensions_domains,
+            'adult_advertising_domains': adult_advertising_domains,
+            'consent_management_domains': consent_management_domains,
+            'miscellaneous_domains': miscellaneous_domains,
+            'uncategorized_domains': uncategorized_domains,
+            'advertising_requests': advertising_requests,
+            'analytics_requests': analytics_requests,
+            'social_media_requests': social_media_requests,
+            'essential_requests': essential_requests,
+            'hosting_requests': hosting_requests,
+            'customer_interaction_requests': customer_interaction_requests,
+            'audio_video_requests': audio_video_requests,
+            'extensions_requests': extensions_requests,
+            'adult_advertising_requests': adult_advertising_requests,
+            'consent_management_requests': consent_management_requests,
+            'miscellaneous_requests': miscellaneous_requests,
+            'uncategorized_requests': uncategorized_requests,
+            'top_organizations': top_orgs_str,
             'total_fingerprinting_calls': total_fp_calls,
             'hardware_fingerprinting_calls': hardware_fp_calls,
             'canvas_fingerprinting_calls': canvas_fp_calls,
@@ -532,6 +606,11 @@ def process_folder(folder_path, extension_name):
         result = analyze_crawler_data(json_file)
         if result:
             results.append(result)
+    
+    # Print all the unique categories we've found once per folder
+    tqdm.write(f"\nCategories encountered in '{extension_name}':")
+    tqdm.write(f"- All categories: {sorted(ALL_CATEGORIES_ENCOUNTERED)}")
+    tqdm.write(f"- Unmatched categories: {sorted(UNMATCHED_CATEGORIES)}\n")
             
     return results
 
@@ -592,8 +671,8 @@ def process_all_folders(json_dir, output_csv):
 
 if __name__ == "__main__":
     # Base directory for crawler data
-    json_dir = "data/crawler_data non-kameleo"
-    output_csv = "data/csv/non-kameleo.csv"
+    json_dir = "data/crawler_data"
+    output_csv = "data/csv/kameleo.csv"
     
     # Ensure output directory exists
     os.makedirs(os.path.dirname(output_csv), exist_ok=True)

@@ -205,7 +205,7 @@ if len(sys.argv) > 1:
     file_path = sys.argv[1]
 else:
     # Default file path
-    file_path = "data/crawler_data non-kameleo/test/Amazon.co.uk_enhanced.json"
+    file_path = "data/crawler_data non-kameleo/test/Amazon.co.uk.json"
 
 try:
     print(f"Reading JSON file: {file_path}")

@@ -141,7 +141,7 @@ if __name__ == "__main__":
     
     # List of URLs to check
     urls_to_check = [
-        'https://a.media-amazon.com'
+        "ad.googlesyndication.com"
     ]
     
     # Check each URL against filter lists

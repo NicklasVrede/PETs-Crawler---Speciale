@@ -38,7 +38,8 @@ class SourceIdentifier:
         """Log a message if verbose is True."""
         if self.verbose:
             tqdm.write(message)
-
+           
+           
     def _load_json(self, file_path):
         """Load JSON data from file."""
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -95,102 +96,177 @@ class SourceIdentifier:
 
     def _analyze_subdomain(self, main_site, base_url, request_count):
         """Analyze a single subdomain."""
-        # Try to use cached result if available
+        # Always generate the cache key, even if skipping cache read
         cache_key = self._get_cache_key(main_site, base_url)
+        skip_cache = True
         
-        if self.use_cache and cache_key in self.subdomain_analysis_cache:
+        if not skip_cache and self.use_cache and cache_key in self.subdomain_analysis_cache:
             cached_result = self.subdomain_analysis_cache[cache_key].copy()
             # Update the request count which can change
             cached_result['request_count'] = request_count
             self._log(f"Cache hit for {base_url} (main site: {main_site})")
             return cached_result
-        
+            
         # Perform full analysis if not cached
+        parsed_url = urlparse(base_url).netloc
+        
+        self._log(f"\n==== Domain Analysis Debug: {parsed_url} ====")
+        
         analysis_result = {
             'domain': base_url,
             'request_count': request_count,
-            'is_first_party_domain': None,
+            'is_first_party_domain': False,
             'filter_match': False,
-            'direct_cname': False,
-            'tracking_evidence': [],
+            'is_tracker': False,
+            'tracking_method': None,
+            'cname_cloaking': False,
+            'analysis_notes': [],
             'categories': [],
             'organizations': [],
-            'infrastructure_type': None,
-            'provider': None,
             'cname_chain': []
         }
         
-        # First determine if this is a first-party domain
-        parsed_url = urlparse(base_url).netloc
+        # Check if URL matches filter rules
+        self._log(f"Checking if domain matches filter rules...")
+        filter_name, rule = self.filter_manager.is_domain_in_filters(base_url)
+        if filter_name:
+            analysis_result['filter_match'] = True
+            analysis_result['is_tracker'] = True
+            analysis_result['tracking_method'] = 'filter_list'
+            analysis_result['analysis_notes'].append(f"Domain found in {filter_name}: {rule}")
+        else:
+            self._log(f"No filter match for {parsed_url}")
+        
+        # Get categorization info
+        domain_info = self._get_tracker_categorization(parsed_url)
+        if domain_info:
+            if 'categories' in domain_info and domain_info['categories']:
+                analysis_result['categories'] = domain_info['categories']
+                self._log(f"Categories: {domain_info['categories']}")
+                
+                # Consider certain categories as tracking by nature
+                tracking_categories = ['Advertising', 'Analytics', 'Social Network']
+                if any(cat in tracking_categories for cat in domain_info['categories']):
+                    self._log(f">>> GHOSTERY CATEGORY MATCH: {parsed_url} is categorized as {', '.join(domain_info['categories'])}")
+                    analysis_result['is_tracker'] = True
+                    # Only update tracking_method if not already set by filter list
+                    if not analysis_result['tracking_method']:
+                        analysis_result['tracking_method'] = 'categorized_tracker'
+                    analysis_result['analysis_notes'].append(f"Domain categorized as {', '.join(domain_info['categories'])} by Ghostery")
+            
+            if 'organizations' in domain_info and domain_info['organizations']:
+                analysis_result['organizations'] = domain_info['organizations']
+                self._log(f"Organizations: {domain_info['organizations']}")
+        
+        # First determine if this is a first-party domain using domain structure
         main_domain = main_site if '://' not in main_site else urlparse(main_site).netloc
         
-        # Use are_domains_related to check first-party status
+        self._log(f"\n==== FIRST-PARTY CHECK FOR {parsed_url} ====")
+        self._log(f"Main domain: {main_domain}")
+
         try:
+            # Ensure public suffixes are loaded - only update if empty
             if not self.filter_manager.public_suffixes:
                 self.filter_manager.public_suffixes = update_public_suffix_list()
             
-            is_first_party = are_domains_related(
+            # Call are_domains_related with proper parameters
+            domain_related = are_domains_related(
                 main_domain, 
                 parsed_url, 
                 self.filter_manager.public_suffixes
             )
-            analysis_result['is_first_party_domain'] = is_first_party
+            
+            if domain_related:
+                analysis_result['is_first_party_domain'] = True
+                analysis_result['analysis_notes'].append(f"FIRST-PARTY: Domain related by name structure")
+            else:
+                # Check for organizational match if not related by domain structure
+                # Get main site organizations
+                main_site_info = self._get_tracker_categorization(main_domain)
+                main_site_orgs = main_site_info.get('organizations', []) if main_site_info else []
+                
+                # Get domain organizations
+                domain_orgs = domain_info.get('organizations', []) if domain_info else []
+                
+                # Compare organizations
+                if main_site_orgs and domain_orgs:
+                    # Check if any organization matches
+                    org_match = any(org in main_site_orgs for org in domain_orgs)
+                    
+                    if org_match:
+                        analysis_result['is_first_party_domain'] = True
+                        match_org = next((org for org in domain_orgs if org in main_site_orgs), None)
+                        analysis_result['analysis_notes'].append(
+                            f"Domain belongs to same organization ({match_org}) as main site"
+                        )
         except Exception as e:
-            tqdm.write(f"Error checking domain relationship: {e}")
+            self._log(f"Error checking first-party status: {str(e)}")
         
-        # Check if URL matches filter rules
-        filter_name, rule = self.filter_manager.is_domain_in_filters(base_url)
-        if filter_name:
-            analysis_result['filter_match'] = True
-            analysis_result['is_first_party_domain'] = False  # Override for known trackers
-            analysis_result['tracking_evidence'].append(f"Domain found in {filter_name}: {rule}")
-        
-        # Check CNAME chain - Using dns_resolver
-        # Skip DNS checks for browser extension URLs but still include them in the final results
+        # Check CNAME chain (with debugging)
         is_browser_extension = base_url.startswith(('chrome-extension://', 'chrome://', 'edge://', 'brave://', 'about:'))
         
         if not is_browser_extension:
             try:
+                self._log(f"Checking CNAME chain for {parsed_url}...")
                 cname_chain = self.dns_resolver.get_cname_chain(parsed_url)
                 if cname_chain:
+                    self._log(f"CNAME chain found: {cname_chain}")
                     analysis_result['cname_chain'] = cname_chain
-                    # Check each CNAME in chain against filters
+                    analysis_result['cname_cloaking'] = bool(cname_chain)
+                    
+                    # Track whether we've found cloaking
+                    cname_cloaking_detected = False
+                    
+                    # For each CNAME in the chain
                     for cname in cname_chain:
+                        # Check filter lists
                         filter_name, rule = self.filter_manager.is_domain_in_filters(cname)
                         if filter_name:
-                            analysis_result['direct_cname'] = True
-                            analysis_result['is_first_party_domain'] = False
-                            analysis_result['tracking_evidence'].append(f"CNAME chain member {cname} found in {filter_name}: {rule}")
-            except Exception as e:
-                tqdm.write(f"Error checking CNAME chain: {e}")
-        else:
-            # Mark as browser extension
-            #tqdm.write(f"DEBUG: Marking as browser extension: {parsed_url}")
-            analysis_result['categories'].append('browser_extension')
-            analysis_result['infrastructure_type'] = 'browser_extension'
-        
-        # Always check Ghostery DB for additional info, regardless of filter matches
-        tracker_info = self._get_tracker_categorization(parsed_url)
-        if tracker_info:
-            analysis_result['categories'].extend(tracker_info['categories'])
-            analysis_result['organizations'].extend(tracker_info['organizations'])
+                            # Found in filter list
+                            analysis_result['analysis_notes'].append(f"CNAME chain member {cname} found in {filter_name}: {rule}")
+                            
+                            # If this is a first-party domain, this is cloaking
+                            if analysis_result['is_first_party_domain']:
+                                cname_cloaking_detected = True
+                                analysis_result['analysis_notes'].append(f"CNAME CLOAKING DETECTED: First-party domain using tracker in CNAME chain")
+                        
+                        # Check for organizational difference
+                        cname_info = self._get_tracker_categorization(cname)
+                        if cname_info and 'organizations' in cname_info:
+                            cname_orgs = cname_info.get('organizations', [])
+                            main_site_info = self._get_tracker_categorization(main_domain)
+                            main_site_orgs = main_site_info.get('organizations', []) if main_site_info else []
+                            
+                            # Different organization in CNAME chain
+                            if cname_orgs and not any(org in main_site_orgs for org in cname_orgs):
+                                analysis_result['analysis_notes'].append(
+                                    f"CNAME chain member {cname} belongs to different organization ({', '.join(cname_orgs)})"
+                                )
+                                
+                                # Check if it's a tracking category
+                                tracking_categories = ['Advertising', 'Analytics', 'Social Network']
+                                cname_categories = cname_info.get('categories', [])
+                                
+                                is_tracking_category = any(cat in tracking_categories for cat in cname_categories)
+                                
+                                # If first-party domain + different org + tracking category = cloaking
+                                if analysis_result['is_first_party_domain'] and is_tracking_category:
+                                    cname_cloaking_detected = True
+                                    analysis_result['analysis_notes'].append(
+                                        f"CNAME CLOAKING DETECTED: First-party domain using {', '.join([cat for cat in cname_categories if cat in tracking_categories])} service in CNAME chain"
+                                    )
             
-            if 'Hosting' in tracker_info['categories']:
-                analysis_result['infrastructure_type'] = 'hosting'
-                if tracker_info['organizations']:
-                    analysis_result['provider'] = tracker_info['organizations'][0]
+                    # Set the cloaking flag if detected
+                    analysis_result['cname_cloaking'] = cname_cloaking_detected
+            except Exception as e:
+                self._log(f"Error checking CNAME chain: {e}")
         
-        # Also check CNAME chain members for additional categorization
-        if not is_browser_extension and 'cname_chain' in analysis_result and analysis_result['cname_chain']:
-            for cname in analysis_result['cname_chain']:
-                cname_info = self._get_tracker_categorization(cname)
-                if cname_info:
-                    analysis_result['categories'].extend(cname_info['categories'])
-                    analysis_result['organizations'].extend(cname_info['organizations'])
-        
-        # Remove duplicates while preserving order
-        analysis_result['categories'] = list(dict.fromkeys(analysis_result['categories']))
-        analysis_result['organizations'] = list(dict.fromkeys(analysis_result['organizations']))
+        self._log(f"Final analysis for {parsed_url}:")
+        self._log(f"  - First-party: {analysis_result['is_first_party_domain']}")
+        self._log(f"  - Filter match: {analysis_result['filter_match']}")
+        self._log(f"  - CNAME match: {bool(analysis_result['cname_chain'])}")
+        self._log(f"  - Tracking evidence: {analysis_result['analysis_notes']}")
+        self._log("==== End Domain Analysis ====\n")
         
         # Store in cache for future use
         if self.use_cache:
@@ -301,7 +377,13 @@ class SourceIdentifier:
                         'other': 0              # Other third-party domains
                     },
                     'categories': Counter(),    # Will count occurrences of each category
-                    'organizations': Counter()  # Will count occurrences of each organization
+                    'organizations': Counter(),  # Will count occurrences of each organization
+                    'trackers': {
+                        'total': 0,
+                        'filter_list_matches': 0,
+                        'category_based': 0,
+                        'organization_based': 0
+                    }
                 }
                 
                 # Count the number of requests per domain
@@ -326,31 +408,38 @@ class SourceIdentifier:
                         
                         # Check for CNAME cloaking
                         has_cname_chain = bool(analysis['cname_chain'])
-                        is_cname_cloaking = has_cname_chain and any(
-                            "CNAME chain member" in evidence for evidence in analysis['tracking_evidence']
-                        )
+                        is_cname_cloaking = False
+                        
+                        # Only consider CNAME cloaking for first-party domains
+                        if analysis['is_first_party_domain'] and has_cname_chain:
+                            # Check if any CNAME in the chain is a known tracker
+                            cname_filter_evidence = any(
+                                "CNAME chain member" in evidence and "found in" in evidence
+                                for evidence in analysis['analysis_notes']
+                            )
+                            
+                            if cname_filter_evidence:
+                                # This is true CNAME cloaking: first-party domain pointing to third-party tracker
+                                is_cname_cloaking = True
+                                stats['cname_cloaking']['total'] += 1
+                                
+                                # Record organizations behind the cloaking
+                                for cname in analysis['cname_chain']:
+                                    cname_info = self._get_tracker_categorization(cname)
+                                    if cname_info:
+                                        for org in cname_info.get('organizations', []):
+                                            stats['cname_cloaking']['trackers_using_cloaking'][org] += 1
                         
                         # Update global filter match count
-                        is_tracker = bool(analysis['tracking_evidence'])
-                        if is_tracker:
+                        if analysis['filter_match']:  # Only count direct filter list matches
                             stats['filter_matches'] += 1
-                        
-                        # Update CNAME cloaking stats
-                        if is_cname_cloaking:
-                            stats['cname_cloaking']['total'] += 1
-                            # Record which trackers use cloaking (from CNAME chain)
-                            for cname in analysis['cname_chain']:
-                                tracker_info = self._get_tracker_categorization(cname)
-                                if tracker_info:
-                                    for org in tracker_info['organizations']:
-                                        stats['cname_cloaking']['trackers_using_cloaking'][org] += 1
                         
                         # Check if domain is first-party or third-party
                         if analysis['is_first_party_domain'] == True:
                             stats['first_party']['total'] += 1
                             
                             # Check if first-party domain is also a tracker
-                            if is_tracker:
+                            if analysis['filter_match']:
                                 stats['first_party']['trackers']['total'] += 1
                                 
                                 if is_cname_cloaking:
@@ -368,7 +457,7 @@ class SourceIdentifier:
                             
                             if is_infrastructure:
                                 stats['third_party']['infrastructure'] += 1
-                            elif is_tracker:
+                            elif analysis['filter_match']:
                                 stats['third_party']['trackers']['total'] += 1
                                 
                                 if is_cname_cloaking:
@@ -385,6 +474,19 @@ class SourceIdentifier:
                         # Count organizations
                         for org in analysis['organizations']:
                             stats['organizations'][org] += 1
+                        
+                        # Update trackers
+                        if analysis.get('is_tracker', False):
+                            stats['trackers']['total'] += 1
+                            
+                            # Count by detection method
+                            method = analysis.get('tracking_method', '')
+                            if method == 'filter_list':
+                                stats['trackers']['filter_list_matches'] += 1
+                            elif method == 'categorized_tracker':
+                                stats['trackers']['category_based'] += 1
+                            elif method == 'organization_difference':
+                                stats['trackers']['organization_based'] += 1
                         
                         pbar.update(1)
                 
@@ -586,7 +688,7 @@ class SourceIdentifier:
 
 
 if __name__ == "__main__":
-    data_directory = 'data/crawler_data non-kameleo/adguard'
+    data_directory = 'data/crawler_data Non-kameleo/test'
     
     # Validate directory exists
     if not os.path.exists(data_directory):
