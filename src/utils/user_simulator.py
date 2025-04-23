@@ -4,90 +4,80 @@ from playwright.async_api import Page
 from tqdm import tqdm
 
 class UserSimulator:
-    def __init__(self, seed=42):
-        # Set seed for reproducibility
+    """Class to simulate realistic user behavior during web browsing"""
+    
+    def __init__(self, seed=None, verbose=False):
+        """Initialize the simulator with configurable parameters"""
         self.random = random.Random(seed)
-        self.scroll_probability = 0.7
-        self.click_probability = 0.3
-        self.max_scroll_attempts = 2
-        self.max_click_attempts = 1
-
+        self.verbose = verbose
+        
+    def _log(self, message):
+        """Helper method for debug logging"""
+        if self.verbose:
+            tqdm.write(f"UserSim: {message}")
+            
     async def simulate_interaction(self, page: Page, url=None):
         """Simulate realistic user interaction on the page"""
         try:
             # If URL is provided, use it to create a deterministic seed for this page
             if url:
-                # Create a page-specific random generator
+                # Create a page-specific random generator with a consistent seed for the same URL
                 page_seed = hash(url) % 10000
                 page_random = random.Random(page_seed)
+                self._log(f"URL: {url} -> Using deterministic seed: {page_seed}")
             else:
                 # Fallback to the instance random generator
                 page_random = self.random
+                self._log(f"No URL provided, using instance random generator")
                 
             # Ensure page is ready
             await page.wait_for_load_state('domcontentloaded')
+            self._log("Page loaded, beginning interaction simulation")
             
             # Fixed initial delay
             await asyncio.sleep(0.5)
 
-            # Always perform the same scrolling for the same URL
-            await self._perform_scrolling(page, url)
+            # Deterministic scrolling based on URL
+            self._log("Starting scrolling simulation")
+            await self._perform_scrolling(page, page_random, url)
 
-            # Deterministic decision to click based on URL
-            should_click = page_random.random() < self.click_probability
-            if should_click:
-                await self._attempt_clicking(page, page_random)
+            # No clicking - we've removed this for better determinism
+            self._log("Scrolling complete - user simulation finished")
 
         except Exception as e:
             tqdm.write(f"Error during user simulation: {e}")
 
-    async def _move_mouse(self, page: Page, x_percentage=0.5, y_percentage=0.5):
-        """Move mouse to a deterministic position within the viewport"""
+    async def _move_mouse(self, page: Page, x_percent: float, y_percent: float):
+        """Move mouse to a position specified by percentage of viewport dimensions"""
         try:
-            # Get viewport dimensions
-            page_dimensions = await page.evaluate('''() => {
+            viewport_size = await page.evaluate('''() => {
                 return {
-                    width: document.documentElement.clientWidth,
-                    height: document.documentElement.clientHeight
+                    width: window.innerWidth,
+                    height: window.innerHeight
                 }
             }''')
             
-            # Calculate exact position based on percentages
-            target_x = int(page_dimensions['width'] * x_percentage)
-            target_y = int(page_dimensions['height'] * y_percentage)
+            x_pos = int(viewport_size['width'] * x_percent)
+            y_pos = int(viewport_size['height'] * y_percent)
             
-            # Move mouse with fixed steps
-            await page.mouse.move(
-                target_x,
-                target_y,
-                steps=10  # Fixed number of steps
-            )
-            
-            # Fixed pause after movement
-            await asyncio.sleep(0.2)
+            self._log(f"Moving mouse to absolute position: ({x_pos}, {y_pos})")
+            await page.mouse.move(x_pos, y_pos)
             
         except Exception as e:
-            tqdm.write(f"Error during mouse movement: {e}")
+            tqdm.write(f"Error moving mouse: {e}")
 
-    async def _perform_scrolling(self, page: Page, url=None):
+    async def _perform_scrolling(self, page: Page, page_random, url=None):
         """Perform deterministic scrolling actions based on URL"""
         try:
-            # Calculate deterministic positions based on URL
-            if url:
-                # Generate a hash from the URL for deterministic behavior
-                url_hash = hash(url) % 1000
-                # Use the hash to determine scroll pattern (between 40-60%)
-                scroll_percentage = 0.4 + ((url_hash % 20) / 100)
-                # Determine mouse position before scrolling
-                mouse_x = 0.3 + ((url_hash % 40) / 100)  # 30-70%
-                mouse_y = 0.2 + ((url_hash % 60) / 100)  # 20-80%
-            else:
-                # Default values if no URL
-                scroll_percentage = 0.5  # 50%
-                mouse_x = 0.5  # center
-                mouse_y = 0.5  # center
+            # Calculate deterministic positions based on URL/page_random
+            scroll_percentage = 0.4 + (page_random.random() * 0.2)  # 40-60%
+            mouse_x = 0.3 + (page_random.random() * 0.4)  # 30-70%
+            mouse_y = 0.2 + (page_random.random() * 0.6)  # 20-80%
+            
+            self._log(f"Deterministic values: scroll_percentage={scroll_percentage:.4f}, mouse_x={mouse_x:.4f}, mouse_y={mouse_y:.4f}")
             
             # Move mouse to deterministic position
+            self._log(f"Moving mouse to relative position ({mouse_x:.4f}, {mouse_y:.4f})")
             await self._move_mouse(page, mouse_x, mouse_y)
             
             # Get page dimensions
@@ -99,22 +89,31 @@ class UserSimulator:
                 }
             }''')
             
+            self._log(f"Page metrics: height={metrics['height']}, viewportHeight={metrics['viewportHeight']}, availableScroll={metrics['availableScroll']}")
+            
             if metrics['availableScroll'] <= 0:
+                self._log("Page has no scrollable content, skipping scroll")
                 return
 
             # Calculate target scroll position based on predetermined percentage
             available_scroll = metrics['availableScroll']
             target_scroll = int(available_scroll * scroll_percentage)
             
-            # Fixed scroll increment (you could vary this based on URL too if needed)
+            self._log(f"Target scroll: {target_scroll}px ({scroll_percentage*100:.1f}% of available scroll)")
+            
+            # Fixed scroll increment
             increment = 300
             
             # Pre-calculate the exact number of steps needed
             steps = (target_scroll + increment - 1) // increment  # ceiling division
             
+            self._log(f"Will scroll in {steps} steps with {increment}px increment")
+            
             # Perform deterministic scrolling with exactly the right number of steps
             for step in range(steps):
                 next_position = min((step + 1) * increment, target_scroll)
+                
+                self._log(f"Scroll step {step+1}/{steps}: scrolling to {next_position}px")
                 
                 # Perform the scroll
                 await page.evaluate(f'''() => {{
@@ -127,40 +126,7 @@ class UserSimulator:
                 # Fixed wait between scrolls
                 await asyncio.sleep(0.3)
 
-        except Exception as e:
-            tqdm.write(f"Error during scrolling: {e}")
-
-    async def _attempt_clicking(self, page: Page, page_random):
-        """Attempt to click on some safe elements using deterministic selection"""
-        try:
-            safe_selectors = [
-                'button:not([type="submit"])',
-                'a[href^="#"]',
-                '.tab',
-                '[role="tab"]',
-                '.accordion',
-                '[aria-expanded]'
-            ]
-
-            # Use a fixed order based on the page seed
-            selector_indices = list(range(len(safe_selectors)))
-            page_random.shuffle(selector_indices)
-            
-            for idx in selector_indices:
-                selector = safe_selectors[idx]
-                try:
-                    is_visible = await page.is_visible(selector, timeout=1000)
-                    if is_visible:
-                        elements = await page.query_selector_all(selector)
-                        if elements:
-                            # Select element deterministically
-                            element_index = page_random.randint(0, len(elements) - 1)
-                            element = elements[element_index]
-                            await element.click(timeout=1000)
-                            await asyncio.sleep(0.4)
-                            break
-                except Exception:
-                    continue
+            self._log(f"Scrolling complete, reached {target_scroll}px")
 
         except Exception as e:
-            tqdm.write(f"Error during clicking: {e}") 
+            tqdm.write(f"Error during scrolling: {e}") 

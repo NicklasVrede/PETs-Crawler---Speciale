@@ -97,7 +97,7 @@ if __name__ == "__main__":
     profile_names = config.get('profiles', {}).keys()
     print("Profile names:", list(profile_names))
 
-    profile = 'disconnect'
+    profile = 'ublock'
     
     # Get all sites to crawl
     all_sites = get_all_sites()
