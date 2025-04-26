@@ -40,28 +40,6 @@ class WebsiteCrawler:
         if self.verbose:
             tqdm.write(message)
 
-    async def populate_cache(self, page, urls):
-        """Pre-populate browser cache with resources from the target site"""
-        self._log("\nPre-populating cache with site resources...")
-        try:
-            # Visit homepage first to cache common resources
-            domain = self.base_domain
-            await page.goto(f"https://{domain}/", timeout=60000)
-            await page.wait_for_load_state('domcontentloaded')
-            await page.wait_for_timeout(2000)
-            
-            # Quick visit to each URL to populate cache
-            for url in urls[:5]:  # Visit first 5 URLs to build cache
-                try:
-                    await page.goto(url, timeout=40000)
-                    await page.wait_for_load_state('domcontentloaded')
-                except Exception as e:
-                    self._log(f"Error pre-caching {url}: {e}")
-                
-            self._log("✓ Cache populated with site resources")
-        except Exception as e:
-            self._log(f"Error during cache population: {e}")
-
     async def _setup_browser(self, p, user_data_dir, full_extension_path, headless, viewport):
         """Setup browser with context"""
         browser_args = {}
@@ -251,7 +229,7 @@ class WebsiteCrawler:
     async def _load_pre_collected_urls(self, domain):
         """Load pre-collected URLs from a specified directory"""
         self._log("\nLoading pre-collected URLs...")
-        urls = load_site_pages(domain, input_dir="data/site_pages", count=self.subpages_nr)
+        urls = load_site_pages(domain, input_dir="data/site_pages_final", count=self.subpages_nr)
         if not urls or len(urls) == 0:
             tqdm.write(f"ERROR: No pre-collected URLs found for {domain}")
             return None
@@ -303,8 +281,8 @@ class WebsiteCrawler:
                     display_url = url[:70] + '...'
                 
                 await page.goto(url, timeout=30000)
-                await page.wait_for_load_state('domcontentloaded')
-                await page.wait_for_timeout(random.uniform(1000, 2000))
+                await page.wait_for_load_state('load')
+                await page.wait_for_timeout(random.uniform(4000, 5000))
                 
                 # Check for extension-opened tabs after each page load for monitored extensions
                 if self._requires_tab_monitoring():

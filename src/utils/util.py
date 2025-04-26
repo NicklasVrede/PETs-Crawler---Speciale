@@ -67,7 +67,7 @@ def extract_javascript(json_file_path):
     
     print(f"\nExtracted {len(data['scripts'])} JavaScript files")
 
-def get_all_sites(csv_path='data/db+ref/study-sites.csv'):
+def get_all_sites(csv_path='data/db+ref/Tranco_final_sample.csv'):
     """Get all sites from the CSV file as a list of (rank, domain) tuples"""
     with open(csv_path, 'r') as f:
         reader = csv.reader(f)

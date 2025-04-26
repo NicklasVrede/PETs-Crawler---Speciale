@@ -8,7 +8,11 @@ from patchright.async_api import async_playwright
 import sys
 import os
 from tqdm import tqdm
-from utils.util import construct_paths, load_config, get_profile_config
+
+if __name__ == "__main__":
+    from util import construct_paths, load_config, get_profile_config
+else:
+    from utils.util import construct_paths, load_config, get_profile_config
 
 class PageCollector:
     def __init__(self, base_domain):
@@ -105,16 +109,9 @@ class PageCollector:
             
             # Initial visit to homepage
             await page.goto(start_url, timeout=30000)
-            await page.wait_for_load_state('domcontentloaded')
-            
-            # Additional wait for cookie extension to process banners
-            await page.wait_for_timeout(1000)
-            
-            # Wait for network to become idle with a reasonable timeout
-            try:
-                await page.wait_for_load_state('networkidle', timeout=5000)
-            except Exception:
-                pass
+
+            await page.wait_for_load_state('networkidle', timeout=5000)
+
             
             # Add homepage as first URL
             self.found_urls.append(start_url)
@@ -123,6 +120,7 @@ class PageCollector:
             
             # Get links from homepage
             homepage_links_list = list(await self.extract_links(page))
+            tqdm.write(f"Found {len(homepage_links_list)} links on homepage")
             
             # Try to build multiple chains if needed
             chain_start_index = 0
@@ -150,8 +148,8 @@ class PageCollector:
                 chain_depth = 1
                 chain_visited = {start_url, chain_start}  # Track visited URLs in this chain
                 
-                # Follow this chain until we find max 10 URLs per chain or can't find more links
-                while chain_depth < 10 and len(self.found_urls) < max_pages:
+                # Follow this chain until we find max pages or can't find more links
+                while len(self.found_urls) < max_pages:
                     try:
                         # Visit the current URL in the chain
                         await page.goto(current_url, wait_until='domcontentloaded', timeout=20000)
@@ -256,7 +254,7 @@ async def collect_site_pages(domain, max_pages=40, homepage_links=3, setup='i_do
                 viewport=profile_config.get('viewport', {'width': 1280, 'height': 800})
             )
             
-            page = await context.new_page()
+            page = context.pages[0]
             
             collector = PageCollector(domain)
             pages = await collector.collect_pages(page, max_pages, homepage_links)
@@ -279,7 +277,7 @@ async def collect_site_pages(domain, max_pages=40, homepage_links=3, setup='i_do
             return pages
 
 
-def save_site_pages(domain, pages, output_dir="data/site_pages"):
+def save_site_pages(domain, pages, output_dir="data/site_pages_final"):
     """Save collected pages to a JSON file"""
     os.makedirs(output_dir, exist_ok=True)
     
@@ -300,7 +298,7 @@ def save_site_pages(domain, pages, output_dir="data/site_pages"):
     return filename
 
 
-def load_site_pages(domain, input_dir="data/site_pages", count=20):
+def load_site_pages(domain, input_dir="data/site_pages_final", count=20):
     """Load collected pages from a JSON file and return the top N"""
     safe_domain = domain.replace(".", "_")
     filename = os.path.join(input_dir, f"{safe_domain}.json")
@@ -324,7 +322,7 @@ async def collect_all_site_pages(setup='i_dont_care_about_cookies', max_pages=40
     # Load domains from CSV
     domains = []
     try:
-        with open('data/study-sites.csv', 'r') as f:
+        with open('data/db+ref/Tranco_final_sample.csv', 'r') as f:
             reader = csv.DictReader(f)
             # Remove 'www.' from domains before replacing dots with underscores
             domains = [row['domain'].lower().replace('www.', '').replace('.', '_') for row in reader]
@@ -336,7 +334,7 @@ async def collect_all_site_pages(setup='i_dont_care_about_cookies', max_pages=40
     
     for domain in domains:
         # Check if file already exists
-        file_path = f"data/site_pages/{domain}.json"
+        file_path = f"data/site_pages_final/{domain}.json"
         if os.path.exists(file_path):
             tqdm.write(f"\nSkipping {domain} - already collected")
             continue

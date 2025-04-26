@@ -60,28 +60,6 @@ class WebsiteCrawler:
         if self.verbose:
             tqdm.write(message)
 
-    async def populate_cache(self, page, urls):
-        """Pre-populate browser cache with resources from the target site"""
-        tqdm.write("\nPre-populating cache with site resources...")
-        try:
-            # Visit homepage first to cache common resources
-            domain = self.base_domain
-            await page.goto(f"https://{domain}/", timeout=60000)
-            await page.wait_for_load_state('domcontentloaded')
-            await page.wait_for_timeout(2000)
-            
-            # Quick visit to each URL to populate cache
-            for url in urls[:5]:  # Visit first 5 URLs to build cache
-                try:
-                    await page.goto(url, timeout=40000)
-                    await page.wait_for_load_state('domcontentloaded')
-                except Exception as e:
-                    tqdm.write(f"Error pre-caching {url}: {e}")
-                
-            tqdm.write("✓ Cache populated with site resources")
-        except Exception as e:
-            tqdm.write(f"Error during cache population: {e}")
-
     async def _setup_browser(self, p):
         """Setup browser with context and return existing page"""
         browser_ws_endpoint = f"ws://localhost:5050/playwright/{self.profile_id}"

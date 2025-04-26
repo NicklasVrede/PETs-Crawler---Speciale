@@ -9,7 +9,7 @@ from tqdm import tqdm
 import pprint
 
 
-async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=2, verbose=False, skip_existence_check=False):
+async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=5, verbose=False, skip_existence_check=False):
     """
     Crawl a single domain with configurable verbosity
     
