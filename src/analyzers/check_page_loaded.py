@@ -61,6 +61,9 @@ ERROR_PHRASES = [
     "service Unavailable",
     "temporaily unable",
     "please try again later",
+    "an error",
+    "access denied",
+    "you don't have permission"
 ]
 
 def extract_text_from_image(image_path):
@@ -249,12 +252,12 @@ def test_domain(screenshots_base_dir, domain_name):
 
 if __name__ == "__main__":
     # Simple configuration - edit these values to run different functions
-    SCREENSHOTS_BASE_DIR = "data/banner_data Non-kameleo/screenshots"
+    SCREENSHOTS_BASE_DIR = "data/Varies runs/banner_data Non-kameleo/screenshots"
     OUTPUT_FILE = "page_loading_results.json"
     
     # To test a single domain, set TEST_DOMAIN to the domain name
     # To process all domains, leave it as None
-    TEST_DOMAIN = "indeed.co.uk"  # or None
+    TEST_DOMAIN = "babyshop.com"  # or None
     
     if TEST_DOMAIN:
         print(f"Testing domain: {TEST_DOMAIN}")

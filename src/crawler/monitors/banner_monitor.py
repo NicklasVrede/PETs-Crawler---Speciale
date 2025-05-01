@@ -83,13 +83,9 @@ class BannerMonitor:
     async def _save_capture(self, page, paths):
         """Save screenshot and HTML"""
         # Wait for network to be idle to ensure banners are loaded
-        try:
-            await page.wait_for_load_state('networkidle', timeout=5000)
-        except Exception as e:
-            if self.verbose:
-                print(f"Network idle timeout for banner capture: {e}")
-        
-        # Capture screenshot
+        await page.wait_for_load_state('networkidle') #We already do this in WebsiteCrawler, but lets do it again.
+        await page.wait_for_timeout(10000) #heavy wait, to ensure page is loaded completely, even though networkidle is should be enough.
+       # Capture screenshot
         await page.screenshot(path=paths['screenshot_path'], full_page=False)
         
         # Capture HTML

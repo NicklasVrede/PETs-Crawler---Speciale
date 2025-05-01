@@ -51,6 +51,9 @@ instructions.txt
 #ignore all data folders
 data/
 
+#ignore all evaluation folders
+evaluation_data/
+
 #ignore lib folder
 lib/
 

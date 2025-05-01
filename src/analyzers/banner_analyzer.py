@@ -4,6 +4,8 @@ import sys
 from tqdm import tqdm
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import cv2  # Add this import at the top with the other imports
+import numpy as np
 
 
 # Add project root to path
@@ -31,7 +33,7 @@ class BannerAnalyzer:
         if self.verbose:
             print(message)
     
-    def get_domains_to_analyze(self, test_domain=None, test_count=None):
+    def get_domains_to_analyze(self, test_domain=None, nr_domains=None):
         """Get the list of domains to analyze based on available data"""
         screenshot_dir = os.path.join(self.banner_data_dir, "screenshots")
         html_dir = os.path.join(self.banner_data_dir, "html")
@@ -59,8 +61,8 @@ class BannerAnalyzer:
             self._log("No domains found to analyze.")
         
         # Limit to test_count domains if specified
-        if test_count and not test_domain and len(domains) > test_count:
-            domains = domains[:test_count]
+        if nr_domains and not test_domain and len(domains) > nr_domains:
+            domains = domains[:nr_domains]
         
         return domains
     
@@ -95,21 +97,19 @@ class BannerAnalyzer:
             self._log(f"No data found for domain {domain}, skipping")
             return {}
         
-        # Analyze screenshots
-        screenshot_results = {}
+        # First check if pages loaded properly
         page_loaded_results = {}
-        if screenshots_exist:
-            if os.listdir(domain_screenshot_dir):
-                screenshot_results = analyze_screenshots(domain_screenshot_dir)
-                
-                # Add page load check
-                page_loaded_results = check_domain_screenshots(domain_screenshot_dir)
+        if screenshots_exist and os.listdir(domain_screenshot_dir):
+            page_loaded_results = check_domain_screenshots(domain_screenshot_dir)
         
-        # Analyze HTML
+        # Then analyze screenshots and HTML only if needed
+        screenshot_results = {}
+        if screenshots_exist and os.listdir(domain_screenshot_dir):
+            screenshot_results = analyze_screenshots(domain_screenshot_dir)
+        
         html_results = {}
-        if html_exists:
-            if os.listdir(domain_html_dir):
-                html_results = analyze_cookie_consent_text(domain_html_dir)
+        if html_exists and os.listdir(domain_html_dir):
+            html_results = analyze_cookie_consent_text(domain_html_dir)
         
         # Process results to create the banner_results structure
         banner_results = self.process_domain_results(
@@ -503,10 +503,86 @@ class BannerAnalyzer:
             if not test_run:
                 self.write_extension_results(domain, ext_folder, ext_results)
             
+            # Enhanced output for test run
+            if test_run:
+                print(f"\n=== Test Analysis for {domain} with {extension_name} ===")
+                
+                # Print summary results
+                print(f"\nSummary Status: {ext_results.get('summary_status', 'unknown')}")
+                print(f"Summary Reason: {', '.join(ext_results.get('summary_reason', ['Unknown']))}")
+                
+                # Print visit-specific results
+                for key in ext_results:
+                    if key.startswith("visit"):
+                        visit_data = ext_results[key]
+                        print(f"\n--- Visit {key} ---")
+                        
+                        # Check if page loaded
+                        page_loaded = visit_data.get("page_loaded", False)
+                        print(f"Page Loaded: {page_loaded}")
+                        if not page_loaded:
+                            print(f"Page Status: {visit_data.get('page_status', 'unknown')}")
+                        
+                        # HTML analysis results
+                        html_status = visit_data.get("html", "unknown")
+                        print(f"HTML Analysis: {html_status}")
+                        
+                        # Screenshot analysis results
+                        screenshot_status = visit_data.get("screenshot", "unknown")
+                        print(f"Screenshot Analysis: {screenshot_status}")
+                        
+                        # Conclusion
+                        print(f"Conclusion: {visit_data.get('conclusion', 'unknown')}")
+                        print(f"Reason: {', '.join(visit_data.get('reason', ['Unknown']))}")
+                
+                # Fetch and display the actual keywords from the source data
+                self._print_detailed_keywords(domain, extension_name)
+            else:
+                print(f"Results for {domain} with {extension_name} saved successfully.")
+            
             return ext_results
         else:
             self._log(f"No results found for extension '{extension_name}' on domain '{domain}'")
             return None
+
+    def _print_detailed_keywords(self, domain, extension_name):
+        """Print detailed keyword information from raw analysis data"""
+        screenshot_dir = os.path.join(self.banner_data_dir, "screenshots", domain)
+        html_dir = os.path.join(self.banner_data_dir, "html", domain)
+        
+        print("\n=== Raw Keyword Analysis ===")
+        
+        # Check for screenshot data
+        if os.path.exists(screenshot_dir):
+            print("\nScreenshot Keywords:")
+            screenshot_results = analyze_screenshots(screenshot_dir, verbose=False)
+            if "screenshot_check" in screenshot_results:
+                for visit_id, visit_data in screenshot_results["screenshot_check"].items():
+                    print(f"\n  Visit {visit_id}:")
+                    print(f"  - Baseline Keywords: {', '.join(visit_data.get('keywords', ['None']))}")
+                    
+                    # Show extension results
+                    for ext_file, ext_data in visit_data.get("extensions", {}).items():
+                        if extension_name.lower() in ext_file.lower():
+                            print(f"  - Extension '{ext_file}':")
+                            print(f"    * Found Keywords: {', '.join(ext_data.get('screenshot', ['None']))}")
+                            print(f"    * Banner Removal Indicated: {ext_data.get('removal_indicated', False)}")
+        
+        # Check for HTML data
+        if os.path.exists(html_dir):
+            print("\nHTML Keywords:")
+            html_results = analyze_cookie_consent_text(html_dir, verbose=False)
+            if "html_check" in html_results:
+                for visit_id, visit_data in html_results["html_check"].items():
+                    print(f"\n  Visit {visit_id}:")
+                    print(f"  - Baseline Keywords: {', '.join(visit_data.get('keywords', ['None']))}")
+                    
+                    # Show extension results
+                    for ext_file, ext_data in visit_data.get("extensions", {}).items():
+                        if extension_name.lower() in ext_file.lower():
+                            print(f"  - Extension '{ext_file}':")
+                            print(f"    * Found Keywords: {', '.join(ext_data.get('html', ['None']))}")
+                            print(f"    * Banner Removal Indicated: {ext_data.get('removal_indicated', False)}")
 
     def write_extension_results(self, domain, extension_folder, results):
         """Write extension results to a JSON file in the crawler data directory"""
@@ -540,8 +616,290 @@ class BannerAnalyzer:
         
         self._log(f"Updated banner analysis for {domain} with extension {extension_folder}")
 
+    def create_evaluation_dataset(self, output_dir="evaluation_data", nr_domains=None, extensions_to_evaluate=None):
+        """Create evaluation dataset by processing specified domains and extensions."""
+        os.makedirs(output_dir, exist_ok=True)
+        
+        stats = {
+            "total_domains": 0,
+            "domains_processed": 0,
+            "screenshots_processed": 0,
+            "extensions_evaluated": [], 
+            "conclusions": { "removed": 0, "likely_removed": 0, "not_removed": 0, "unknown": 0, "not_loaded": 0 }
+        }
+        
+        all_domains = self.get_domains_to_analyze(nr_domains=nr_domains)
+        stats["total_domains"] = len(all_domains)
+        
+        if not all_domains:
+            print("No domains found to process.")
+            return stats
+
+        # *** START CHANGE: Standardize the requested list ***
+        standardized_extensions_to_evaluate = None
+        if extensions_to_evaluate:
+            standardized_extensions_to_evaluate = []
+            original_request_str = ", ".join(extensions_to_evaluate) # For logging
+            for ext in extensions_to_evaluate:
+                if ext == 'no_extensions':
+                    standardized_extensions_to_evaluate.append('no_extension')
+                else:
+                    standardized_extensions_to_evaluate.append(ext)
+            # Remove duplicates if both were somehow requested
+            standardized_extensions_to_evaluate = list(set(standardized_extensions_to_evaluate)) 
+            stats["extensions_evaluated"] = list(standardized_extensions_to_evaluate) # Use standardized list for stats
+            print(f"DEBUG: Original requested extensions: [{original_request_str}]")
+            print(f"DEBUG: Standardized extensions for evaluation: {standardized_extensions_to_evaluate}")
+        else:
+            print("DEBUG: No specific extensions requested, will process all available.")
+        # *** END CHANGE ***
+
+        # Process each domain
+        for domain in tqdm(all_domains, desc="Processing domains for evaluation"):
+            domain_output_dir = os.path.join(output_dir, domain)
+
+            tqdm.write(f"\nDEBUG: Analyzing domain: {domain}") 
+            domain_results = self.analyze_domain(domain) 
+            
+            if not domain_results:
+                tqdm.write(f"Warning: No analysis results found for domain {domain}, skipping.")
+                continue
+
+            # Standardize 'no_extensions' key in results (keep this)
+            if 'no_extensions' in domain_results and 'no_extension' not in domain_results:
+                tqdm.write(f"DEBUG: Domain {domain} - Renaming result key 'no_extensions' to 'no_extension' for consistency.")
+                domain_results['no_extension'] = domain_results.pop('no_extensions')
+                
+            os.makedirs(domain_output_dir, exist_ok=True) 
+            stats["domains_processed"] += 1
+
+            extensions_in_results = list(domain_results.keys()) 
+            tqdm.write(f"DEBUG: Domain {domain} - Available extensions in results (post-standardization): {extensions_in_results}")
+            
+            # Filter based on STANDARDIZED user request OR use all available
+            if standardized_extensions_to_evaluate: # Use the standardized list here
+                process_extensions = [ext for ext in standardized_extensions_to_evaluate if ext in extensions_in_results]
+                tqdm.write(f"DEBUG: Domain {domain} - Filtered extensions to process based on standardized request: {process_extensions}")
+            else:
+                process_extensions = extensions_in_results 
+                tqdm.write(f"DEBUG: Domain {domain} - Processing all available extensions: {process_extensions}")
+                if not stats["extensions_evaluated"]: 
+                     # Populate stats with standardized names if processing all
+                     current_standardized_results = [k if k != 'no_extensions' else 'no_extension' for k in extensions_in_results]
+                     stats["extensions_evaluated"] = list(set(stats["extensions_evaluated"] + current_standardized_results))
+
+
+            if not process_extensions:
+                 tqdm.write(f"Warning: No extensions to process for domain {domain} after filtering.")
+                 continue
+
+            # Create evaluation data for each relevant extension
+            for ext_key in process_extensions:
+                tqdm.write(f"DEBUG: Domain {domain} - Preparing to call _create_extension_evaluation for: '{ext_key}'") 
+                if ext_key in domain_results: 
+                     if not domain_results[ext_key]:
+                         tqdm.write(f"Warning: Domain {domain} - Results dictionary for '{ext_key}' is empty, skipping _create_extension_evaluation.")
+                         continue
+
+                     self._create_extension_evaluation(
+                         domain=domain,
+                         ext_key=ext_key, # Pass the standardized key ('no_extension')
+                         ext_results=domain_results[ext_key], 
+                         output_dir=domain_output_dir, 
+                         stats=stats
+                     )
+                else:
+                     tqdm.write(f"Error: Results for extension '{ext_key}' were expected but not found in domain_results for {domain}.")
+
+        # ... (saving stats remains the same) ...
+        return stats
+
+    def _create_extension_evaluation(self, domain, ext_key, ext_results, output_dir, stats):
+        """
+        Create evaluation data for a single extension on a domain
+        
+        Args:
+            domain: Domain name
+            ext_key: Extension key
+            ext_results: Results for this extension
+            output_dir: Where to save evaluation data
+            stats: Statistics dictionary to update
+        """
+        # Create extension directory
+        ext_dir = os.path.join(output_dir, ext_key)
+        os.makedirs(ext_dir, exist_ok=True)
+        
+        # Get source screenshots
+        screenshot_dir = os.path.join(self.banner_data_dir, "screenshots", domain)
+        if not os.path.exists(screenshot_dir):
+            print(f"DEBUG: Screenshot directory not found: {screenshot_dir}")
+            return
+        
+        tqdm.write(f"DEBUG: Processing {domain} with extension {ext_key}")
+        tqdm.write(f"DEBUG: Screenshot source dir: {screenshot_dir}")
+        tqdm.write(f"DEBUG: Output dir: {ext_dir}")
+        
+        # Create an overview file for this extension
+        overview_data = {
+            "domain": domain,
+            "extension": ext_key,
+            "summary_status": ext_results.get("summary_status", "unknown"),
+            "summary_reason": ext_results.get("summary_reason", []),
+            "visits": {}
+        }
+        
+        # Increment conclusion counter
+        summary_status = ext_results.get("summary_status", "unknown")
+        if summary_status in stats["conclusions"]:
+            stats["conclusions"][summary_status] += 1
+        
+        # Process each visit
+        for key, visit_data in ext_results.items():
+            # Skip non-visit keys
+            if key in ["summary_status", "summary_reason"]:
+                continue
+            
+            visit_id = key  # e.g., "visit1"
+            print(f"DEBUG: Processing visit: {visit_id}")
+            
+            # Add to overview
+            overview_data["visits"][visit_id] = {
+                "conclusion": visit_data.get("conclusion", "unknown"),
+                "reason": visit_data.get("reason", []),
+                "page_loaded": visit_data.get("page_loaded", False),
+                "page_status": visit_data.get("page_status", "unknown"),
+                "html": visit_data.get("html", "unknown"),
+                "screenshot": visit_data.get("screenshot", "unknown")
+            }
+            
+            # Find all screenshots for this visit and extension
+            visit_screenshots = []
+            source_files = os.listdir(screenshot_dir)
+            # Add extra debugging to see all files being considered
+            print(f"DEBUG [{ext_key}]: Files in {screenshot_dir} for {visit_id}: {source_files}") 
+
+            for filename in source_files:
+                # Make sure this is for the current visit ID
+                if not filename.startswith(visit_id): # More robust check than 'in'
+                    continue
+                
+                filename_lower = filename.lower()
+                
+                # For no_extension folder, only include no_extension screenshots
+                if ext_key == "no_extension":
+                    # Check for variations like _no_extension.png or _no_extensions.png
+                    if "_no_extension" in filename_lower and filename_lower.endswith(".png"): 
+                        visit_screenshots.append(filename)
+                        print(f"DEBUG [{ext_key}]: Matched NO_EXTENSION file: {filename}")
+                    # else: # Optional: Keep this if you want to see skipped files for no_extension
+                    #     print(f"DEBUG [{ext_key}]: Skipped non-matching file: {filename}")
+                    
+                # For actual extensions, only include screenshots for that specific extension
+                else:
+                    # Construct the expected ending pattern, e.g., "_accept_all_cookies.png"
+                    expected_ending = f"_{ext_key.lower()}.png" 
+                    
+                    # Check if the filename ends with the specific extension pattern 
+                    # AND it's NOT a no_extension file
+                    if filename_lower.endswith(expected_ending) and "_no_extension" not in filename_lower:
+                        visit_screenshots.append(filename)
+                        print(f"DEBUG [{ext_key}]: Matched EXTENSION file: {filename}")
+                    # else: # Optional: Keep this if you want to see skipped files for extensions
+                    #     match_reason = f"Ending '{expected_ending}' not found" if not filename_lower.endswith(expected_ending) else "Contains '_no_extension'"
+                    #     print(f"DEBUG [{ext_key}]: Skipped non-matching file: {filename} (Reason: {match_reason})")
+
+            print(f"DEBUG: Found {len(visit_screenshots)} screenshots for {visit_id} with extension {ext_key}")
+            print(f"DEBUG: Screenshot files: {visit_screenshots}")
+            
+            # Copy and annotate screenshots
+            for screenshot_file in visit_screenshots:
+                src_path = os.path.join(screenshot_dir, screenshot_file)
+                
+                # Create a descriptive filename
+                conclusion = visit_data.get("conclusion", "unknown")
+                base_name = os.path.splitext(screenshot_file)[0]
+                new_filename = f"{base_name}_{conclusion}{os.path.splitext(screenshot_file)[1]}"
+                
+                # Create destination path
+                dst_path = os.path.join(ext_dir, new_filename)
+                
+                tqdm.write(f"DEBUG: Processing screenshot: {screenshot_file}")
+                tqdm.write(f"DEBUG: Source path: {src_path}")
+                tqdm.write(f"DEBUG: Destination path: {dst_path}")
+                
+                # Read the image
+                try:
+                    img = cv2.imread(src_path)
+                    if img is None:
+                        tqdm.write(f"DEBUG: Could not read image: {src_path}")
+                        continue
+                    else:
+                        tqdm.write(f"DEBUG: Successfully read image: {src_path}")
+                    
+                    # Get original image dimensions
+                    height, width = img.shape[:2]
+                    tqdm.write(f"DEBUG: Image dimensions: {width}x{height}")
+                    
+                    # Create a wider canvas with white background
+                    # Add 400 pixels of width for the text area
+                    text_width = 400
+                    composite_width = width + text_width
+                    composite_img = np.ones((height, composite_width, 3), dtype=np.uint8) * 255
+                    
+                    # Copy the original image to the left side
+                    composite_img[0:height, 0:width] = img
+                    
+                    # Create text for annotation
+                    annotation_text = [
+                        f"Domain: {domain}",
+                        f"Extension: {ext_key}",
+                        f"Visit: {visit_id}",
+                        f"Conclusion: {conclusion}",
+                        f"Page Loaded: {visit_data.get('page_loaded', False)}",
+                        f"Page Status: {visit_data.get('page_status', 'unknown')}",
+                        f"HTML Analysis: {visit_data.get('html', 'unknown')}",
+                        f"Screenshot Analysis: {visit_data.get('screenshot', 'unknown')}"
+                    ]
+                    
+                    # Add reason information if available
+                    reasons = visit_data.get("reason", [])
+                    if reasons:
+                        annotation_text.append(f"Reason: {reasons[0]}")
+                        for additional_reason in reasons[1:]:
+                            annotation_text.append(f"        {additional_reason}")
+                    
+                    # Add text to image on the right side
+                    y_pos = 30
+                    for line in annotation_text:
+                        cv2.putText(composite_img, line, (width + 10, y_pos), 
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 1)
+                        y_pos += 25
+                    
+                    # Add a vertical line separating the image and text
+                    cv2.line(composite_img, (width, 0), (width, height), (0, 0, 0), 2)
+                    
+                    # Save annotated image
+                    result = cv2.imwrite(dst_path, composite_img)
+                    if result:
+                        tqdm.write(f"DEBUG: Successfully saved annotated image to: {dst_path}")
+                    else:
+                        tqdm.write(f"DEBUG: Failed to save image to: {dst_path}")
+                    
+                    stats["screenshots_processed"] += 1
+                    
+                except Exception as e:
+                    tqdm.write(f"DEBUG: Error processing image {src_path}: {str(e)}")
+                    import traceback
+                    tqdm.write(traceback.format_exc())
+        
+        # Save overview data
+        overview_path = os.path.join(ext_dir, f"{domain}_overview.json")
+        tqdm.write(f"DEBUG: Saving overview data to: {overview_path}")
+        with open(overview_path, "w") as f:
+            json.dump(overview_data, f, indent=2)
+        tqdm.write(f"DEBUG: Successfully saved overview data")
+
 if __name__ == "__main__":
-    # Comment out the default test configuration
     """
     cpu_count = multiprocessing.cpu_count()
     recommended_workers = max(1, cpu_count - 1)  # Leave one CPU for system
@@ -558,18 +916,42 @@ if __name__ == "__main__":
     )
     """
     
-    # Single extension test code
-    analyzer = BannerAnalyzer(banner_data_dir="data/banner_data Non-kameleo", crawler_data_dir="data/crawler_data Non-kameleo")
+    def test_single_extension():
+        # Single extension test code
+        analyzer = BannerAnalyzer(banner_data_dir="data/Varies runs/banner_data Non-kameleo", 
+                                crawler_data_dir="data/Varies runs/crawler_data Non-kameleo",
+                                verbose=True)
     
-    # Choose a domain and extension to test
-    test_domain = "amazon.co.uk"  # Replace with an actual domain in your dataset
-    test_extension = "adblock"
+        # Choose a domain and extension to test
+        test_domain = "active.com"  # Replace with an actual domain in your dataset
+        test_extension = "accept_all_cookies"
+        
+        # Run the single extension test
+        results = analyzer.analyze_single_extension(
+            domain=test_domain,
+            extension_name=test_extension,
+            test_run=True
+        )
     
-    # Run the single extension test
-    results = analyzer.analyze_single_extension(
-        domain=test_domain,
-        extension_name=test_extension,
-        test_run=False
-    )
+        tqdm.write("\nTest completed")
     
-    print("\nTest completed")
+    #test_single_extension()
+
+    def evaluate_banners():
+        # Evaluation Run
+        # 1. Create the analyzer
+        analyzer = BannerAnalyzer(banner_data_dir="data/Varies runs/banner_data_trial", 
+                                crawler_data_dir="data/Varies runs/crawler_data_trial",
+                                verbose=True)
+    
+        # 2. Create evaluation dataset
+        stats = analyzer.create_evaluation_dataset(
+            output_dir="evaluation_data",
+            nr_domains=3,
+            extensions_to_evaluate=["no_extensions", "accept_all_cookies", "adguard"]
+        )
+                
+        tqdm.write("\nEvaluation stats:")
+        tqdm.write(json.dumps(stats, indent=2))
+
+    evaluate_banners()

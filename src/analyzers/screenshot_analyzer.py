@@ -69,7 +69,8 @@ def analyze_screenshots(directory="data/banner_data/screenshots/active.com", ver
         "cookie", "consent", "accept", "reject", "decline", 
         "privacy", "gdpr", "settings", "preferences",
         "necessary", "functional", "analytics", "marketing",
-        "all", "afslå", "acceptér", "alle"
+        "all", "afslå", "acceptér", "alle", "cookies",
+        "luk", "acceptér", "policy", "approve"
     ]
     
     # Compare each no_extension file with its corresponding extension files

@@ -9,7 +9,7 @@ from tqdm import tqdm
 import pprint
 
 
-async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=5, verbose=False, skip_existence_check=False):
+async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=5, verbose=False):
     """
     Crawl a single domain with configurable verbosity
     
@@ -23,11 +23,15 @@ async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=5, verbose
     """
     # Load configuration
     config = load_config('config.json')    
-    # Extract profile configuration
-    profile_config = get_profile_config(config, profile)
-
-    channel = profile_config.get('channel', 'chromium')
     
+    general_config = config.get('general', {}) # Get the 'general' dictionary, or empty if missing
+    viewport = general_config.get('viewport') 
+    headless = general_config.get('headless') 
+
+    # Extract profile configuration (keep if needed elsewhere, otherwise remove)
+    profile_config = get_profile_config(config, profile) 
+    channel = profile_config.get('channel', 'chromium') # Example: channel might still use profile_config
+
     # Construct paths
     user_data_dir, full_extension_path = construct_paths(config, profile)
     
@@ -42,22 +46,22 @@ async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=5, verbose
         
         if verbose:
             if profile == 'no_extensions':
-                print("No extensions mode - skipping extension path")
+                tqdm.write("No extensions mode - skipping extension path")
             else:
-                print(f"Using extension path: {full_extension_path}")
-            print(f"Using profile data directory: {crawl_user_data_dir}")
+                tqdm.write(f"Using extension path: {full_extension_path}")
+
         
         crawl_data_manager = CrawlDataManager(profile)
         rank, domain = site_info
         
-        # Crawl site - pass verbose flag to control internal printing
+        # Crawl site - pass the loaded settings
         crawler = WebsiteCrawler(
             subpages_nr=subpages_nr, 
             visits=2,  # Or whatever your default is
             verbose=verbose,
             extension_name=profile,
-            headless=profile_config.get('headless', False),
-            viewport=profile_config.get('viewport', {'width': 1280, 'height': 800}),
+            headless=headless,
+            viewport=viewport,
             domain=domain
         )
         
@@ -97,10 +101,10 @@ if __name__ == "__main__":
     profile_names = config.get('profiles', {}).keys()
     print("Profile names:", list(profile_names))
 
-    profile = 'ublock'
+    profile = 'disconnect'
     
     # Get all sites to crawl
-    all_sites = get_all_sites()
+    all_sites = get_all_sites(csv_path='data/db+ref/study-sites.csv')
     if all_sites:
         # Just process the first site for testing
         site_info = all_sites[0]  # Get only the first site

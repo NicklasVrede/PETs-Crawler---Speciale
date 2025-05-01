@@ -1,17 +1,14 @@
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, Error as PlaywrightError
 from crawler.monitors.network_monitor import NetworkMonitor
 from crawler.monitors.fingerprint_collector import FingerprintCollector
 from crawler.monitors.storage_monitor import StorageMonitor
 from crawler.monitors.banner_monitor import BannerMonitor
 from datetime import datetime
 from tqdm import tqdm
-import random
 import asyncio
 from utils.page_collector import load_site_pages
 from utils.user_simulator import UserSimulator
 from playwright_stealth import Stealth
-import os
-import json
 
 
 class WebsiteCrawler:
@@ -48,203 +45,116 @@ class WebsiteCrawler:
         if full_extension_path and full_extension_path != "no_extension":
             browser_args["args"] = [
                 f'--disable-extensions-except={full_extension_path}',
-                f'--load-extension={full_extension_path}'
+                f'--load-extension={full_extension_path}',
+                f'--window-position=9999,9999' # To avoid taking screenspace
+            ]
+        else:
+            browser_args["args"] = [
+                f'--window-position=9999,9999'
             ]
 
         context = await p.chromium.launch_persistent_context(
             user_data_dir=user_data_dir,
             headless=self.headless,
-            viewport=self.viewport or {'width': 1280, 'height': 800},
+            viewport=self.viewport,
             **browser_args
         )
         
-        # Apply stealth to the context (this will affect all pages created from this context)
+        extensions_with_extra_tabs = ["adblock", "disconnect", "decentraleyes"]
+        
+
+        if self.extension_name.lower() in extensions_with_extra_tabs:   
+            await self._close_extra_tabs(context, profile=self.extension_name)
+
         await self.stealth.apply_stealth_async(context)
-        
-        # Close any extra tabs that might have been opened by extensions
-        await self._close_extra_tabs(context)
-        
-        # Set up tab monitoring if using certain extensions
-        if self._requires_tab_monitoring():
-            self._setup_tab_monitoring(context)
+
         
         return context
 
-    def _requires_tab_monitoring(self):
-        """Check if the current extension requires ongoing tab monitoring"""
-        # List of extensions that need continuous tab monitoring
-        monitored_extensions = ["adblock", "adblockplus", "ublock", "disconnect"]
-        
-        # Check if current extension name contains any monitored extension strings
-        return any(ext in self.extension_name.lower() for ext in monitored_extensions)
 
-    def _setup_tab_monitoring(self, context):
-        """Set up a task to periodically check for and close extra tabs"""
-        self._log(f"Setting up continuous tab monitoring for {self.extension_name}")
-        
-        # Store context for later access by monitoring task
-        self._monitored_context = context
-        
-        # Flag to control the monitoring loop
-        self._continue_monitoring = True
-        
-        # Start the monitoring task
-        asyncio.create_task(self._monitor_tabs_task())
+    async def _close_extra_tabs(self, context, profile, max_recursion=3):
+        """Closes any browser tabs beyond the first one."""
+        await asyncio.sleep(4) # Wait for tab to open.
 
-    async def _monitor_tabs_task(self):
-        """Task that periodically checks for and closes extra tabs"""
-        try:
-            while self._continue_monitoring:
-                # Check for extra tabs every 3 seconds
-                await asyncio.sleep(3)
-                
-                # Skip if context is no longer valid
-                if not hasattr(self, '_monitored_context'):
-                    break
-                    
-                try:
-                    context = self._monitored_context
-                    pages = context.pages
-                    
-                    # Close any tabs beyond the first one
-                    if len(pages) > 1:
-                        self._log(f"Tab monitor: Found {len(pages) - 1} extra tab(s). Closing them.")
-                        
-                        # Close all but the first tab
-                        for i in range(1, len(pages)):
-                            try:
-                                await pages[i].close()
-                            except Exception:
-                                # Silently continue if we can't close a tab
-                                pass
-                except Exception:
-                    # Ignore errors since this is a background task
-                    pass
-        except Exception as e:
-            self._log(f"Tab monitoring task error: {e}")
-        finally:
-            self._continue_monitoring = False
-
-    async def _close_extra_tabs(self, context):
-        """Close any tabs beyond the first one (which might be opened by extensions)"""
-        wait_time = 1.5
-        
-        # For AdBlock extensions, wait longer for initial tab to appear
-        if "adblock" in self.extension_name.lower():
-            wait_time = 3.0
-            self._log(f"Using longer wait time for {self.extension_name} tabs")
-        
-        # Wait for extension tabs to fully open
-        await asyncio.sleep(wait_time)
-        
-        # Get all pages in the context
         pages = context.pages
-        
-        if len(pages) > 1:
-            self._log(f"Found {len(pages) - 1} extra tab(s) opened by extensions. Closing them.")
-            
-            # Close all pages except the first one
-            for i in range(1, len(pages)):
-                try:
-                    await pages[i].close()
-                except Exception as e:
-                    self._log(f"Error closing tab {i}: {str(e)}")
-        
-        # Make sure we have at least one page open
-        if len(context.pages) == 0:
-            self._log("Creating a new page as all were closed")
-            await context.new_page()
 
-    async def _clear_browser_data(self, context):
-        """Clear browser data"""
-        await context.clear_cookies()
-        await context.clear_permissions()
-        
-        # Use page-level JavaScript to clear storage with error handling
-        page = context.pages[0] if context.pages else None
-        if page:
+        # Close pages from the newest back to the second page (index 1)
+        if len(pages) > 1:
+            self._log(f"Closing {len(pages) - 1} extra tab(s) at startup for profile: {profile}")
             try:
-                # Use a safer approach with try/catch inside the JS
-                await page.evaluate("""() => {
-                    try {
-                        if (window.localStorage) {
-                            localStorage.clear();
-                            console.log('LocalStorage cleared');
-                        }
-                        if (window.sessionStorage) {
-                            sessionStorage.clear();
-                            console.log('SessionStorage cleared');
-                        }
-                        return true;
-                    } catch (e) {
-                        console.log('Storage clearing error (expected on blank pages):', e);
-                        return false;
-                    }
-                }""")
-                await asyncio.sleep(1)
+                await pages[1].close()
+
+                #resize the window to the viewport size
+                await asyncio.sleep(0.5)
+                page = context.pages[0]
+                try:
+                    await page.set_viewport_size(self.viewport)
+                except Exception as e:
+                    tqdm.write(f"Error setting viewport size: {e}")
             except Exception as e:
-                tqdm.write(f"Note: Could not clear page storage: {e}")
+                tqdm.write(f"Error closing extra tab: {e}")
+        else:
+            #additional wait for browser to initialize
+            if max_recursion > 0:
+                await asyncio.sleep(4)
+                await self._close_extra_tabs(context, profile=self.extension_name, max_recursion=max_recursion-1)
+            else:
+                tqdm.write(f"Max recursion reached for profile: {profile}")
 
     async def crawl_site(self, domain, user_data_dir=None, full_extension_path=None, headless=False, viewport=None):
-        """Crawl a website multiple times to analyze cookie persistence"""
         self.base_domain = domain.lower().replace('www.', '')
-
         visit_results = []
-
-        # Load pre-collected URLs
         urls = await self._load_pre_collected_urls(domain)
         if not urls:
-            return {'null': 'no urls found'}
-
-        # Initial browser setup
-        await self._initial_browser_setup(user_data_dir, full_extension_path, headless, viewport)
+            self._log(f"No pre-collected URLs found for {domain}. Skipping.")
+            return {'domain': domain, 'error': 'no_urls_found', 'timestamp': datetime.now().isoformat()}
 
         for visit in range(self.visits):
-            visited_in_this_cycle = []
+            context = None
+            p = None
 
-            # Browser session for this visit
-            async with async_playwright() as p:
+            try:
+                p = await async_playwright().start()
                 context = await self._setup_browser(p, user_data_dir, full_extension_path, headless, viewport)
-                
-                # Use the existing page instead of creating a new one
-                page = context.pages[0]  # Get the first page that's automatically created
+                page = context.pages[0] # Assumes setup provides at least one page
 
-                # Setup monitoring
                 await self._setup_monitoring(page, visit)
-
-                # Visit the homepage
                 await self._visit_homepage(page, domain)
-
-                # Visit URLs
+                await asyncio.sleep(0.5) #small wait for browser to initialize
                 visited_in_this_cycle = await self._visit_urls(page, urls, visit)
-
-                # Collect visit results
                 visit_results.append(await self._collect_visit_results(visit, visited_in_this_cycle))
 
-                await context.close()
+            except Exception as visit_err:
+                self._log(f"Error during visit {visit} for {domain}: {visit_err}")
+                if visit == 0:
+                     self._log(f"Aborting crawl for {domain} due to error on first visit setup/execution.")
+                     return {'domain': domain, 'error': f'visit_0_failed: {visit_err}', 'timestamp': datetime.now().isoformat()}
 
-        # Construct and save the final data structure
-        return await self._construct_final_data(domain, visit_results)
+            finally:
+                try:
+                    await context.close()
+                    await p.stop()
+                except Exception as cleanup_err:
+                    tqdm.write(f"  WARNING: Error during cleanup for visit {visit}, domain {domain}: {cleanup_err}")
+
+        if visit_results:
+            return await self._construct_final_data(domain, visit_results)
+        else:
+            tqdm.write(f"No successful visits completed for {domain}.")
+            error_reason = 'no_visits_completed'
+            if visit == 0 and not visit_results:
+                 error_reason = 'first_visit_failed_no_results'
+            return {'domain': domain, 'error': error_reason, 'timestamp': datetime.now().isoformat()}
 
     async def _load_pre_collected_urls(self, domain):
         """Load pre-collected URLs from a specified directory"""
         self._log("\nLoading pre-collected URLs...")
-        urls = load_site_pages(domain, input_dir="data/site_pages_final", count=self.subpages_nr)
+        urls = load_site_pages(domain, input_dir="data/site_pages_Trial100", count=self.subpages_nr)
         if not urls or len(urls) == 0:
             tqdm.write(f"ERROR: No pre-collected URLs found for {domain}")
             return None
         self._log(f"Loaded {len(urls)} pre-collected URLs for {domain}")
         return urls
-
-    async def _initial_browser_setup(self, user_data_dir, full_extension_path, headless, viewport):
-        """Perform initial browser setup and clear data"""
-        self._log("\nInitial browser session to clear data and visit homepage...")
-        async with async_playwright() as p:
-            context = await self._setup_browser(p, user_data_dir, full_extension_path, headless, viewport)
-            self._log("\nClearing browser data...")
-            await self._clear_browser_data(context)
-            self._log("✓ Browser data cleared")
-            await context.close()
 
     async def _setup_monitoring(self, page, visit):
         """Setup network, fingerprint, and storage monitoring"""
@@ -261,70 +171,52 @@ class WebsiteCrawler:
         homepage_url = f"https://{domain}"
         try:
             await page.goto(homepage_url, timeout=30000)
-            await page.wait_for_timeout(5000)
+            await page.wait_for_timeout(5000) # make sure extension has time to interact.
         except Exception as e:
             self._log(f"Error visiting homepage: {e}")
 
+
+    async def _capture_and_interact(self, page, url, visit, idx):
+        """Captures data (final URL, banner, storage) and simulates interaction.
+        Assumes 'banner' and 'storage' monitors are always initialized."""
+        final_url = page.url
+
+        if idx == 0:
+            await self.monitors['banner'].capture_on_subpage(
+                page, domain=self.base_domain, visit_number=visit, extension_name=self.extension_name
+            )
+
+        await self.monitors['storage'].capture_snapshot(page, visit_number=visit)
+
+        await self.user_simulator.simulate_interaction(page, url=url)
+
+        return final_url
+
     async def _visit_urls(self, page, urls, visit):
-        """Visit each URL and simulate user interaction"""
+        """Visit each URL, capture data, interact, and record results/errors."""
         visited_in_this_cycle = []
-        
+
         for idx, url in enumerate(urls):
+            final_url = None
+            error_message = None
+
             try:
-                # Shorten URL for display
-                display_url = url
-                if '?' in url:
-                    # Show only domain and path, no query parameters
-                    display_url = url.split('?')[0] + '...'
-                elif len(url) > 70:
-                    # If URL is too long even without parameters, truncate it
-                    display_url = url[:70] + '...'
-                
-                await page.goto(url, timeout=30000)
-                await page.wait_for_load_state('load')
-                await page.wait_for_timeout(random.uniform(4000, 5000))
-                
-                # Check for extension-opened tabs after each page load for monitored extensions
-                if self._requires_tab_monitoring():
-                    context = page.context
-                    if len(context.pages) > 1:
-                        self._log(f"Found new tab(s) after loading {display_url}. Closing...")
-                        
-                        # Close all tabs after the first one
-                        for i in range(1, len(context.pages)):
-                            try:
-                                await context.pages[i].close()
-                            except Exception:
-                                pass
-                
-                final_url = page.url
-                
-                # On the first subpage, capture banner state
-                if idx == 0 and 'banner' in self.monitors:
-                    try:
-                        # Pass current values as fallbacks
-                        await self.monitors['banner'].capture_on_subpage(
-                            page, 
-                            domain=self.base_domain,
-                            visit_number=visit,
-                            extension_name=self.extension_name
-                        )
-                    except Exception as e:
-                        print(f"Error in banner capture: {e}")
-                    
-                visited_in_this_cycle.append({"original": url, "final": final_url})
-                
-                # Capture storage after visiting
-                if 'storage' in self.monitors:
-                    await self.monitors['storage'].capture_snapshot(page, visit_number=visit)
-                    
-                # Simulate user interaction - PASS THE URL PARAMETER
-                await self.user_simulator.simulate_interaction(page, url=url)
-                
+                await page.goto(url, timeout=120000, wait_until='commit')
+                await page.wait_for_load_state('networkidle', timeout=120000)
+
+                final_url = await self._capture_and_interact(page, url, visit, idx)
+
             except Exception as e:
-                self._log(f"Error visiting {url}: {e}")
-                visited_in_this_cycle.append({"original": url, "error": str(e)})
-                
+                error_message = str(e)
+
+            result = {"original": url}
+            if error_message:
+                result["error"] = error_message
+            else:
+
+                result["final"] = final_url
+            visited_in_this_cycle.append(result)
+
         return visited_in_this_cycle
 
     async def _collect_visit_results(self, visit, visited_in_this_cycle):

@@ -44,7 +44,8 @@ def analyze_cookie_consent_text(directory, verbose=False):
         "cookie", "consent", "accept", "reject", "decline", 
         "privacy", "gdpr", "settings", "preferences",
         "necessary", "functional", "analytics", "marketing",
-        "all", "afslå", "acceptér", "alle"
+        "all", "afslå", "acceptér", "alle", "cookies",
+        "luk", "acceptér", "policy", "approve"
     ]
     
     # Compare each no_extension file with its corresponding extension files

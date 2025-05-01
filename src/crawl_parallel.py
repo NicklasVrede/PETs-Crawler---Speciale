@@ -34,7 +34,7 @@ async def crawl_with_profile(config, profile, sites, subpages_nr=2, verbose=Fals
             full_extension_path = None
             
         # Shuffle the sites list to randomize crawling order
-        sites_to_crawl = sites.copy()  # Create a copy to avoid modifying the original
+        sites_to_crawl = sites.copy()
         random.shuffle(sites_to_crawl)
         
         if verbose:
@@ -52,8 +52,7 @@ async def crawl_with_profile(config, profile, sites, subpages_nr=2, verbose=Fals
                     site_info=site_info,
                     data_dir=temp_profile_dir,
                     subpages_nr=subpages_nr,
-                    verbose=verbose,
-                    skip_existence_check=True  # Skip the check since we've done it already
+                    verbose=verbose
                 )
                 
                 if verbose:
@@ -207,7 +206,7 @@ if __name__ == "__main__":
     profiles = config.get('profiles', {}).keys()
     
     # Get all sites
-    sites = get_all_sites()
+    sites = get_all_sites(csv_path="data/db+ref/study-sites.csv")
     if not sites:
         print("No sites available to crawl")
         exit(1)
@@ -224,7 +223,7 @@ if __name__ == "__main__":
         profiles=profiles,
         sites=sites,
         max_concurrent=16,
-        subpages_nr=5,
+        subpages_nr=2,
         verbose=verbose
     ))
     

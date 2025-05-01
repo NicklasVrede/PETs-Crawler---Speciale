@@ -4,7 +4,7 @@ from analyzers.source_identifier import SourceIdentifier
 from analyzers.cookie_classifier import CookieClassifier
 from analyzers.add_domain_categories import add_categories_to_files
 from analyzers.banner_analyzer import BannerAnalyzer
-from analyzers.analyze_persistence import StorageAnalyzer
+from src.analyzers.storage_analyzer import StorageAnalyzer
 import time
 
 

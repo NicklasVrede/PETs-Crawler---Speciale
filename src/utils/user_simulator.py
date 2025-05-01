@@ -50,21 +50,32 @@ class UserSimulator:
     async def _move_mouse(self, page: Page, x_percent: float, y_percent: float):
         """Move mouse to a position specified by percentage of viewport dimensions"""
         try:
-            viewport_size = await page.evaluate('''() => {
-                return {
-                    width: window.innerWidth,
-                    height: window.innerHeight
-                }
-            }''')
-            
-            x_pos = int(viewport_size['width'] * x_percent)
-            y_pos = int(viewport_size['height'] * y_percent)
-            
-            self._log(f"Moving mouse to absolute position: ({x_pos}, {y_pos})")
-            await page.mouse.move(x_pos, y_pos)
-            
+            # Check if page is still valid before evaluating
+            if not page.is_closed():
+                viewport_size = await page.evaluate('''() => {
+                    return {
+                        width: window.innerWidth || 1000,
+                        height: window.innerHeight || 800
+                    }
+                }''', timeout=1000)  # Add timeout to avoid hanging
+                
+                x_pos = int(viewport_size['width'] * x_percent)
+                y_pos = int(viewport_size['height'] * y_percent)
+                
+                self._log(f"Moving mouse to absolute position: ({x_pos}, {y_pos})")
+                await page.mouse.move(x_pos, y_pos)
+            else:
+                self._log("Page is closed, skipping mouse movement")
+                
         except Exception as e:
-            tqdm.write(f"Error moving mouse: {e}")
+            # Just log the error and continue - don't let mouse errors break the flow
+            self._log(f"Error moving mouse (continuing anyway): {str(e)}")
+            # Use default position if we couldn't calculate properly
+            try:
+                if not page.is_closed():
+                    await page.mouse.move(500, 400)  # Move to a reasonable default position
+            except:
+                pass  # Ignore errors in the fallback too
 
     async def _perform_scrolling(self, page: Page, page_random, url=None):
         """Perform deterministic scrolling actions based on URL"""
@@ -115,13 +126,19 @@ class UserSimulator:
                 
                 self._log(f"Scroll step {step+1}/{steps}: scrolling to {next_position}px")
                 
-                # Perform the scroll
-                await page.evaluate(f'''() => {{
-                    window.scrollTo({{
-                        top: {next_position},
-                        behavior: "smooth"
-                    }});
-                }}''')
+                # First try the smooth scrolling method
+                try:
+                    await page.evaluate(f'''() => {{
+                        window.scrollTo({{
+                            top: {next_position},
+                            behavior: "smooth"
+                        }});
+                    }}''', timeout=500)  # Short timeout to quickly detect failures
+                except Exception as e:
+                    self._log(f"Smooth scrolling failed, falling back to wheel: {e}")
+                    # Fall back to Playwright's mouse wheel method
+                    scroll_amount = increment  # How much to scroll in this step
+                    await page.mouse.wheel(0, scroll_amount)
                 
                 # Fixed wait between scrolls
                 await asyncio.sleep(0.3)
