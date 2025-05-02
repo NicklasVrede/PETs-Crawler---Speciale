@@ -62,7 +62,8 @@ async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=5, verbose
             extension_name=profile,
             headless=headless,
             viewport=viewport,
-            domain=domain
+            domain=domain,
+            channel=channel
         )
         
         # Modify browser launch arguments based on profile
@@ -70,13 +71,16 @@ async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=5, verbose
         if profile != 'no_extensions' and full_extension_path:
             browser_args['full_extension_path'] = full_extension_path
         
-        
-        result = await crawler.crawl_site(
-            domain,
-            user_data_dir=crawl_user_data_dir,
-            **browser_args
-        )
-        
+        try:
+            result = await crawler.crawl_site(
+                domain,
+                user_data_dir=crawl_user_data_dir,
+                **browser_args
+            )
+        except Exception as e:
+            print(f"Error crawling {domain}: {str(e)}, using {profile} profile")
+
+
         # Store data
         if verbose:
             print(f"Saving data for domain {domain}...")
@@ -101,23 +105,20 @@ if __name__ == "__main__":
     profile_names = config.get('profiles', {}).keys()
     print("Profile names:", list(profile_names))
 
-    profile = 'disconnect'
-    
-    # Get all sites to crawl
-    all_sites = get_all_sites(csv_path='data/db+ref/study-sites.csv')
-    if all_sites:
-        # Just process the first site for testing
-        site_info = all_sites[0]  # Get only the first site
-        rank, domain = site_info
-        if verbose:
-            print(f"\n{'='*50}")
-            print(f"Processing site: {domain} (rank: {rank})")
-            print(f"{'='*50}\n")
-        
-        try:
-            asyncio.run(crawl_domain(profile, site_info=site_info))
-            print(f"Completed crawling {domain}")
-        except Exception as e:
-            print(f"Error crawling {domain}: {str(e)}")
-    else:
-        print("No sites available to crawl")
+    profile = 'no_extensions'
+
+    # Define the specific site to crawl directly
+    # You can change the rank (e.g., 1) and domain ("example.com") here
+    site_info = (1, "23andme.com")
+    rank, domain = site_info
+
+    if verbose:
+        print(f"\n{'='*50}")
+        print(f"Processing site: {domain} (rank: {rank})")
+        print(f"{'='*50}\n")
+
+    try:
+        asyncio.run(crawl_domain(profile, site_info=site_info, verbose=verbose)) # Pass verbose here too
+        print(f"Completed crawling {domain}")
+    except Exception as e:
+        print(f"Error crawling {domain}: {str(e)}")

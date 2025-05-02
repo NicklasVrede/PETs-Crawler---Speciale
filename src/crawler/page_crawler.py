@@ -12,7 +12,7 @@ from playwright_stealth import Stealth
 
 
 class WebsiteCrawler:
-    def __init__(self, subpages_nr=20, visits=2, verbose=False, monitors=None, extension_name=None, headless=False, viewport=None, domain=None):
+    def __init__(self, subpages_nr=20, visits=2, verbose=False, monitors=None, extension_name=None, headless=False, viewport=None, domain=None, channel=None):
         """Initialize the crawler with configuration parameters"""
         self.subpages_nr = subpages_nr
         self.visits = visits
@@ -23,7 +23,8 @@ class WebsiteCrawler:
         self.viewport = viewport
         self.user_simulator = UserSimulator()
         self.stealth = Stealth()
-        
+        self.channel = channel
+
         # Use provided monitors or create defaults
         self.monitors = monitors or {
             'network': NetworkMonitor(verbose=verbose),
@@ -37,8 +38,9 @@ class WebsiteCrawler:
         if self.verbose:
             tqdm.write(message)
 
+
     async def _setup_browser(self, p, user_data_dir, full_extension_path, headless, viewport):
-        """Setup browser with context"""
+        """Setup browser context and clear cookies."""
         browser_args = {}
         
         # Only add extension arguments if an extension is specified
@@ -57,9 +59,18 @@ class WebsiteCrawler:
             user_data_dir=user_data_dir,
             headless=self.headless,
             viewport=self.viewport,
+            channel=self.channel,
             **browser_args
         )
-        
+
+        # Clear cookies context-wide before any navigation in this visit
+        try:
+            await context.clear_cookies()
+            self._log("Cleared cookies for the new visit.")
+        except Exception as e:
+            self._log(f"Warning: Could not clear cookies: {e}")
+
+
         extensions_with_extra_tabs = ["adblock", "disconnect", "decentraleyes"]
         
 
@@ -72,9 +83,9 @@ class WebsiteCrawler:
         return context
 
 
-    async def _close_extra_tabs(self, context, profile, max_recursion=3):
+    async def _close_extra_tabs(self, context, profile, max_recursion=10):
         """Closes any browser tabs beyond the first one."""
-        await asyncio.sleep(4) # Wait for tab to open.
+        await asyncio.sleep(1) # Wait for tab to open.
 
         pages = context.pages
 
@@ -94,9 +105,8 @@ class WebsiteCrawler:
             except Exception as e:
                 tqdm.write(f"Error closing extra tab: {e}")
         else:
-            #additional wait for browser to initialize
+            #We try again.
             if max_recursion > 0:
-                await asyncio.sleep(4)
                 await self._close_extra_tabs(context, profile=self.extension_name, max_recursion=max_recursion-1)
             else:
                 tqdm.write(f"Max recursion reached for profile: {profile}")
@@ -110,46 +120,61 @@ class WebsiteCrawler:
             return {'domain': domain, 'error': 'no_urls_found', 'timestamp': datetime.now().isoformat()}
 
         for visit in range(self.visits):
-            context = None
-            p = None
-
+            page = None # Initialize page to None
+            context = None # Initialize context to None
             try:
-                p = await async_playwright().start()
-                context = await self._setup_browser(p, user_data_dir, full_extension_path, headless, viewport)
-                page = context.pages[0] # Assumes setup provides at least one page
+                # Use async with for Playwright instance
+                async with async_playwright() as p:
+                    # Use async with for browser context
+                    context = await self._setup_browser(p, user_data_dir, full_extension_path, headless, viewport)
+                    async with context: # Manage context lifecycle
+                        page = context.pages[0] # Assumes setup provides at least one page
 
-                await self._setup_monitoring(page, visit)
-                await self._visit_homepage(page, domain)
-                await asyncio.sleep(0.5) #small wait for browser to initialize
-                visited_in_this_cycle = await self._visit_urls(page, urls, visit)
-                visit_results.append(await self._collect_visit_results(visit, visited_in_this_cycle))
+                        try:
+
+                            await self._setup_monitoring(page, visit) # Setup monitors
+                            await self._visit_homepage(page, domain)
+                            await asyncio.sleep(0.5) # Small wait
+                            visited_in_this_cycle = await self._visit_urls(page, urls, visit)
+                            visit_results.append(await self._collect_visit_results(visit, visited_in_this_cycle))
+
+                        finally:
+                            #Tear down monitors
+                            if 'network' in self.monitors and hasattr(self.monitors['network'], 'teardown_monitoring'):
+                                    await self.monitors['network'].teardown_monitoring(page)
+                            self._log(f"Finished tearing down monitors for visit {visit}, domain {domain}.")
+                    
+                    #context teaddown using 'with' 
+
+                #playwright teardown using 'with'
+                    
 
             except Exception as visit_err:
                 self._log(f"Error during visit {visit} for {domain}: {visit_err}")
+                # Log the full traceback for debugging
+                import traceback
+                traceback.print_exc()
                 if visit == 0:
                      self._log(f"Aborting crawl for {domain} due to error on first visit setup/execution.")
+                     # 'async with' handles closing p and context automatically now
                      return {'domain': domain, 'error': f'visit_0_failed: {visit_err}', 'timestamp': datetime.now().isoformat()}
+            # No explicit finally needed here for p/context cleanup due to 'async with'
 
-            finally:
-                try:
-                    await context.close()
-                    await p.stop()
-                except Exception as cleanup_err:
-                    tqdm.write(f"  WARNING: Error during cleanup for visit {visit}, domain {domain}: {cleanup_err}")
 
         if visit_results:
             return await self._construct_final_data(domain, visit_results)
         else:
             tqdm.write(f"No successful visits completed for {domain}.")
             error_reason = 'no_visits_completed'
-            if visit == 0 and not visit_results:
-                 error_reason = 'first_visit_failed_no_results'
+
+            if self.visits > 0 and not visit_results:
+                 error_reason = 'first_visit_failed_or_all_failed' # More accurate description
             return {'domain': domain, 'error': error_reason, 'timestamp': datetime.now().isoformat()}
 
     async def _load_pre_collected_urls(self, domain):
         """Load pre-collected URLs from a specified directory"""
         self._log("\nLoading pre-collected URLs...")
-        urls = load_site_pages(domain, input_dir="data/site_pages_Trial100", count=self.subpages_nr)
+        urls = load_site_pages(domain, input_dir="data/site_pages_final", count=self.subpages_nr)
         if not urls or len(urls) == 0:
             tqdm.write(f"ERROR: No pre-collected URLs found for {domain}")
             return None
@@ -175,10 +200,16 @@ class WebsiteCrawler:
         except Exception as e:
             self._log(f"Error visiting homepage: {e}")
 
+        # Clear local/session storage after visiting the homepage
+        try:
+            await page.evaluate("() => { localStorage.clear(); sessionStorage.clear(); }")
+            self._log("Cleared local and session storage for the new visit.")
+        except Exception as e:
+            self._log(f"Warning: Could not clear local/session storage: {e}")
+
 
     async def _capture_and_interact(self, page, url, visit, idx):
-        """Captures data (final URL, banner, storage) and simulates interaction.
-        Assumes 'banner' and 'storage' monitors are always initialized."""
+        """Captures data (final URL, banner, storage) and simulates interaction."""
         final_url = page.url
 
         if idx == 0:
@@ -201,8 +232,8 @@ class WebsiteCrawler:
             error_message = None
 
             try:
-                await page.goto(url, timeout=120000, wait_until='commit')
-                await page.wait_for_load_state('networkidle', timeout=120000)
+                await page.goto(url, timeout=30000, wait_until='commit')
+                await page.wait_for_load_state('networkidle', timeout=30000)
 
                 final_url = await self._capture_and_interact(page, url, visit, idx)
 

@@ -73,7 +73,7 @@ async def crawl_with_profile(config, profile, sites, subpages_nr=2, verbose=Fals
         # Cleanup temporary profile directory
         if temp_profile_dir and os.path.exists(temp_profile_dir):
             if verbose:
-                print(f"Cleaning up temporary profile: {temp_profile_dir}")
+                tqdm.write(f"Cleaning up temporary profile: {temp_profile_dir}")
             import shutil
             shutil.rmtree(temp_profile_dir, ignore_errors=True)
 
@@ -206,7 +206,7 @@ if __name__ == "__main__":
     profiles = config.get('profiles', {}).keys()
     
     # Get all sites
-    sites = get_all_sites(csv_path="data/db+ref/study-sites.csv")
+    sites = get_all_sites(csv_path="data/db+ref/Tranco_final_sample.csv")
     if not sites:
         print("No sites available to crawl")
         exit(1)
@@ -223,7 +223,7 @@ if __name__ == "__main__":
         profiles=profiles,
         sites=sites,
         max_concurrent=16,
-        subpages_nr=2,
+        subpages_nr=15,
         verbose=verbose
     ))
     

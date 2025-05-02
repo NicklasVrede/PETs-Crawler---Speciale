@@ -91,15 +91,44 @@ class UserSimulator:
             self._log(f"Moving mouse to relative position ({mouse_x:.4f}, {mouse_y:.4f})")
             await self._move_mouse(page, mouse_x, mouse_y)
             
-            # Get page dimensions
-            metrics = await page.evaluate('''() => {
-                return {
-                    height: document.documentElement.scrollHeight,
-                    viewportHeight: window.innerHeight,
-                    availableScroll: document.documentElement.scrollHeight - window.innerHeight
-                }
-            }''')
-            
+            # Get page dimensions - wrap this in a try-except
+            metrics = None
+            try:
+                metrics = await page.evaluate('''() => {
+                    // Add checks for documentElement and body existence
+                    const docEl = document.documentElement;
+                    const body = document.body;
+                    if (!docEl && !body) return null; // Cannot get dimensions
+
+                    const height = Math.max(
+                        body?.scrollHeight ?? 0,
+                        docEl?.scrollHeight ?? 0,
+                        body?.offsetHeight ?? 0,
+                        docEl?.offsetHeight ?? 0,
+                        body?.clientHeight ?? 0,
+                        docEl?.clientHeight ?? 0
+                    );
+                    const viewportHeight = window.innerHeight || (docEl ? docEl.clientHeight : 0);
+
+                    return {
+                        height: height,
+                        viewportHeight: viewportHeight,
+                        availableScroll: Math.max(0, height - viewportHeight) // Ensure non-negative
+                    };
+                }''')
+                # Check if evaluate returned null due to missing elements
+                if metrics is None:
+                    self._log("Could not determine page dimensions (document elements missing?), skipping scroll.")
+                    return
+
+            except Exception as e:
+                # Catch errors during dimension evaluation (like the scrollHeight error)
+                self._log(f"Could not evaluate page dimensions: {e}. Skipping scroll.")
+                # Optionally check if the specific error occurred:
+                # if "scrollHeight" in str(e):
+                #     self._log("Encountered scrollHeight error, skipping scroll.")
+                return # Skip scrolling if dimensions can't be determined
+
             self._log(f"Page metrics: height={metrics['height']}, viewportHeight={metrics['viewportHeight']}, availableScroll={metrics['availableScroll']}")
             
             if metrics['availableScroll'] <= 0:
@@ -138,12 +167,18 @@ class UserSimulator:
                     self._log(f"Smooth scrolling failed, falling back to wheel: {e}")
                     # Fall back to Playwright's mouse wheel method
                     scroll_amount = increment  # How much to scroll in this step
-                    await page.mouse.wheel(0, scroll_amount)
+                    # Ensure page is still valid before wheel action
+                    if not page.is_closed():
+                        await page.mouse.wheel(0, scroll_amount)
+                    else:
+                        self._log("Page closed during scroll fallback, stopping scroll.")
+                        break # Exit scroll loop if page closed
                 
                 # Fixed wait between scrolls
                 await asyncio.sleep(0.3)
 
-            self._log(f"Scrolling complete, reached {target_scroll}px")
+            self._log(f"Scrolling complete, reached target {target_scroll}px")
 
         except Exception as e:
-            tqdm.write(f"Error during scrolling: {e}") 
+            # Catch any other unexpected error during the scrolling process
+            tqdm.write(f"Error during scrolling simulation: {e}") 
