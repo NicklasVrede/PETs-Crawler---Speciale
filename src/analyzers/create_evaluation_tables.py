@@ -69,12 +69,13 @@ def create_evaluation_tables(evaluation_dir, output_file=None):
                 
                 // Get all manual inputs
                 const pageLoaded = table.querySelector('input[name="page_loaded"]').checked;
-                const bannerStatus = table.querySelector('select[name="banner_status"]').value;
+                const noBannerPresent = table.querySelector('input[name="no_banner_present"]').checked;
                 const notes = table.querySelector('textarea[name="notes"]').value;
                 
-                // Derive banner_present and banner_removed from banner_status
-                const bannerPresent = bannerStatus === "present_not_removed" || bannerStatus === "present_removed";
-                const bannerRemoved = bannerStatus === "present_removed";
+                // Derive banner_present and banner_removed based on the checkbox
+                const bannerPresent = !noBannerPresent;
+                const bannerRemoved = false;
+                const bannerStatus = noBannerPresent ? "no_banner" : "present";
                 
                 // Get automated data
                 const automatedConclusion = table.querySelector('.automated-conclusion').textContent;
@@ -122,14 +123,6 @@ def create_evaluation_tables(evaluation_dir, output_file=None):
     <p>Complete the following evaluation by checking the appropriate boxes for each screenshot.</p>
     <p>When finished, click the "Export Results" button at the bottom to save your evaluations.</p>
     
-    <div>
-        <h3>Bulk Actions:</h3>
-        <button onclick="toggleAll('page_loaded', true)">Set All Pages Loaded</button>
-        <button onclick="toggleAll('page_loaded', false)">Clear All Pages Loaded</button>
-        <button onclick="setAllBannerStatus('no_banner')">Set All to No Banner</button>
-        <button onclick="setAllBannerStatus('present_not_removed')">Set All to Banner Present (Not Removed)</button>
-        <button onclick="setAllBannerStatus('present_removed')">Set All to Banner Present (Removed)</button>
-    </div>
     <hr>
 '''
     
@@ -159,6 +152,10 @@ def create_evaluation_tables(evaluation_dir, output_file=None):
             
             # Process each visit
             for visit_id, visit_data in sorted(overview_data.get('visits', {}).items()):
+                # Only process if the visit ID is 'visit1'
+                if visit_id != "visit1":
+                    continue
+                
                 # Find corresponding screenshots
                 screenshot_files = [f for f in os.listdir(ext_dir) 
                                    if f.endswith(('.png', '.jpg')) and visit_id in f]
@@ -199,12 +196,7 @@ def create_evaluation_tables(evaluation_dir, output_file=None):
     <tr class="manual-input">
         <td>Page Loaded Correctly? <input type="checkbox" name="page_loaded"></td>
         <td colspan="2">
-            Banner Status: 
-            <select name="banner_status">
-                <option value="no_banner">No Banner Present</option>
-                <option value="present_not_removed">Banner Present (Not Removed)</option>
-                <option value="present_removed">Banner Present (Removed)</option>
-            </select>
+            <input type="checkbox" name="no_banner_present"> No Banner Present
         </td>
     </tr>
     <tr class="manual-input">
@@ -233,12 +225,13 @@ def create_evaluation_tables(evaluation_dir, output_file=None):
 def analyze_evaluation_results(json_file):
     """
     Analyze the evaluation results JSON file to calculate accuracy metrics
+    based on banner presence detection.
     
     Args:
         json_file: Path to the exported JSON results file
     
     Returns:
-        dict: Metrics including accuracy, false positives, false negatives
+        dict: Metrics including accuracy, false positives, false negatives for presence detection.
     """
     with open(json_file, 'r') as f:
         results = json.load(f)
@@ -246,11 +239,10 @@ def analyze_evaluation_results(json_file):
     metrics = {
         "total_evaluations": len(results),
         "pages_loaded": 0,
-        "banners_present": 0,
-        "banners_removed": 0,
-        "automated_accuracy": 0,
-        "false_positives": 0,
-        "false_negatives": 0,
+        "banners_present_manual": 0,
+        "automated_detection_accuracy": 0,
+        "false_positives_detection": 0,
+        "false_negatives_detection": 0,
         "by_extension": {}
     }
     
@@ -261,9 +253,9 @@ def analyze_evaluation_results(json_file):
         if extension not in metrics["by_extension"]:
             metrics["by_extension"][extension] = {
                 "total": 0,
-                "correct": 0,
-                "false_positives": 0,
-                "false_negatives": 0
+                "correct_detection": 0,
+                "false_positives_detection": 0,
+                "false_negatives_detection": 0
             }
         
         # Count basic stats
@@ -271,65 +263,70 @@ def analyze_evaluation_results(json_file):
             metrics["pages_loaded"] += 1
         
         if result["manual"]["banner_present"]:
-            metrics["banners_present"] += 1
-            
-        if result["manual"]["banner_removed"]:
-            metrics["banners_removed"] += 1
+            metrics["banners_present_manual"] += 1
         
-        # Determine if automated conclusion was correct
+        # Determine if automated conclusion correctly detected banner presence/absence
         automated_conclusion = result["automated"]["conclusion"]
-        manual_removed = result["manual"]["banner_removed"]
+        manual_banner_present = result["manual"]["banner_present"]
         
         metrics["by_extension"][extension]["total"] += 1
         
-        # Simplified logic to determine correctness
-        is_correct = False
-        is_false_positive = False
-        is_false_negative = False
+        # Simplified logic to determine correctness of *detection*
+        is_correct_detection = False
+        is_false_positive_detection = False
+        is_false_negative_detection = False
         
         # Only evaluate on correctly loaded pages
         if result["manual"]["page_loaded"]:
-            # Case 1: Banner present + not removed + conclusion "not_removed" = correct
-            if result["manual"]["banner_present"] and not manual_removed and automated_conclusion in ["not_removed", "unknown"]:
-                is_correct = True
-                
-            # Case 2: Banner present + removed + conclusion "removed" = correct
-            elif result["manual"]["banner_present"] and manual_removed and automated_conclusion in ["removed", "likely_removed"]:
-                is_correct = True
-                
-            # Case 3: No banner + conclusion "not_removed" = correct
-            elif not result["manual"]["banner_present"] and automated_conclusion in ["not_removed", "unknown"]:
-                is_correct = True
-                
-            # False positive: System said removed but it wasn't
-            elif not manual_removed and automated_conclusion in ["removed", "likely_removed"]:
-                is_false_positive = True
-                
-            # False negative: System missed that banner was removed
-            elif manual_removed and automated_conclusion in ["not_removed", "unknown"]:
-                is_false_negative = True
-        
-        if is_correct:
-            metrics["automated_accuracy"] += 1
-            metrics["by_extension"][extension]["correct"] += 1
-        
-        if is_false_positive:
-            metrics["false_positives"] += 1
-            metrics["by_extension"][extension]["false_positives"] += 1
+            # Automated system indicated banner presence (removed or likely_removed)
+            automated_detected_banner = automated_conclusion in ["removed", "likely_removed"]
+            # Automated system indicated banner absence (not_removed or unknown)
+            automated_missed_banner = automated_conclusion in ["not_removed", "unknown"]
             
-        if is_false_negative:
-            metrics["false_negatives"] += 1
-            metrics["by_extension"][extension]["false_negatives"] += 1
+            # Case 1: Manual=No Banner, Automated=No Banner -> Correct
+            if not manual_banner_present and automated_missed_banner:
+                is_correct_detection = True
+            
+            # Case 2: Manual=Banner Present, Automated=Banner Present -> Correct
+            elif manual_banner_present and automated_detected_banner:
+                is_correct_detection = True
+            
+            # Case 3: Manual=No Banner, Automated=Banner Present -> False Positive Detection
+            elif not manual_banner_present and automated_detected_banner:
+                is_false_positive_detection = True
+            
+            # Case 4: Manual=Banner Present, Automated=No Banner -> False Negative Detection
+            elif manual_banner_present and automated_missed_banner:
+                is_false_negative_detection = True
+        
+        if is_correct_detection:
+            metrics["automated_detection_accuracy"] += 1
+            metrics["by_extension"][extension]["correct_detection"] += 1
+        
+        if is_false_positive_detection:
+            metrics["false_positives_detection"] += 1
+            metrics["by_extension"][extension]["false_positives_detection"] += 1
+        
+        if is_false_negative_detection:
+            metrics["false_negatives_detection"] += 1
+            metrics["by_extension"][extension]["false_negatives_detection"] += 1
     
     # Calculate percentages
+    valid_evals = metrics["pages_loaded"]
+    if valid_evals > 0:
+        metrics["accuracy_percentage"] = (metrics["automated_detection_accuracy"] / valid_evals) * 100
+        metrics["fp_detection_percentage"] = (metrics["false_positives_detection"] / valid_evals) * 100
+        metrics["fn_detection_percentage"] = (metrics["false_negatives_detection"] / valid_evals) * 100
+    
     if metrics["total_evaluations"] > 0:
-        metrics["accuracy_percentage"] = (metrics["automated_accuracy"] / metrics["total_evaluations"]) * 100
         metrics["loaded_percentage"] = (metrics["pages_loaded"] / metrics["total_evaluations"]) * 100
         
         for ext in metrics["by_extension"]:
             ext_total = metrics["by_extension"][ext]["total"]
             if ext_total > 0:
-                metrics["by_extension"][ext]["accuracy_percentage"] = (metrics["by_extension"][ext]["correct"] / ext_total) * 100
+                metrics["by_extension"][ext]["accuracy_percentage"] = (metrics["by_extension"][ext]["correct_detection"] / ext_total) * 100
+                metrics["by_extension"][ext]["fp_detection_percentage"] = (metrics["by_extension"][ext]["false_positives_detection"] / ext_total) * 100
+                metrics["by_extension"][ext]["fn_detection_percentage"] = (metrics["by_extension"][ext]["false_negatives_detection"] / ext_total) * 100
     
     return metrics
 

@@ -343,18 +343,21 @@ def analyze_crawler_data(json_file):
                 if category:
                     identified_cookies += 1
                     
+                    # Ensure exclusive counting for categories
                     if 'necessary' in category or 'essential' in category:
                         necessary_cookies += 1
-                    elif 'preference' in category or 'functional' in category:
-                        preference_cookies += 1
-                    elif 'functional' in category:
+                    elif 'functional' in category: # Check functional first
                         functional_cookies += 1
+                    elif 'preference' in category: # Then check preference
+                        preference_cookies += 1
                     elif 'marketing' in category or 'advertising' in category or 'targeting' in category:
                         marketing_cookies += 1
                     elif 'statistic' in category or 'analytics' in category or 'performance' in category:
                         statistics_cookies += 1
                     else:
                         unclassified_cookies += 1
+                else: # If no category is provided, count as unclassified
+                    unclassified_cookies += 1
         
         # Always count secure and httpOnly regardless of where cookie data comes from
         if cookies_data:
@@ -693,9 +696,9 @@ def process_folder(folder_path, extension_name):
             results.append(result)
     
     # Print all the unique categories we've found once per folder
-    tqdm.write(f"\nCategories encountered in '{extension_name}':")
-    tqdm.write(f"- All categories: {sorted(ALL_CATEGORIES_ENCOUNTERED)}")
-    tqdm.write(f"- Unmatched categories: {sorted(UNMATCHED_CATEGORIES)}\n")
+    #tqdm.write(f"\nCategories encountered in '{extension_name}':")
+    #tqdm.write(f"- All categories: {sorted(ALL_CATEGORIES_ENCOUNTERED)}")
+    #tqdm.write(f"- Unmatched categories: {sorted(UNMATCHED_CATEGORIES)}\n")
             
     return results
 
@@ -756,8 +759,8 @@ def process_all_folders(json_dir, output_csv):
 
 if __name__ == "__main__":
     # Base directory for crawler data
-    json_dir = "data/crawler_data non-kameleo"
-    output_csv = "data/csv/non-kameleo.csv"
+    json_dir = "data/crawler_data"
+    output_csv = "data/csv/trial02.csv"
     
     # Ensure output directory exists
     os.makedirs(os.path.dirname(output_csv), exist_ok=True)

@@ -395,7 +395,7 @@ def save_site_pages(domain, pages, output_dir="data/site_pages_Trial100"):
     return filename
 
 
-def load_site_pages(domain, input_dir="data/site_pages_Trial100", count=20):
+def load_site_pages(domain, input_dir="data/site_pages_final", count=20):
     """Load collected pages from a JSON file and return the top N"""
     safe_domain = domain.replace(".", "_")
     filename = os.path.join(input_dir, f"{safe_domain}.json")
@@ -410,7 +410,6 @@ def load_site_pages(domain, input_dir="data/site_pages_Trial100", count=20):
         #tqdm.write(f"Loaded top {len(pages)} pages for {domain} from {filename}")
         return pages
     except FileNotFoundError:
-        tqdm.write(f"No saved pages found for {domain}")
         return None
 
 
@@ -491,7 +490,7 @@ async def collect_site_chunk(domains_chunk, chunk_id, setup, max_pages, homepage
         await asyncio.sleep(1)
 
 
-async def collect_all_site_pages(setup='i_dont_care_about_cookies', max_pages=40, homepage_links=10, num_browsers=4, domain_path="data/db+ref/study-sites.csv", output_dir="data/site_pages_Trial100"):
+async def collect_all_site_pages(setup='i_dont_care_about_cookies', max_pages=40, homepage_links=10, num_browsers=8, domain_path="data/db+ref/study-sites.csv", output_dir="data/site_pages_Trial100"):
     """Collect pages for all domains in study-sites.csv using multiple browser instances"""
     # Load domains from CSV
     domains = []
@@ -615,4 +614,4 @@ async def collect_all_site_pages(setup='i_dont_care_about_cookies', max_pages=40
 
 
 if __name__ == "__main__":
-    asyncio.run(collect_all_site_pages(domain_path="data/db+ref/study-sites.csv", output_dir="data/site_pages_Trial100")) 
+    asyncio.run(collect_all_site_pages(domain_path="data/db+ref/Tranco_final_sample.csv", output_dir="data/site_pages_final")) 
