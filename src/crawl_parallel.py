@@ -222,7 +222,7 @@ if __name__ == "__main__":
         config=config,
         profiles=profiles,
         sites=sites,
-        max_concurrent=16,
+        max_concurrent=18,
         subpages_nr=15,
         verbose=verbose
     ))

@@ -105,11 +105,11 @@ if __name__ == "__main__":
     profile_names = config.get('profiles', {}).keys()
     print("Profile names:", list(profile_names))
 
-    profile = 'no_extensions'
+    profile = 'i_dont_care_about_cookies'
 
     # Define the specific site to crawl directly
     # You can change the rank (e.g., 1) and domain ("example.com") here
-    site_info = (1, "23andme.com")
+    site_info = (1, "msu.edu")
     rank, domain = site_info
 
     if verbose:

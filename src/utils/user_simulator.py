@@ -30,12 +30,6 @@ class UserSimulator:
                 page_random = self.random
                 self._log(f"No URL provided, using instance random generator")
                 
-            # Ensure page is ready
-            await page.wait_for_load_state('domcontentloaded')
-            self._log("Page loaded, beginning interaction simulation")
-            
-            # Fixed initial delay
-            await asyncio.sleep(0.5)
 
             # Deterministic scrolling based on URL
             self._log("Starting scrolling simulation")
@@ -156,22 +150,46 @@ class UserSimulator:
                 self._log(f"Scroll step {step+1}/{steps}: scrolling to {next_position}px")
                 
                 # First try the smooth scrolling method
+                smooth_scroll_succeeded = False
                 try:
+                    # Remove the unsupported 'timeout' argument
                     await page.evaluate(f'''() => {{
                         window.scrollTo({{
                             top: {next_position},
                             behavior: "smooth"
                         }});
-                    }}''', timeout=500)  # Short timeout to quickly detect failures
+                    }}''')
+                    # If evaluate succeeds, assume smooth scroll was initiated
+                    smooth_scroll_succeeded = True
+                    self._log("Smooth scroll initiated via evaluate.")
+                    await asyncio.sleep(0.5) # Give animation 0.5s
+
                 except Exception as e:
-                    self._log(f"Smooth scrolling failed, falling back to wheel: {e}")
+                    error_type = type(e).__name__
+                    self._log(f"Smooth scrolling failed ({error_type}: {e}), falling back to wheel.")
+
+
+                # If smooth scroll failed, use the fallback
+                if not smooth_scroll_succeeded:
                     # Fall back to Playwright's mouse wheel method
                     scroll_amount = increment  # How much to scroll in this step
                     # Ensure page is still valid before wheel action
                     if not page.is_closed():
-                        await page.mouse.wheel(0, scroll_amount)
+                        try:
+                            # Add a timeout around the wheel action
+                            scroll_timeout = 2.0 # seconds
+                            await asyncio.wait_for(
+                                page.mouse.wheel(0, scroll_amount),
+                                timeout=scroll_timeout
+                            )
+                        except asyncio.TimeoutError:
+                            tqdm.write(f"Mouse wheel action timed out after {scroll_timeout}s. Stopping scroll for this page.")
+                            break # Exit scroll loop if wheel times out
+                        except Exception as wheel_err:
+                            tqdm.write(f"Error during mouse wheel action: {wheel_err}. Stopping scroll for this page.")
+                            break # Exit scroll loop on other wheel errors
                     else:
-                        self._log("Page closed during scroll fallback, stopping scroll.")
+                        tqdm.write("Page closed during scroll fallback, stopping scroll.")
                         break # Exit scroll loop if page closed
                 
                 # Fixed wait between scrolls

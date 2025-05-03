@@ -111,7 +111,7 @@ def analyze_evaluation_results(json_file):
 
 if __name__ == "__main__":
     # --- Configuration ---
-    DEFAULT_JSON_FILE = "banner_system_eval/banner_evaluation_1.json" # CHANGE THIS to your actual file name
+    DEFAULT_JSON_FILE = "banner_system_eval/banner_evaluation_1.json"
     # ---------------------
 
     print(f"Analyzing evaluation results from: {DEFAULT_JSON_FILE}")
