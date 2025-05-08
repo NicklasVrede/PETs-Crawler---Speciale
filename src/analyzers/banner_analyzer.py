@@ -25,8 +25,8 @@ class BannerAnalyzer:
         """Initialize with paths to data directories"""
         self.banner_data_dir = banner_data_dir
         self.crawler_data_dir = crawler_data_dir
+        self.verbose = verbose 
         self.extension_folders = self.get_extension_folders()
-        self.verbose = verbose
 
     def _log(self, message):
         """Log a message if verbose is True"""
@@ -880,13 +880,13 @@ if __name__ == "__main__":
     
     def test_single_extension():
         # Single extension test code
-        analyzer = BannerAnalyzer(banner_data_dir="data/Varies runs/banner_data Non-kameleo", 
-                                crawler_data_dir="data/Varies runs/crawler_data Non-kameleo",
+        analyzer = BannerAnalyzer(banner_data_dir="data/Varies runs/banner_data_trial02", 
+                                crawler_data_dir="data/Varies runs/crawler_data_trial02",
                                 verbose=True)
     
         # Choose a domain and extension to test
-        test_domain = "wipo.int"  # Replace with an actual domain in your dataset
-        test_extension = "adguard"
+        test_domain = "sap.com"  # Replace with an actual domain in your dataset
+        test_extension = "consent_o_matic_opt_in"
         
         # Run the single extension test
         results = analyzer.analyze_single_extension(
@@ -897,7 +897,7 @@ if __name__ == "__main__":
     
         tqdm.write("\nTest completed")
     
-    test_single_extension()
+    #test_single_extension()
 
     def evaluate_banners():
         # Evaluation Run
@@ -909,11 +909,11 @@ if __name__ == "__main__":
         # 2. Create evaluation dataset
         stats = analyzer.create_evaluation_dataset(
             output_dir="evaluation_data",
-            nr_domains=60,
+            nr_domains=100,
             extensions_to_evaluate=["no_extensions", "consent_o_matic_opt_in", "adguard"]
         )
                 
         tqdm.write("\nEvaluation stats:")
         tqdm.write(json.dumps(stats, indent=2))
 
-    #evaluate_banners()
+    evaluate_banners()

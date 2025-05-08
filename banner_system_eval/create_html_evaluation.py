@@ -47,10 +47,46 @@ def create_html_evaluation_file(evaluation_dir, output_file=None):
         table {{ border-collapse: collapse; margin-bottom: 30px; width: 100%; }}
         th, td {{ border: 1px solid #ddd; padding: 8px; }}
         th {{ background-color: #f2f2f2; text-align: left; }}
-        img {{ max-width: 800px; height: auto; display: block; margin-left: auto; margin-right: auto; }}
+        img {{ 
+            max-width: 1200px; 
+            width: 95%;
+            height: auto; 
+            display: block; 
+            margin-left: auto; 
+            margin-right: auto;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+        }}
+        img:hover {{
+            transform: scale(1.02);
+        }}
         .screenshot {{ text-align: center; }}
         .manual-input {{ background-color: #ffffcc; }}
-        input[type="checkbox"] {{ transform: scale(1.5); margin-right: 10px; vertical-align: middle; }}
+        input[type="checkbox"] {{ 
+            transform: scale(3); 
+            margin-right: 15px; 
+            vertical-align: middle; 
+            cursor: pointer;
+        }}
+        .checkbox-label {{
+            display: inline-block;
+            padding: 12px 16px;
+            background-color: #f5f5f5;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.2s;
+            font-size: 16px;
+            font-weight: bold;
+            width: 90%;
+        }}
+        .checkbox-label:hover {{
+            background-color: #e0e0e0;
+        }}
+        .checkbox-container {{
+            margin-bottom: 20px;
+        }}
         textarea {{ width: 98%; height: 60px; padding: 5px; }}
         .domain-header {{ background-color: #4CAF50; color: white; font-size: 1.2em; padding: 10px; margin-top: 20px; }}
         .extension-header {{ background-color: #2196F3; color: white; }}
@@ -58,6 +94,34 @@ def create_html_evaluation_file(evaluation_dir, output_file=None):
                        border: none; cursor: pointer; font-size: 16px; margin: 20px 0; }}
         .info-cell {{ vertical-align: top; }}
         .analysis-label {{ font-weight: bold; }}
+        
+        /* Image modal */
+        .modal {{
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.9);
+        }}
+        .modal-content {{
+            margin: auto;
+            display: block;
+            max-width: 90%;
+            max-height: 90%;
+        }}
+        .modal-close {{
+            position: absolute;
+            top: 15px;
+            right: 35px;
+            color: #f1f1f1;
+            font-size: 40px;
+            font-weight: bold;
+            cursor: pointer;
+        }}
     </style>
     <script>
         function exportToJSON() {{
@@ -78,7 +142,7 @@ def create_html_evaluation_file(evaluation_dir, output_file=None):
                 const notesInput = table.querySelector('textarea[name="notes"]');
 
                 if (!pageLoadedInput || !noBannerPresentInput || !notesInput) {{
-                    console.error(`Could not find all manual input elements for table ${table.id}`);
+                    console.error(`Could not find all manual input elements for table ${{table.id}}`);
                     return; // Skip this table if elements are missing
                 }}
 
@@ -99,7 +163,7 @@ def create_html_evaluation_file(evaluation_dir, output_file=None):
                 const screenshotAnalysisElem = table.querySelector('.screenshot-analysis');
 
                 if (!automatedConclusionElem || !pageStatusElem || !htmlAnalysisElem || !screenshotAnalysisElem) {{
-                    console.error(`Could not find all automated data elements for table ${table.id}`);
+                    console.error(`Could not find all automated data elements for table ${{table.id}}`);
                     return; // Skip this table if elements are missing
                 }}
 
@@ -141,12 +205,45 @@ def create_html_evaluation_file(evaluation_dir, output_file=None):
             linkElement.setAttribute('download', exportName);
             linkElement.click();
         }}
+        
+        // For image modal functionality
+        document.addEventListener('DOMContentLoaded', function() {{
+            // Create modal element
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.innerHTML = '<span class="modal-close">&times;</span><img class="modal-content" id="expandedImg">';
+            document.body.appendChild(modal);
+            
+            const modalClose = modal.querySelector('.modal-close');
+            const modalImg = modal.querySelector('#expandedImg');
+            
+            // Add click event to all screenshots
+            document.querySelectorAll('.screenshot img').forEach(img => {{
+                img.onclick = function() {{
+                    modal.style.display = "block";
+                    modalImg.src = this.src;
+                }}
+            }});
+            
+            // Close modal when clicking the x
+            modalClose.onclick = function() {{
+                modal.style.display = "none";
+            }}
+            
+            // Close modal when clicking outside the image
+            modal.onclick = function(event) {{
+                if (event.target === modal) {{
+                    modal.style.display = "none";
+                }}
+            }}
+        }});
     </script>
 </head>
 <body>
     <h1>Banner Detection Evaluation</h1>
     <p>Complete the following evaluation by checking the appropriate boxes for each screenshot.</p>
     <p>When finished, click the "Export Results" button at the bottom to save your evaluations as a JSON file.</p>
+    <p><strong>Tip:</strong> Click on any screenshot to view it in full size.</p>
 
     <hr>
 '''
@@ -253,8 +350,18 @@ def create_html_evaluation_file(evaluation_dir, output_file=None):
             <span class="analysis-label">Screenshot Analysis:</span> <span class="screenshot-analysis">{visit_data.get('screenshot', 'unknown')}</span>
         </td>
         <td class="manual-input info-cell">
-            Page Loaded Correctly? <input type="checkbox" name="page_loaded"><br>
-            No Banner Present? <input type="checkbox" name="no_banner_present"><br>
+            <div class="checkbox-container">
+                <label class="checkbox-label">
+                    <input type="checkbox" name="page_loaded">
+                    Page Loaded Correctly?
+                </label>
+            </div>
+            <div class="checkbox-container">
+                <label class="checkbox-label">
+                    <input type="checkbox" name="no_banner_present">
+                    No Banner Present?
+                </label>
+            </div>
             Notes:<br> <textarea name="notes"></textarea>
         </td>
     </tr>
@@ -292,7 +399,7 @@ if __name__ == "__main__":
     # Set the default path to your evaluation data directory here
     DEFAULT_EVALUATION_DIR = "evaluation_data"
     # Set a specific output file path, or leave as None for a timestamped name
-    DEFAULT_OUTPUT_FILE = None
+    DEFAULT_OUTPUT_FILE = "banner_system_eval/banner_evaluation.html"
     # ---------------------
 
     print(f"Using evaluation directory: {DEFAULT_EVALUATION_DIR}")

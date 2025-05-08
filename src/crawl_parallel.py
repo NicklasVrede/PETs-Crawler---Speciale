@@ -74,8 +74,21 @@ async def crawl_with_profile(config, profile, sites, subpages_nr=2, verbose=Fals
         if temp_profile_dir and os.path.exists(temp_profile_dir):
             if verbose:
                 tqdm.write(f"Cleaning up temporary profile: {temp_profile_dir}")
-            import shutil
-            shutil.rmtree(temp_profile_dir, ignore_errors=True)
+            try:
+                import shutil
+                # Try multiple times in case of file locks
+                for attempt in range(3):
+                    try:
+                        shutil.rmtree(temp_profile_dir, ignore_errors=False)
+                        break
+                    except Exception as e:
+                        if attempt == 2:  # Last attempt
+                            tqdm.write(f"Failed to clean up {temp_profile_dir}: {e}")
+                        else:
+                            # Wait a bit before retrying
+                            await asyncio.sleep(1)
+            except Exception as e:
+                tqdm.write(f"Error during cleanup of {temp_profile_dir}: {str(e)}")
 
 
 def precheck_existing_data(profiles, sites, verbose=False):
