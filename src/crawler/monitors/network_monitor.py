@@ -5,7 +5,7 @@ import base64
 from typing import Dict, Set, List
 from collections import defaultdict
 import asyncio
-import tqdm
+from tqdm import tqdm
 
 class NetworkMonitor:
     def __init__(self, verbose=False):

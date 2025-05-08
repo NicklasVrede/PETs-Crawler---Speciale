@@ -380,6 +380,8 @@ def analyze_crawler_data(json_file):
         local_storage_get = 0
         session_storage_get = 0
         storage_potential_identifiers_count = 0
+        local_storage_potential_identifiers = 0  # Added variable for localStorage identifiers
+        session_storage_potential_identifiers = 0  # Added variable for sessionStorage identifiers
         
         if storage_data:
             local_storage_count = storage_data.get('local_storage_count', 0)
@@ -410,6 +412,8 @@ def analyze_crawler_data(json_file):
         if storage_analysis:
             potential_identifiers = storage_analysis.get('potential_identifiers', {})
             storage_potential_identifiers_count = potential_identifiers.get('total', 0)
+            local_storage_potential_identifiers = potential_identifiers.get('localStorage', 0)  # Extract localStorage identifiers
+            session_storage_potential_identifiers = potential_identifiers.get('sessionStorage', 0)  # Extract sessionStorage identifiers
         
         # Track top organizations and providers
         top_organizations = defaultdict(int)
@@ -647,6 +651,8 @@ def analyze_crawler_data(json_file):
             'local_storage_get': local_storage_get,
             'session_storage_get': session_storage_get,
             'storage_potential_identifiers_count': storage_potential_identifiers_count,
+            'local_storage_potential_identifiers': local_storage_potential_identifiers,
+            'session_storage_potential_identifiers': session_storage_potential_identifiers,
             
             # Fingerprinting metrics
             'total_fingerprinting_calls': total_fp_calls,

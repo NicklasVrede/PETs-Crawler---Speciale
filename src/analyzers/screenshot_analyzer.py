@@ -1,11 +1,15 @@
 import os
 import re
+import sys
 import pytesseract
 import cv2
 from collections import defaultdict
 from tqdm import tqdm
 from pprint import pprint
 
+# Add the root directory to the system path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+from src.utils.keywords import COOKIE_KEYWORDS
 
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
@@ -64,15 +68,6 @@ def analyze_screenshots(directory="data/banner_data/screenshots/active.com", ver
             visit_num = visit_match.group(1)
             visit_groups[visit_num]['extensions'].append(file)
     
-    # Cookie-related keywords to look for
-    cookie_keywords = [
-        "cookie", "consent", "accept", "reject", "decline", 
-        "privacy", "gdpr", "settings", "preferences",
-        "necessary", "functional", "analytics", "marketing",
-        "all", "afslå", "acceptér", "alle", "cookies",
-        "luk", "acceptér", "policy", "approve"
-    ]
-    
     # Compare each no_extension file with its corresponding extension files
     for visit_num, files in visit_groups.items():
         no_ext_file = files['no_extension']
@@ -97,7 +92,7 @@ def analyze_screenshots(directory="data/banner_data/screenshots/active.com", ver
             
             # Find cookie keywords in baseline image
             found_keywords = []
-            for keyword in cookie_keywords:
+            for keyword in COOKIE_KEYWORDS:
                 if keyword.lower() in no_ext_text:
                     found_keywords.append(keyword)
             

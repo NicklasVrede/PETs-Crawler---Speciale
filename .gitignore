@@ -62,3 +62,15 @@ extracted_scripts/
 
 #ignore all extensions
 extensions/
+
+#png files
+*.png
+
+#jpg files
+*.jpg
+
+#python cache
+*.pyc
+__pycache__/
+
+

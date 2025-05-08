@@ -4,10 +4,20 @@ import json
 from collections import defaultdict
 from tqdm import tqdm
 from pprint import pprint
+import sys
+
+# Add the root directory to the system path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+from src.utils.keywords import COOKIE_KEYWORDS
+
 
 def analyze_cookie_consent_text(directory, verbose=False):
     """
     Analyze HTML files to detect cookie consent text and compare between baseline and extensions
+    
+    Args:
+        directory: Path to the directory containing HTML files
+        verbose: Whether to print verbose output
     """
     # Get all HTML files in the directory
     all_files = [f for f in os.listdir(directory) if f.endswith('.html')]
@@ -39,15 +49,6 @@ def analyze_cookie_consent_text(directory, verbose=False):
             visit_num = visit_match.group(1)
             visit_groups[visit_num]['extensions'].append(file)
     
-    # Cookie-related keywords to look for
-    cookie_keywords = [
-        "cookie", "consent", "accept", "reject", "decline", 
-        "privacy", "gdpr", "settings", "preferences",
-        "necessary", "functional", "analytics", "marketing",
-        "all", "afslå", "acceptér", "alle", "cookies",
-        "luk", "acceptér", "policy", "approve"
-    ]
-    
     # Compare each no_extension file with its corresponding extension files
     for visit_num, files in visit_groups.items():
         no_ext_file = files['no_extension']
@@ -73,7 +74,7 @@ def analyze_cookie_consent_text(directory, verbose=False):
             
             # Find cookie keywords in baseline HTML
             found_keywords = []
-            for keyword in cookie_keywords:
+            for keyword in COOKIE_KEYWORDS:
                 if re.search(r'\b' + re.escape(keyword) + r'\b', no_ext_content, re.IGNORECASE):
                     found_keywords.append(keyword)
             
