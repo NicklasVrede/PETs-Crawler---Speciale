@@ -9,24 +9,36 @@ sys.path.insert(0, project_root)
 
 from analysis.display_names import DISPLAY_NAMES, PROFILE_GROUPS
 
-# Use request columns instead of domain columns
+# Use all request columns
 simplified_cols = [
-    "social_media_requests",    # Social (first)
-    "advertising_requests",     # Advertising (second)
-    "analytics_requests",       # Analytics (third)
-    "consent_management_requests", # Tag Manager (fourth)
-    "hosting_requests",         # CDN (fifth)
-    "miscellaneous_requests"    # Affiliate Marketing (sixth)
+    "social_media_requests",        # Social Media
+    "advertising_requests",         # Advertising
+    "analytics_requests",          # Analytics
+    "consent_management_requests",  # Consent Management
+    "hosting_requests",            # Hosting
+    "customer_interaction_requests", # Customer Interaction
+    "audio_video_requests",        # Audio/Video
+    "extensions_requests",         # Extensions
+    "adult_advertising_requests",  # Adult Advertising
+    "utilities_requests",          # Utilities
+    "miscellaneous_requests",      # Miscellaneous
+    "uncategorized_requests"       # Uncategorized
 ]
 
-# Colors matching the reference legend order
+# Colors for each category (we'll need to add more colors)
 simplified_colors = [
-    "#ff0000",  # Social - bright red
+    "#ff0000",  # Social Media - bright red
     "#ff9999",  # Advertising - light red/pink
     "#008800",  # Analytics - green
-    "#ccff99",  # Tag Manager - light green
-    "#0066cc",  # CDN - blue
-    "#99ccff",  # Affiliate Marketing - light blue
+    "#ccff99",  # Consent Management - light green
+    "#0066cc",  # Hosting - blue
+    "#99ccff",  # Customer Interaction - light blue
+    "#ff00ff",  # Audio/Video - magenta
+    "#ffcc00",  # Extensions - yellow
+    "#ff6600",  # Adult Advertising - orange
+    "#666666",  # Utilities - gray
+    "#000000",  # Miscellaneous - black
+    "#cccccc",  # Uncategorized - light gray
 ]
 
 df = pd.read_csv("data/csv/trial02.csv")
@@ -99,20 +111,25 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
         if current_position < len(all_profiles):
             plt.axvline(x=current_position - 0.5, color='black', linestyle=':', alpha=0.7)
 
-# Use the original column names in the legend
+# Update legend labels
 handles, old_labels = ax.get_legend_handles_labels()
 legend_labels = [col.replace('_requests', '') for col in simplified_cols]
 
-#find index of social_media_requests
-social_media_index = legend_labels.index("social_media")
-legend_labels[social_media_index] = "Social Media"
+# Special cases for multi-word labels
+special_cases = {
+    "social_media": "Social Media",
+    "consent_management": "Consent Management",
+    "customer_interaction": "Customer Interaction",
+    "audio_video": "Audio/Video",
+    "adult_advertising": "Adult Advertising"
+}
 
-#find index of consent_management
-consent_management_index = legend_labels.index("consent_management")
-legend_labels[consent_management_index] = "Consent Management"
-
-#Capitalize first letter of each word
-legend_labels = [label.title() for label in legend_labels]
+# Update labels
+for i, label in enumerate(legend_labels):
+    if label in special_cases:
+        legend_labels[i] = special_cases[label]
+    else:
+        legend_labels[i] = label.title()
 
 ax.legend(handles, legend_labels, bbox_to_anchor=(1.05, 1), loc='upper left')
 
