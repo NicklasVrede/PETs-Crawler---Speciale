@@ -25,6 +25,7 @@ class WebsiteCrawler:
         self.user_simulator = UserSimulator()
         self.stealth = Stealth()
         self.channel = channel
+        self.playwright = None  # Store the Playwright instance
 
         # Use provided monitors or create defaults
         self.monitors = monitors or {
@@ -120,26 +121,34 @@ class WebsiteCrawler:
             self._log(f"No pre-collected URLs found for {domain}. Skipping.")
             return {'domain': domain, 'error': 'no_urls_found', 'timestamp': datetime.now().isoformat()}
 
-        for visit in range(self.visits):
-            # Initialize p and context to None for cleanup in finally block
-            context = None
-            p = None
-            page = None # Initialize page to None
-            pending_tasks = []  # Track any pending tasks that might need cancellation
-
-            # Add global timeout for entire visit (set to 5 minutes)
-            visit_timeout = 600  # 10 minutes in seconds
-            try:
-                # Use asyncio.wait_for to enforce a global timeout for the entire visit
-                await asyncio.wait_for(
-                    self._perform_visit(domain, visit, urls, user_data_dir, full_extension_path, headless, viewport, visit_results, pending_tasks),
-                    timeout=visit_timeout
-                )
-            except asyncio.TimeoutError:
-                tqdm.write(f"TIMEOUT: Visit {visit} ({self.extension_name}) for {domain} timed out after {visit_timeout} seconds")
-                if visit == 0:
-                    return {'domain': domain, 'error': f'visit_0_timeout', 'timestamp': datetime.now().isoformat()}
-                # If timeout occurs after the first visit, we continue with next visit
+        # Start Playwright only once per crawl
+        try:
+            self.playwright = await async_playwright().start()
+            self._log("Started Playwright instance for entire crawl")
+            
+            for visit in range(self.visits):
+                # Add global timeout for entire visit (set to 10 minutes)
+                visit_timeout = 90_00 
+                try:
+                    # Use asyncio.wait_for to enforce a global timeout for the entire visit
+                    await asyncio.wait_for(
+                        self._perform_visit(domain, visit, urls, user_data_dir, full_extension_path, headless, viewport, visit_results),
+                        timeout=visit_timeout
+                    )
+                except asyncio.TimeoutError:
+                    tqdm.write(f"TIMEOUT: Visit {visit} ({self.extension_name}) for {domain} timed out after {visit_timeout} seconds")
+                    if visit == 0:
+                        return {'domain': domain, 'error': f'visit_0_timeout', 'timestamp': datetime.now().isoformat()}
+                    # If timeout occurs after the first visit, we continue with next visit
+        finally:
+            # Close Playwright once at the end of all visits
+            if self.playwright:
+                try:
+                    await self.playwright.stop()
+                    self._log("Playwright instance stopped at end of crawl")
+                except Exception as p_err:
+                    tqdm.write(f"WARNING: Error stopping Playwright for {domain}: {p_err}")
+                self.playwright = None
 
         if visit_results:
             # Construct final data if there were successful visits
@@ -207,7 +216,17 @@ class WebsiteCrawler:
             error_message = None
 
             try:
-                await page.goto(url, timeout=30000, wait_until='load')
+                await page.goto(url, timeout=30000, wait_until='commit')
+
+                try:
+                    await page.wait_for_load_state('domcontentloaded', timeout=5000)
+                except Exception as e:
+                    self._log(f"Note: domcontentloaded not reached for {url} - continuing anyway")
+
+                try:
+                    await page.wait_for_load_state('load', timeout=10000)
+                except Exception as e:
+                    self._log(f"Note: load not reached for {url} - continuing anyway")
 
                 # Optional: Short wait for network to settle, but with reduced timeout
                 try:
@@ -270,19 +289,15 @@ class WebsiteCrawler:
 
         return final_data
 
-    async def _perform_visit(self, domain, visit, urls, user_data_dir, full_extension_path, headless, viewport, visit_results, pending_tasks):
+    async def _perform_visit(self, domain, visit, urls, user_data_dir, full_extension_path, headless, viewport, visit_results):
         """Encapsulate a single visit for timeout handling"""
-        # Initialize p and context to None for cleanup in finally block
         context = None
-        p = None
-        page = None # Initialize page to None
-
+        page = None  # Initialize page to None
+        
         try:
-            # Start Playwright instance manually
-            p = await async_playwright().start()
-            # Setup browser context manually
-            context = await self._setup_browser(p, user_data_dir, full_extension_path, headless, viewport)
-            page = context.pages[0] # Assumes setup provides at least one page
+            # Setup browser context using the class-level Playwright instance
+            context = await self._setup_browser(self.playwright, user_data_dir, full_extension_path, headless, viewport)
+            page = context.pages[0]  # Assumes setup provides at least one page
 
             # Setup monitors
             await self._setup_monitoring(page, visit)
@@ -301,23 +316,6 @@ class WebsiteCrawler:
             except Exception as e:
                 self._log(f"Warning: Could not clear local/session storage: {e}")
 
-            # Teardown monitors safely
-            if 'network' in self.monitors and hasattr(self.monitors['network'], 'teardown_monitoring'):
-                try:
-                    await self.monitors['network'].teardown_monitoring(page)
-                    self._log(f"Network monitor teardown completed for visit {visit}.")
-                except Exception as teardown_err:
-                    self._log(f"Error during network monitor teardown: {teardown_err}")
-            
-            # Add teardown for other monitors if they have teardown methods
-            for monitor_name, monitor in self.monitors.items():
-                if monitor_name != 'network' and hasattr(monitor, 'teardown_monitoring'):
-                    try:
-                        await monitor.teardown_monitoring(page)
-                        self._log(f"{monitor_name} monitor teardown completed for visit {visit}.")
-                    except Exception as monitor_err:
-                        self._log(f"Error during {monitor_name} monitor teardown: {monitor_err}")
-
         except Exception as visit_err:
             self._log(f"Error during visit {visit} for {domain}: {visit_err}")
             # Log the full traceback for debugging
@@ -325,37 +323,18 @@ class WebsiteCrawler:
             traceback.print_exc()
             if visit == 0:
                  self._log(f"Aborting crawl for {domain} due to error on first visit setup/execution.")
-                 # Return error immediately if first visit fails
-                 # Cleanup will happen in the finally block
                  raise  # Re-raise to be caught by the timeout handler
 
         finally:
             # Ensure cleanup happens even if errors occur
             self._log(f"Starting cleanup for visit {visit}, domain {domain}...")
             
-            # Cancel any pending tasks that might be accessing the page
-            for task in pending_tasks:
-                if not task.done():
-                    task.cancel()
-            
-            # Small delay to allow any in-progress operations to complete
-            await asyncio.sleep(0.5)
-            
             if context:
                 try:
-                    await context.close()
+                    # Use a timeout for context closing
+                    await asyncio.wait_for(context.close(), timeout=10.0)
                     self._log("Browser context closed.")
                 except Exception as context_err:
-                    tqdm.write(f"  WARNING: Error closing context for visit {visit}, domain {domain}: {context_err}, profile: {self.extension_name}")
-            
-            # Another small delay before stopping playwright
-            await asyncio.sleep(0.1)
-            
-            if p:
-                try:
-                    await p.stop()
-                    self._log("Playwright instance stopped.")
-                except Exception as p_err:
-                    tqdm.write(f"  WARNING: Error stopping Playwright for visit {visit}, domain {domain}: {p_err}")
+                    tqdm.write(f"WARNING: Error closing context for visit {visit}, domain {domain}: {context_err}, profile: {self.extension_name}")
             
             self._log(f"Finished cleanup for visit {visit}, domain {domain}.")

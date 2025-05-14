@@ -9,7 +9,7 @@ from tqdm import tqdm
 import pprint
 
 
-async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=5, verbose=False):
+async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=15, verbose=False):
     """
     Crawl a single domain with configurable verbosity
     
@@ -100,7 +100,7 @@ async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=5, verbose
 
 if __name__ == "__main__":
     #available profiles
-    verbose = False
+    verbose = True
     config = load_config('config.json')
     profile_names = config.get('profiles', {}).keys()
     print("Profile names:", list(profile_names))
@@ -109,7 +109,7 @@ if __name__ == "__main__":
 
     # Define the specific site to crawl directly
     # You can change the rank (e.g., 1) and domain ("example.com") here
-    site_info = (1, "msu.edu")
+    site_info = (579249, "foodpress.ir")
     rank, domain = site_info
 
     if verbose:

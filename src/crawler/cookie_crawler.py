@@ -26,7 +26,7 @@ class CookieCrawler:
     Uses Playwright for browser automation and stores results in CookieDatabase.
     """
     
-    def __init__(self, database=None, headless=False, slow_mo=50, verbose=False):
+    def __init__(self, database=None, headless=False, verbose=False):
         """
         Initialize the cookie crawler with a browser instance.
         
@@ -38,7 +38,6 @@ class CookieCrawler:
         """
         self.database = database or CookieManager()
         self.headless = headless
-        self.slow_mo = slow_mo
         self.verbose = verbose
         self.playwright = None
         self.browser = None
@@ -57,7 +56,7 @@ class CookieCrawler:
         """Initialize the browser instance and page"""
         try:
             self.playwright = sync_playwright().start()
-            self.browser = self.playwright.chromium.launch(headless=self.headless, slow_mo=self.slow_mo)
+            self.browser = self.playwright.chromium.launch(headless=self.headless)
             self.page = self.browser.new_page()
             self._log("Browser session initialized.")
         except Exception as e:

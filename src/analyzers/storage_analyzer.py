@@ -728,7 +728,7 @@ class StorageAnalyzer:
                             len_i = len(str(values[i]))
                             len_j = len(str(values[j]))
                             if len_i > SIMPLIFIED_COMPARISON_THRESHOLD or len_j > SIMPLIFIED_COMPARISON_THRESHOLD:
-                                self._log(f"  Performing simplified comparison for long values ({len_i}, {len_j}) for '{key}'")
+                                tqdm.write(f"  Performing simplified comparison for long values ({len_i}, {len_j}) for '{key}'")
                                 
                                 # Simplified comparison: check prefix and suffix similarity
                                 prefix_size = 100  # Compare first 100 chars
