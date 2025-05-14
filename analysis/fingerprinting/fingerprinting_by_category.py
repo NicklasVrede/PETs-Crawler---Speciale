@@ -2,13 +2,13 @@ import os
 import sys
 
 # Add the project root directory to the Python path
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, project_root)
 
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-from data.analysis.display_names import DISPLAY_NAMES, PROFILE_GROUPS
+from analysis.display_names import DISPLAY_NAMES, PROFILE_GROUPS
 
 # Use the 4 fingerprinting methods from available columns
 fingerprinting_cols = [
