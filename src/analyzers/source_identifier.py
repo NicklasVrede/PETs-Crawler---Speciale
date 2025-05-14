@@ -98,13 +98,12 @@ class SourceIdentifier:
         """Analyze a single subdomain."""
         # Always generate the cache key, even if skipping cache read
         cache_key = self._get_cache_key(main_site, base_url)
-        skip_cache = True
         
-        if not skip_cache and self.use_cache and cache_key in self.subdomain_analysis_cache:
+        if cache_key in self.subdomain_analysis_cache:
             cached_result = self.subdomain_analysis_cache[cache_key].copy()
             # Update the request count which can change
             cached_result['request_count'] = request_count
-            self._log(f"Cache hit for {base_url} (main site: {main_site})")
+            tqdm.write(f"Cache hit for {base_url} (main site: {main_site})")
             return cached_result
             
         # Perform full analysis if not cached
@@ -269,8 +268,7 @@ class SourceIdentifier:
         self._log("==== End Domain Analysis ====\n")
         
         # Store in cache for future use
-        if self.use_cache:
-            self.subdomain_analysis_cache[cache_key] = analysis_result.copy()
+        self.subdomain_analysis_cache[cache_key] = analysis_result.copy()
         
         return analysis_result
 
@@ -328,6 +326,11 @@ class SourceIdentifier:
                 # Load site data
                 site_data = self._load_json(file_path)
                 
+                # Skip if domain analysis already exists
+                if 'domain_analysis' in site_data:
+                    tqdm.write(f"Skipping {filename} - domain analysis already exists")
+                    continue
+                    
                 # Get main site domain from the site_data
                 main_site = site_data.get('domain', filename.replace('.json', ''))
                 

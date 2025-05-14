@@ -106,12 +106,13 @@ class UserSimulator:
 
             # Cap the available scroll to prevent excessive scrolling on very tall pages
             MAX_SCROLL_HEIGHT = 5000  # Cap at 5000 pixels
-            if metrics['availableScroll'] > MAX_SCROLL_HEIGHT:
-                self._log(f"Capping available scroll from {metrics['availableScroll']}px to {MAX_SCROLL_HEIGHT}px")
-                metrics['availableScroll'] = MAX_SCROLL_HEIGHT
+            available_scroll = metrics['availableScroll']
+            
+            if available_scroll > MAX_SCROLL_HEIGHT:
+                self._log(f"Capping available scroll from {available_scroll}px to {MAX_SCROLL_HEIGHT}px")
+                available_scroll = MAX_SCROLL_HEIGHT
 
             # Calculate target scroll position based on predetermined percentage
-            available_scroll = metrics['availableScroll']
             target_scroll = int(available_scroll * scroll_percentage)
 
             self._log(f"Target scroll: {target_scroll}px ({scroll_percentage*100:.1f}% of available scroll)")

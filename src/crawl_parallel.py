@@ -146,7 +146,7 @@ def precheck_existing_data(profiles, sites, verbose=False):
     
     return existing_data
 
-async def crawl_sites_parallel(config, profiles, sites, max_concurrent=None, subpages_nr=2, verbose=False):
+async def crawl_sites_parallel(config, profiles, sites, max_concurrent=None, subpages_nr=2, verbose=False, delay_between_profiles=2):
     """
     Crawl multiple sites with multiple browser profiles in parallel
     
@@ -157,6 +157,7 @@ async def crawl_sites_parallel(config, profiles, sites, max_concurrent=None, sub
         max_concurrent: Maximum number of concurrent browser instances. If None, use all profiles.
         max_pages: Maximum pages to crawl per site
         verbose: If True, print detailed progress information
+        delay_between_profiles: Delay in seconds between starting new profile crawls
     """
     # If max_concurrent is not specified, use all available profiles
     if max_concurrent is None:
@@ -183,8 +184,11 @@ async def crawl_sites_parallel(config, profiles, sites, max_concurrent=None, sub
     # Create overall progress bar for all sites
     with tqdm(total=remaining_crawls, desc="Overall crawl progress", unit="site") as overall_pbar:
         
-        async def profile_crawl_with_semaphore(profile):
+        async def profile_crawl_with_semaphore(profile, start_delay):
             """Wrapper to handle semaphore for each profile crawl"""
+            # Add individual start delay to stagger browser launches
+            await asyncio.sleep(start_delay)
+            
             async with semaphore:
                 # Filter out domains that already have data for this profile
                 sites_to_crawl = [(rank, domain) for rank, domain in sites 
@@ -204,8 +208,12 @@ async def crawl_sites_parallel(config, profiles, sites, max_concurrent=None, sub
                     overall_progress=overall_pbar
                 )
         
-        # Create tasks for all profiles
-        tasks = [profile_crawl_with_semaphore(profile) for profile in profiles]
+        # Create tasks for all profiles with staggered start delays
+        tasks = []
+        for i, profile in enumerate(profiles):
+            # Calculate a specific delay for each profile
+            start_delay = i * delay_between_profiles
+            tasks.append(profile_crawl_with_semaphore(profile, start_delay))
         
         # Run all tasks
         await asyncio.gather(*tasks)
@@ -235,9 +243,10 @@ if __name__ == "__main__":
         config=config,
         profiles=profiles,
         sites=sites,
-        max_concurrent=18,
+        max_concurrent=5,
         subpages_nr=15,
-        verbose=verbose
+        verbose=verbose,
+        delay_between_profiles=5
     ))
     
     print("\nCrawls completed!")

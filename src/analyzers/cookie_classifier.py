@@ -133,8 +133,26 @@ class CookieClassifier:
         json_files = [f for f in os.listdir(directory) if f.endswith('.json')]
         self._log(f"Found {len(json_files)} JSON files to process")
         
+        # First check which files need processing
+        files_to_process = []
+        for file_name in json_files:
+            file_path = os.path.join(directory, file_name)
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    site_data = json.load(f)
+                    if 'cookie_analysis' not in site_data:
+                        files_to_process.append(file_name)
+                    else:
+                        self._log(f"Skipping {file_name} - already analyzed")
+                        results[file_name] = site_data
+            except Exception as e:
+                tqdm.write(f"Error reading {file_name}: {str(e)}")
+                continue
+
+        self._log(f"Found {len(files_to_process)} files that need analysis")
+        
         # First pass: classify with existing database and gather unknown cookies
-        for file_name in tqdm(json_files, desc="Classifying cookies (first pass)"):
+        for file_name in tqdm(files_to_process, desc="Classifying cookies (first pass)"):
             file_path = os.path.join(directory, file_name)
             site_data = self.classify_file(file_path, lookup_unknown=False)
             results[file_name] = site_data

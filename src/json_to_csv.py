@@ -289,11 +289,12 @@ def analyze_crawler_data(json_file):
         httponly_cookies = 0
         third_party_cookies = 0
         necessary_cookies = 0
-        preference_cookies = 0
-        functional_cookies = 0 
-        marketing_cookies = 0
-        statistics_cookies = 0
-        unclassified_cookies = 0
+        functional_cookies = 0
+        advertising_cookies = 0
+        analytics_cookies = 0
+        performance_cookies = 0  # Added Performance category
+        other_cookies = 0
+        unknown_cookies = 0
         
         # Initialize tracking cookie variables
         potential_tracking_cookies_count = 0
@@ -316,10 +317,14 @@ def analyze_crawler_data(json_file):
             categories = cookie_analysis.get('categories', {})
             necessary_cookies = categories.get('Necessary', 0)
             functional_cookies = categories.get('Functional', 0)
-            preference_cookies = categories.get('Preference', 0) + categories.get('Preferences', 0)
-            marketing_cookies = categories.get('Marketing', 0) + categories.get('Advertisement', 0)
-            statistics_cookies = categories.get('Statistics', 0) + categories.get('Analytics', 0)
-            unclassified_cookies = categories.get('Other', 0) + categories.get('Unknown', 0) + categories.get('Unclassified', 0)
+            advertising_cookies = categories.get('Advertisement', 0)
+            analytics_cookies = categories.get('Analytics', 0)
+            performance_cookies = categories.get('Performance', 0)  # Added Performance category
+            other_cookies = categories.get('Other', 0)
+            # Combine Unknown, Unclassified, and Not specified into unknown_cookies
+            unknown_cookies = (categories.get('Unknown', 0) + 
+                            categories.get('Unclassified', 0) + 
+                            categories.get('Not specified', 0))
         
         # Fall back to manual counting if cookie_analysis isn't available
         elif cookies_data:
@@ -343,21 +348,29 @@ def analyze_crawler_data(json_file):
                 if category:
                     identified_cookies += 1
                     
-                    # Ensure exclusive counting for categories
-                    if 'necessary' in category or 'essential' in category:
+                    # Keep original categories and handle Other/Unknown explicitly
+                    if 'necessary' in category:
                         necessary_cookies += 1
-                    elif 'functional' in category: # Check functional first
+                    elif 'functional' in category:
                         functional_cookies += 1
-                    elif 'preference' in category: # Then check preference
-                        preference_cookies += 1
-                    elif 'marketing' in category or 'advertising' in category or 'targeting' in category:
-                        marketing_cookies += 1
-                    elif 'statistic' in category or 'analytics' in category or 'performance' in category:
-                        statistics_cookies += 1
+                    elif 'advertisement' in category:
+                        advertising_cookies += 1
+                    elif 'analytics' in category:
+                        analytics_cookies += 1
+                    elif 'performance' in category:  # Added Performance category handling
+                        performance_cookies += 1
+                    elif 'other' in category:
+                        other_cookies += 1
+                    elif ('unknown' in category or 
+                          'unclassified' in category or 
+                          'not specified' in category):
+                        unknown_cookies += 1
                     else:
-                        unclassified_cookies += 1
-                else: # If no category is provided, count as unclassified
-                    unclassified_cookies += 1
+                        # If category exists but doesn't match known types, count as Other
+                        other_cookies += 1
+                else:
+                    # If no category is provided, count as Unknown
+                    unknown_cookies += 1
         
         # Always count secure and httpOnly regardless of where cookie data comes from
         if cookies_data:
@@ -623,6 +636,7 @@ def analyze_crawler_data(json_file):
             'adult_advertising_requests': adult_advertising_requests,
             'consent_management_requests': consent_management_requests,
             'miscellaneous_requests': miscellaneous_requests,
+            'utilities_requests': utilities_requests,
             'uncategorized_requests': uncategorized_requests,
             
             # Resource types
@@ -638,11 +652,12 @@ def analyze_crawler_data(json_file):
             'httponly_cookies': httponly_cookies,
             'third_party_cookies': third_party_cookies,
             'necessary_cookies': necessary_cookies,
-            'preference_cookies': preference_cookies,
             'functional_cookies': functional_cookies,
-            'marketing_cookies': marketing_cookies,
-            'statistics_cookies': statistics_cookies,
-            'unclassified_cookies': unclassified_cookies,
+            'advertising_cookies': advertising_cookies,
+            'analytics_cookies': analytics_cookies,
+            'performance_cookies': performance_cookies,  # Added Performance category
+            'other_cookies': other_cookies,
+            'unknown_cookies': unknown_cookies,
             'potential_tracking_cookies_count': potential_tracking_cookies_count,
             
             # Storage metrics
@@ -765,7 +780,7 @@ def process_all_folders(json_dir, output_csv):
 
 if __name__ == "__main__":
     # Base directory for crawler data
-    json_dir = "data/crawler_data"
+    json_dir = "data/Varies runs/crawler_data_trial02"
     output_csv = "data/csv/trial02.csv"
     
     # Ensure output directory exists
@@ -780,4 +795,14 @@ if __name__ == "__main__":
         process_single_folder(json_dir, output_csv, specific_folder)
     else:
         tqdm.write(f"Processing all extension folders in: {json_dir}")
-        process_all_folders(json_dir, output_csv) 
+        process_all_folders(json_dir, output_csv)
+    
+    # Print all encountered categories
+    print("\nAll encountered domain categories:")
+    for category in sorted(ALL_CATEGORIES_ENCOUNTERED):
+        print(f"- {category}")
+
+    if UNMATCHED_CATEGORIES:
+        print("\nUnmatched categories (not explicitly handled):")
+        for category in sorted(UNMATCHED_CATEGORIES):
+            print(f"- {category}") 

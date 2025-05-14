@@ -3,8 +3,14 @@ import dns.resolver
 import pickle
 import time
 import atexit
+import sys
 from cachetools import TTLCache
 from tqdm import tqdm
+
+# Add this at the top to handle encoding issues on Windows
+if sys.platform == 'win32':
+    # Set default encoding for Windows
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
 
 class DNSResolver:
     """
