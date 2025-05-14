@@ -99,9 +99,10 @@ class SourceIdentifier:
         # Always generate the cache key, even if skipping cache read
         cache_key = self._get_cache_key(main_site, base_url)
         
-        if cache_key in self.subdomain_analysis_cache:
+        # Check cache if enabled
+        if self.use_cache and cache_key in self.subdomain_analysis_cache:
             cached_result = self.subdomain_analysis_cache[cache_key].copy()
-            # Update the request count which can change
+            # Update only the request count which can change
             cached_result['request_count'] = request_count
             tqdm.write(f"Cache hit for {base_url} (main site: {main_site})")
             return cached_result
@@ -267,8 +268,9 @@ class SourceIdentifier:
         self._log(f"  - Tracking evidence: {analysis_result['analysis_notes']}")
         self._log("==== End Domain Analysis ====\n")
         
-        # Store in cache for future use
-        self.subdomain_analysis_cache[cache_key] = analysis_result.copy()
+        # Store in cache for future use if caching is enabled
+        if self.use_cache:
+            self.subdomain_analysis_cache[cache_key] = analysis_result.copy()
         
         return analysis_result
 
@@ -691,7 +693,7 @@ class SourceIdentifier:
 
 
 if __name__ == "__main__":
-    data_directory = 'data/crawler_data Non-kameleo/test'
+    data_directory = 'data/Varies runs/test'
     
     # Validate directory exists
     if not os.path.exists(data_directory):

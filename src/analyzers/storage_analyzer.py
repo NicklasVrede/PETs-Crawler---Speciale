@@ -179,53 +179,93 @@ class StorageAnalyzer:
         self._log(f"Marked {session_storage_count} sessionStorage items as non-persistent")
 
     def _mark_persistent_cookies(self):
-        """Mark cookies as persistent if they have a future expiration date (private method)"""
+        """Mark cookies as persistent if they have a future expiration date and identify first/third party status"""
         if 'cookies' not in self.data:
             self._log("No cookie data found")
             return
         
         current_time = datetime.datetime.now().timestamp()
         
-        # Count persistent and non-persistent cookies
+        # Count statistics
         persistent_count = 0
         non_persistent_count = 0
         
-        # Handle different cookie data structures
+        # Track unique cookies by name+domain to prevent double counting
+        unique_cookies = {}  # key: (name, domain) -> cookie data
+        
+        # Get first-party domains from domain_analysis if available
+        first_party_domains = set()
+        if 'domain_analysis' in self.data:
+            for domain in self.data['domain_analysis'].get('domains', []):
+                if domain.get('is_first_party_domain', False):
+                    domain_url = domain.get('domain', '')
+                    if domain_url:
+                        # Extract domain without protocol
+                        domain_name = domain_url.replace('https://', '').replace('http://', '')
+                        first_party_domains.add(domain_name)
+        
+        def is_first_party_cookie(cookie_domain, first_party_domains):
+            """Helper function to determine if a cookie is first-party"""
+            if not cookie_domain:
+                return False
+            
+            # Remove leading dot if present
+            if cookie_domain.startswith('.'):
+                cookie_domain = cookie_domain[1:]
+                
+            # Check if cookie domain matches or is subdomain of any first-party domain
+            return any(
+                cookie_domain == domain or 
+                cookie_domain.endswith('.' + domain)
+                for domain in first_party_domains
+            )
+        
+        # Process cookies and track unique ones
         if isinstance(self.data['cookies'], dict):
-            # Format: {'visit1': [cookies], 'visit2': [cookies]}
             for visit_id, visit_cookies in self.data['cookies'].items():
                 for cookie in visit_cookies:
+                    cookie_key = (cookie.get('name', ''), cookie.get('domain', ''))
+                    
+                    # Store unique cookie
+                    if cookie_key not in unique_cookies:
+                        unique_cookies[cookie_key] = cookie
+                    
+                    # Mark persistence
                     if cookie.get('expires') and cookie['expires'] > current_time:
                         cookie['persistent'] = True
-                        # Add days until expiry as a user-friendly metric
                         days_until_expiry = (cookie['expires'] - current_time) / (60 * 60 * 24)
                         cookie['days_until_expiry'] = round(days_until_expiry, 2)
-                        persistent_count += 1
                     else:
                         cookie['persistent'] = False
-                        non_persistent_count += 1
+                    
+                    # Mark first/third party status
+                    cookie_domain = cookie.get('domain', '')
+                    is_first_party = is_first_party_cookie(cookie_domain, first_party_domains)
+                    cookie['is_first_party'] = is_first_party
         
-            # Get total cookie count across all visits
-            total_cookies = sum(len(cookies) for cookies in self.data['cookies'].values())
+        # Count unique first/third party cookies
+        first_party_count = sum(1 for cookie in unique_cookies.values() if cookie.get('is_first_party', False))
+        third_party_count = sum(1 for cookie in unique_cookies.values() if not cookie.get('is_first_party', False))
         
-        elif isinstance(self.data['cookies'], list):
-            # Simple list format
-            for cookie in self.data['cookies']:
-                if cookie.get('expires') and cookie['expires'] > current_time:
-                    cookie['persistent'] = True
-                    # Add days until expiry as a user-friendly metric
-                    days_until_expiry = (cookie['expires'] - current_time) / (60 * 60 * 24)
-                    cookie['days_until_expiry'] = round(days_until_expiry, 2)
-                    persistent_count += 1
-                else:
-                    cookie['persistent'] = False
-                    non_persistent_count += 1
+        # Count persistent/non-persistent from unique cookies
+        persistent_count = sum(1 for cookie in unique_cookies.values() if cookie.get('persistent', False))
+        non_persistent_count = sum(1 for cookie in unique_cookies.values() if not cookie.get('persistent', False))
         
-        # Update cookie_analysis with persistence statistics
+        # Update cookie_analysis with statistics in the desired order
         if 'cookie_analysis' in self.data:
-            self.data['cookie_analysis']['persistent_count'] = persistent_count
-            self.data['cookie_analysis']['non_persistent_count'] = non_persistent_count
-            self.data['cookie_analysis']['persistence_ratio'] = round(persistent_count / total_cookies * 100, 2) if total_cookies else 0
+            total_cookies = len(unique_cookies)
+            self.data['cookie_analysis'] = {
+                'unique_cookies': total_cookies,
+                'overlapping_cookies': self.data['cookie_analysis'].get('overlapping_cookies', 0),
+                'identified_cookies': self.data['cookie_analysis'].get('identified_cookies', 0),
+                'unidentified_cookies': self.data['cookie_analysis'].get('unidentified_cookies', 0),
+                'first_party_cookies': first_party_count,
+                'third_party_cookies': third_party_count,
+                # Preserve all other existing keys
+                **{k: v for k, v in self.data['cookie_analysis'].items() 
+                   if k not in ['unique_cookies', 'overlapping_cookies', 'identified_cookies', 
+                              'unidentified_cookies', 'first_party_cookies', 'third_party_cookies']}
+            }
 
     def _check_identical_cookies(self):
         """Check if cookies have identical values across visits (private method)"""
@@ -560,13 +600,35 @@ class StorageAnalyzer:
                 for cookie in self.data['cookies']:
                     update_cookie_with_sharing(cookie)
         
-        # Add summary to cookie_analysis section
+        # Count cookies that are both shared AND potential identifiers
+        shared_identifiers = 0
+        shared_identifier_names = []
+
+        if 'cookies' in self.data:
+            for visit_cookies in self.data['cookies'].values():
+                for cookie in visit_cookies:
+                    if (cookie.get('is_potential_identifier', False) and 
+                        cookie.get('shared_with_third_parties', False)):
+                        shared_identifiers += 1
+                        if cookie['name'] not in shared_identifier_names:
+                            shared_identifier_names.append(cookie['name'])
+
+        # Update the cookie_analysis summary
         if 'cookie_analysis' in self.data:
             self.data['cookie_analysis']['cookie_sharing'] = {
                 'total_cookies_shared': len(cookie_sharing),
-                'cookies_shared_with_third_parties': len(cookies_with_third_parties),  # Count of unique cookies
-                'third_party_domains_receiving_cookies': list(third_party_domains)
+                'cookies_shared_with_third_parties': len(cookies_with_third_parties),
+                'third_party_domains_receiving_cookies': list(third_party_domains),
+                'shared_identifiers': {
+                    'count': len(shared_identifier_names),
+                    'names': shared_identifier_names
+                }
             }
+
+        # Log the findings
+        self._log(f"\nFound {len(shared_identifier_names)} cookies that are both potential identifiers and shared with third parties:")
+        for name in shared_identifier_names:
+            self._log(f"  - {name}")
 
     def _analyze_storage_identifiers(self):
         """
@@ -862,7 +924,7 @@ class StorageAnalyzer:
 
 if __name__ == "__main__":
     # Directory with test files
-    data_directory = 'data/crawler_data non-kameleo/test'
+    data_directory = 'data/Varies runs/test'
     
     # Validate directory exists
     if not os.path.exists(data_directory):
