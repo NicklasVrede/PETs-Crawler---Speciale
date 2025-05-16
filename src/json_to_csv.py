@@ -11,7 +11,7 @@ ALL_CATEGORIES_ENCOUNTERED = set()
 UNMATCHED_CATEGORIES = set()
 
 # Load site rankings from CSV
-def load_site_rankings(csv_path='data/db+ref/study-sites.csv'):
+def load_site_rankings(csv_path='data/db+ref/Tranco_final_sample.csv'):
     """Load site rankings from CSV file"""
     rankings = {}
     try:
@@ -62,6 +62,10 @@ def get_resource_type_counts(requests):
 def analyze_crawler_data(json_file):
     """Extract key metrics from a crawler data file"""
     try:
+        # Initialize third-party tracking variables before use
+        third_party_domains = set()
+        third_party_domain_categories = defaultdict(set)
+        
         # Extract profile from filepath
         file_path = os.path.normpath(json_file)
         path_parts = file_path.split(os.sep)
@@ -215,6 +219,7 @@ def analyze_crawler_data(json_file):
                     first_party_requests += req_count
                 else:
                     third_party_requests += req_count
+                    third_party_domains.add(d.get('domain', ''))
                 
                 # Count requests by category (this handles all categories including Advertising)
                 for category in categories:
@@ -224,6 +229,10 @@ def analyze_crawler_data(json_file):
                         # Handle unexpected categories
                         category_requests.setdefault(category, 0)
                         category_requests[category] += req_count
+                    
+                    # Categorize the domain based on its categories
+                    if category in third_party_domain_categories:
+                        third_party_domain_categories[category].add(d.get('domain', ''))
             
             # Count unique domains
             unique_domains = len(domains)
@@ -310,12 +319,7 @@ def analyze_crawler_data(json_file):
             identified_cookies = cookie_analysis.get('identified_cookies', 0)
             first_party_cookies = cookie_analysis.get('first_party_cookies', 0)
             third_party_cookies = cookie_analysis.get('third_party_cookies', 0)
-            
-            # First debug print when reading from JSON
-            tqdm.write(f"\nCookie counts for {os.path.basename(json_file)}:")
-            tqdm.write(f"First-party cookies: {first_party_cookies}")
-            tqdm.write(f"Third-party cookies: {third_party_cookies}")
-            tqdm.write(f"Total unique cookies: {unique_cookies}")
+        
             
             # Get potential tracking cookies information
             potential_tracking = cookie_analysis.get('potential_tracking_cookies', {})
@@ -589,10 +593,6 @@ def analyze_crawler_data(json_file):
         utilities_requests = category_requests.get("Utilities", 0)
         uncategorized_requests = category_requests.get("Uncategorized", 0)
         
-        # Second debug print just before return
-        tqdm.write(f"\nValues before return:")
-        tqdm.write(f"First-party cookies: {first_party_cookies}")
-        tqdm.write(f"Third-party cookies: {third_party_cookies}")
         
         # Return the data with related fields grouped together
         return {
@@ -693,7 +693,22 @@ def analyze_crawler_data(json_file):
             'date_fingerprinting_calls': date_fp_calls,
             'media_fingerprinting_calls': media_fp_calls,
             'performance_fingerprinting_calls': performance_fp_calls,
-            'intl_fingerprinting_calls': intl_fp_calls
+            'intl_fingerprinting_calls': intl_fp_calls,
+            
+            # New fields for third-party domain analysis
+            'total_third_party_domains': len(third_party_domains),
+            'social_media_domains_count': len(third_party_domain_categories.get('Social Media', set())),
+            'advertising_domains_count': len(third_party_domain_categories.get('Advertising', set())),
+            'analytics_domains_count': len(third_party_domain_categories.get('Site Analytics', set())),
+            'consent_management_domains_count': len(third_party_domain_categories.get('Consent Management', set())),
+            'hosting_domains_count': len(third_party_domain_categories.get('Hosting', set())),
+            'customer_interaction_domains_count': len(third_party_domain_categories.get('Customer Interaction', set())),
+            'audio_video_domains_count': len(third_party_domain_categories.get('Audio/Video Player', set())),
+            'extensions_domains_count': len(third_party_domain_categories.get('Extensions', set())),
+            'adult_advertising_domains_count': len(third_party_domain_categories.get('Adult Advertising', set())),
+            'utilities_domains_count': len(third_party_domain_categories.get('Utilities', set())),
+            'miscellaneous_domains_count': len(third_party_domain_categories.get('Misc', set())),
+            'uncategorized_domains_count': len(third_party_domain_categories.get('Uncategorized', set())),
         }
         
     except Exception as e:
@@ -780,13 +795,6 @@ def process_all_folders(json_dir, output_csv):
         tqdm.write("No valid data extracted")
         return
     
-    # Debug print before writing to CSV
-    for result in all_results:
-        tqdm.write(f"\nValues being written to CSV:")
-        tqdm.write(f"First-party cookies: {result['first_party_cookies']}")
-        tqdm.write(f"Third-party cookies: {result['third_party_cookies']}")
-    
-    tqdm.write(f"Writing {len(all_results)} results to CSV...")
     
     # Write to CSV
     fieldnames = list(all_results[0].keys())
@@ -798,8 +806,8 @@ def process_all_folders(json_dir, output_csv):
     tqdm.write(f"Successfully created CSV file: {output_csv} with {len(all_results)} rows")
 if __name__ == "__main__":
     # Base directory for crawler data
-    json_dir = "data/Varies runs/test"
-    output_csv = "data/csv/test.csv"
+    json_dir = "data/crawler_data"
+    output_csv = "data/csv/final_data.csv"
     
     # Ensure output directory exists
     os.makedirs(os.path.dirname(output_csv), exist_ok=True)

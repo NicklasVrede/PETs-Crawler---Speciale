@@ -1,34 +1,14 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-from display_names import DISPLAY_NAMES
+from display_names import DISPLAY_NAMES, PROFILE_GROUPS
 
 # Load the dataset
 df = pd.read_csv("data/csv/trial02.csv")
 
-# Order the profiles in a meaningful way and define groups
-profile_groups = {
-    "Baseline Profile": ["no_extensions"],
-    
-    "Traditional PETs": [
-        "adblock", "adblock_plus", "disconnect", 
-        "privacy_badger", "ublock", "ublock_origin_lite", "adguard"
-    ],
-    
-    "Cookie Extensions": [
-        "accept_all_cookies", "cookie_cutter", 
-        "consent_o_matic_opt_in", "consent_o_matic_opt_out", 
-        "ghostery_tracker_&_ad_blocker", "ghostery_tracker_&_ad_blocker_only_never_consent",
-        "i_dont_care_about_cookies", 
-        "super_agent_opt_in", "super_agent_opt_out"
-    ],
-    
-    "Other": ["decentraleyes"]
-}
-
-# Flatten the ordered profiles list
+# Order the profiles in a meaningful way using imported groups
 ordered_profiles = []
-for group_profiles in profile_groups.values():
+for group_profiles in PROFILE_GROUPS.values():
     ordered_profiles.extend(group_profiles)
 
 # Ensure that both columns exist
@@ -157,7 +137,7 @@ group_dividers = []
 current_position = 0
 
 # Find the position after each group
-for group_name, group_profiles in profile_groups.items():
+for group_name, group_profiles in PROFILE_GROUPS.items():
     for profile in group_profiles:
         if profile in available_ordered_profiles:
             current_position += 1
@@ -171,7 +151,7 @@ for divider_pos in group_dividers:
 
 # Add group labels above the bars
 current_position = 0
-for group_name, group_profiles in profile_groups.items():
+for group_name, group_profiles in PROFILE_GROUPS.items():
     group_profiles_in_chart = [p for p in group_profiles if p in available_ordered_profiles]
     if group_profiles_in_chart:
         group_start = current_position

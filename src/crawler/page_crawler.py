@@ -185,7 +185,7 @@ class WebsiteCrawler:
         """Captures data (final URL, banner, storage) and simulates interaction."""
         final_url = page.url
 
-        if idx == 0:
+        if idx == 1:
             await self.monitors['banner'].capture_on_subpage(
                 page, domain=self.base_domain, visit_number=visit, extension_name=self.extension_name
             )
@@ -216,25 +216,28 @@ class WebsiteCrawler:
             error_message = None
 
             try:
-                await page.goto(url, timeout=30000, wait_until='commit')
+                await page.goto(url, timeout=2000)
 
                 try:
-                    await page.wait_for_load_state('domcontentloaded', timeout=5000)
+                    await page.wait_for_load_state('domcontentloaded', timeout=2000)
                 except Exception as e:
                     self._log(f"Note: domcontentloaded not reached for {url} - continuing anyway")
 
                 try:
-                    await page.wait_for_load_state('load', timeout=10000)
+                    pass
+                    #await page.wait_for_load_state('load', timeout=2000)
                 except Exception as e:
-                    self._log(f"Note: load not reached for {url} - continuing anyway")
+                    pass
+                    #self._log(f"Note: load not reached for {url} - continuing anyway")
 
                 # Optional: Short wait for network to settle, but with reduced timeout
                 try:
-                    await page.wait_for_load_state('networkidle', timeout=5000)
+                    await page.wait_for_load_state('networkidle', timeout=2000)
                 except Exception as e:
                     # This is expected to fail sometimes, so just log at debug level
                     self._log(f"Note: networkidle not reached for {url} - continuing anyway")
 
+                #tqdm.write(f"Capturing and interacting with {url}")
                 final_url = await self._capture_and_interact(page, url, visit, idx)
 
                 # Wait abit after scroll

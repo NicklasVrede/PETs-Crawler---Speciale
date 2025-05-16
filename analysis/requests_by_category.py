@@ -43,6 +43,20 @@ simplified_colors = [
 
 df = pd.read_csv("data/csv/trial02.csv")
 
+# Filter for successful page loads
+df_loaded = df[df['page_status'] == 'loaded']
+
+# Get domains that loaded successfully across all profiles
+all_profiles = df_loaded['profile'].unique()
+successful_domains = set()
+for domain in df_loaded['domain'].unique():
+    if all(domain in df_loaded[df_loaded['profile'] == profile]['domain'].values 
+           for profile in all_profiles):
+        successful_domains.add(domain)
+
+# Filter for only those domains
+df = df_loaded[df_loaded['domain'].isin(successful_domains)]
+
 # Flatten and order the profiles according to groups
 ordered_profiles = []
 for group_profiles in PROFILE_GROUPS.values():

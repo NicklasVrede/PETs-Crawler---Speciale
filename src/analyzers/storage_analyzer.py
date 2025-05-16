@@ -51,15 +51,25 @@ class StorageAnalyzer:
         if not self._load_data():
             return False
         
+        # Add explicit check for self.data
+        if self.data is None:
+            self._log(f"Error: No data loaded from {data_path}")
+            return False
+            
         load_time = time.time() - start_time
         self._log(f"Data loading completed in {load_time:.2f} seconds")
             
-        # Run all analysis functions with timing
-        analysis_times = {}
+        # Initialize empty structures if they don't exist
+        self.data = self.data if isinstance(self.data, dict) else {}
+        self.data['storage'] = self.data.get('storage', {})
+        self.data['cookies'] = self.data.get('cookies', {})
+        self.data['cookie_analysis'] = self.data.get('cookie_analysis', {})
+        self.data['storage_analysis'] = self.data.get('storage_analysis', {})
         
+        # Run analyses
         t0 = time.time()
         self._mark_persistent_storage()
-        analysis_times['persistent_storage'] = time.time() - t0
+        analysis_times = {'persistent_storage': time.time() - t0}
         
         t0 = time.time()
         self._mark_persistent_cookies()

@@ -146,7 +146,7 @@ def precheck_existing_data(profiles, sites, verbose=False):
     
     return existing_data
 
-async def crawl_sites_parallel(config, profiles, sites, max_concurrent=None, subpages_nr=2, verbose=False, delay_between_profiles=2):
+async def crawl_sites_parallel(config, profiles, sites, max_concurrent=None, subpages_nr=15, verbose=False, delay_between_profiles=2):
     """
     Crawl multiple sites with multiple browser profiles in parallel
     
@@ -243,7 +243,7 @@ if __name__ == "__main__":
         config=config,
         profiles=profiles,
         sites=sites,
-        max_concurrent=5,
+        max_concurrent=9,
         subpages_nr=15,
         verbose=verbose,
         delay_between_profiles=5
