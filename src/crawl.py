@@ -100,16 +100,16 @@ async def crawl_domain(profile, site_info, data_dir=None, subpages_nr=15, verbos
 
 if __name__ == "__main__":
     #available profiles
-    verbose = True
+    verbose = False
     config = load_config('config.json')
     profile_names = config.get('profiles', {}).keys()
     print("Profile names:", list(profile_names))
 
-    profile = 'i_dont_care_about_cookies'
+    profile = 'decentraleyes'
 
     # Define the specific site to crawl directly
     # You can change the rank (e.g., 1) and domain ("example.com") here
-    site_info = (579249, "foodpress.ir")
+    site_info = (200192, "agilityplaza.com")
     rank, domain = site_info
 
     if verbose:

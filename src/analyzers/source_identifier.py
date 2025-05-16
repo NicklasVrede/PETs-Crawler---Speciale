@@ -693,7 +693,7 @@ class SourceIdentifier:
 
 
 if __name__ == "__main__":
-    data_directory = 'data/Varies runs/test'
+    data_directory = 'data/crawler_data/ublock'
     
     # Validate directory exists
     if not os.path.exists(data_directory):

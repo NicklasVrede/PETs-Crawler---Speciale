@@ -285,15 +285,18 @@ def analyze_crawler_data(json_file):
         unique_cookies = 0
         overlapping_cookies = 0
         identified_cookies = 0
+        first_party_cookies = 0
+        third_party_cookies = 0
         secure_cookies = 0
         httponly_cookies = 0
-        third_party_cookies = 0
         necessary_cookies = 0
-        preference_cookies = 0
-        functional_cookies = 0 
-        marketing_cookies = 0
-        statistics_cookies = 0
-        unclassified_cookies = 0
+        functional_cookies = 0
+        advertising_cookies = 0
+        analytics_cookies = 0
+        performance_cookies = 0  # Added Performance category
+        other_cookies = 0
+        unknown_cookies = 0
+        shared_identifiers_count = 0  # Initialize new metric
         
         # Initialize tracking cookie variables
         potential_tracking_cookies_count = 0
@@ -305,6 +308,14 @@ def analyze_crawler_data(json_file):
             unique_cookies = cookie_analysis.get('unique_cookies', 0)
             overlapping_cookies = cookie_analysis.get('overlapping_cookies', 0)
             identified_cookies = cookie_analysis.get('identified_cookies', 0)
+            first_party_cookies = cookie_analysis.get('first_party_cookies', 0)
+            third_party_cookies = cookie_analysis.get('third_party_cookies', 0)
+            
+            # First debug print when reading from JSON
+            tqdm.write(f"\nCookie counts for {os.path.basename(json_file)}:")
+            tqdm.write(f"First-party cookies: {first_party_cookies}")
+            tqdm.write(f"Third-party cookies: {third_party_cookies}")
+            tqdm.write(f"Total unique cookies: {unique_cookies}")
             
             # Get potential tracking cookies information
             potential_tracking = cookie_analysis.get('potential_tracking_cookies', {})
@@ -316,10 +327,20 @@ def analyze_crawler_data(json_file):
             categories = cookie_analysis.get('categories', {})
             necessary_cookies = categories.get('Necessary', 0)
             functional_cookies = categories.get('Functional', 0)
-            preference_cookies = categories.get('Preference', 0) + categories.get('Preferences', 0)
-            marketing_cookies = categories.get('Marketing', 0) + categories.get('Advertisement', 0)
-            statistics_cookies = categories.get('Statistics', 0) + categories.get('Analytics', 0)
-            unclassified_cookies = categories.get('Other', 0) + categories.get('Unknown', 0) + categories.get('Unclassified', 0)
+            advertising_cookies = categories.get('Advertisement', 0)
+            analytics_cookies = categories.get('Analytics', 0)
+            performance_cookies = categories.get('Performance', 0)  # Added Performance category
+            other_cookies = categories.get('Other', 0)
+            # Combine Unknown, Unclassified, and Not specified into unknown_cookies
+            unknown_cookies = (categories.get('Unknown', 0) + 
+                            categories.get('Unclassified', 0) + 
+                            categories.get('Not specified', 0))
+            
+            # Get shared identifiers count
+            cookie_sharing = cookie_analysis.get('cookie_sharing', {})
+            if cookie_sharing:
+                shared_identifiers = cookie_sharing.get('shared_identifiers', {})
+                shared_identifiers_count = shared_identifiers.get('count', 0)
         
         # Fall back to manual counting if cookie_analysis isn't available
         elif cookies_data:
@@ -332,29 +353,35 @@ def analyze_crawler_data(json_file):
                     secure_cookies += 1
                 if cookie.get('httpOnly', False):
                     httponly_cookies += 1
-                    
-                # Check if cookie is third-party
-                cookie_domain = cookie.get('domain', '')
-                if cookie_domain and domain not in cookie_domain:
-                    third_party_cookies += 1
                 
                 # Count cookies by category if available
                 category = cookie.get('category', '').lower()
                 if category:
                     identified_cookies += 1
                     
-                    if 'necessary' in category or 'essential' in category:
+                    # Keep original categories and handle Other/Unknown explicitly
+                    if 'necessary' in category:
                         necessary_cookies += 1
-                    elif 'preference' in category or 'functional' in category:
-                        preference_cookies += 1
                     elif 'functional' in category:
                         functional_cookies += 1
-                    elif 'marketing' in category or 'advertising' in category or 'targeting' in category:
-                        marketing_cookies += 1
-                    elif 'statistic' in category or 'analytics' in category or 'performance' in category:
-                        statistics_cookies += 1
+                    elif 'advertisement' in category:
+                        advertising_cookies += 1
+                    elif 'analytics' in category:
+                        analytics_cookies += 1
+                    elif 'performance' in category:  # Added Performance category handling
+                        performance_cookies += 1
+                    elif 'other' in category:
+                        other_cookies += 1
+                    elif ('unknown' in category or 
+                          'unclassified' in category or 
+                          'not specified' in category):
+                        unknown_cookies += 1
                     else:
-                        unclassified_cookies += 1
+                        # If category exists but doesn't match known types, count as Other
+                        other_cookies += 1
+                else:
+                    # If no category is provided, count as Unknown
+                    unknown_cookies += 1
         
         # Always count secure and httpOnly regardless of where cookie data comes from
         if cookies_data:
@@ -363,11 +390,6 @@ def analyze_crawler_data(json_file):
                     secure_cookies += 1
                 if cookie.get('httpOnly', False):
                     httponly_cookies += 1
-                
-                # Check if cookie is third-party
-                cookie_domain = cookie.get('domain', '')
-                if cookie_domain and domain not in cookie_domain:
-                    third_party_cookies += 1
         
         # Storage API Usage - Use visit 1
         storage_data = get_visit_data('storage', visit_id, fallback_id)
@@ -377,6 +399,8 @@ def analyze_crawler_data(json_file):
         local_storage_get = 0
         session_storage_get = 0
         storage_potential_identifiers_count = 0
+        local_storage_potential_identifiers = 0  # Added variable for localStorage identifiers
+        session_storage_potential_identifiers = 0  # Added variable for sessionStorage identifiers
         
         if storage_data:
             local_storage_count = storage_data.get('local_storage_count', 0)
@@ -407,6 +431,8 @@ def analyze_crawler_data(json_file):
         if storage_analysis:
             potential_identifiers = storage_analysis.get('potential_identifiers', {})
             storage_potential_identifiers_count = potential_identifiers.get('total', 0)
+            local_storage_potential_identifiers = potential_identifiers.get('localStorage', 0)  # Extract localStorage identifiers
+            session_storage_potential_identifiers = potential_identifiers.get('sessionStorage', 0)  # Extract sessionStorage identifiers
         
         # Track top organizations and providers
         top_organizations = defaultdict(int)
@@ -563,6 +589,11 @@ def analyze_crawler_data(json_file):
         utilities_requests = category_requests.get("Utilities", 0)
         uncategorized_requests = category_requests.get("Uncategorized", 0)
         
+        # Second debug print just before return
+        tqdm.write(f"\nValues before return:")
+        tqdm.write(f"First-party cookies: {first_party_cookies}")
+        tqdm.write(f"Third-party cookies: {third_party_cookies}")
+        
         # Return the data with related fields grouped together
         return {
             # Basic site info
@@ -616,6 +647,7 @@ def analyze_crawler_data(json_file):
             'adult_advertising_requests': adult_advertising_requests,
             'consent_management_requests': consent_management_requests,
             'miscellaneous_requests': miscellaneous_requests,
+            'utilities_requests': utilities_requests,
             'uncategorized_requests': uncategorized_requests,
             
             # Resource types
@@ -627,16 +659,19 @@ def analyze_crawler_data(json_file):
             'unique_cookies': unique_cookies,
             'overlapping_cookies': overlapping_cookies,
             'identified_cookies': identified_cookies,
+            'first_party_cookies': first_party_cookies,
+            'third_party_cookies': third_party_cookies,
             'secure_cookies': secure_cookies,
             'httponly_cookies': httponly_cookies,
-            'third_party_cookies': third_party_cookies,
             'necessary_cookies': necessary_cookies,
-            'preference_cookies': preference_cookies,
             'functional_cookies': functional_cookies,
-            'marketing_cookies': marketing_cookies,
-            'statistics_cookies': statistics_cookies,
-            'unclassified_cookies': unclassified_cookies,
+            'advertising_cookies': advertising_cookies,
+            'analytics_cookies': analytics_cookies,
+            'performance_cookies': performance_cookies,
+            'other_cookies': other_cookies,
+            'unknown_cookies': unknown_cookies,
             'potential_tracking_cookies_count': potential_tracking_cookies_count,
+            'shared_identifiers_count': shared_identifiers_count,
             
             # Storage metrics
             'local_storage_count': local_storage_count,
@@ -644,6 +679,8 @@ def analyze_crawler_data(json_file):
             'local_storage_get': local_storage_get,
             'session_storage_get': session_storage_get,
             'storage_potential_identifiers_count': storage_potential_identifiers_count,
+            'local_storage_potential_identifiers': local_storage_potential_identifiers,
+            'session_storage_potential_identifiers': session_storage_potential_identifiers,
             
             # Fingerprinting metrics
             'total_fingerprinting_calls': total_fp_calls,
@@ -693,9 +730,9 @@ def process_folder(folder_path, extension_name):
             results.append(result)
     
     # Print all the unique categories we've found once per folder
-    tqdm.write(f"\nCategories encountered in '{extension_name}':")
-    tqdm.write(f"- All categories: {sorted(ALL_CATEGORIES_ENCOUNTERED)}")
-    tqdm.write(f"- Unmatched categories: {sorted(UNMATCHED_CATEGORIES)}\n")
+    #tqdm.write(f"\nCategories encountered in '{extension_name}':")
+    #tqdm.write(f"- All categories: {sorted(ALL_CATEGORIES_ENCOUNTERED)}")
+    #tqdm.write(f"- Unmatched categories: {sorted(UNMATCHED_CATEGORIES)}\n")
             
     return results
 
@@ -743,9 +780,15 @@ def process_all_folders(json_dir, output_csv):
         tqdm.write("No valid data extracted")
         return
     
+    # Debug print before writing to CSV
+    for result in all_results:
+        tqdm.write(f"\nValues being written to CSV:")
+        tqdm.write(f"First-party cookies: {result['first_party_cookies']}")
+        tqdm.write(f"Third-party cookies: {result['third_party_cookies']}")
+    
     tqdm.write(f"Writing {len(all_results)} results to CSV...")
     
-    # Write to CSV, without explicitly placing extension column first
+    # Write to CSV
     fieldnames = list(all_results[0].keys())
     with open(output_csv, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -753,11 +796,10 @@ def process_all_folders(json_dir, output_csv):
         writer.writerows(all_results)
     
     tqdm.write(f"Successfully created CSV file: {output_csv} with {len(all_results)} rows")
-
 if __name__ == "__main__":
     # Base directory for crawler data
-    json_dir = "data/crawler_data non-kameleo"
-    output_csv = "data/csv/non-kameleo.csv"
+    json_dir = "data/Varies runs/test"
+    output_csv = "data/csv/test.csv"
     
     # Ensure output directory exists
     os.makedirs(os.path.dirname(output_csv), exist_ok=True)
@@ -771,4 +813,14 @@ if __name__ == "__main__":
         process_single_folder(json_dir, output_csv, specific_folder)
     else:
         tqdm.write(f"Processing all extension folders in: {json_dir}")
-        process_all_folders(json_dir, output_csv) 
+        process_all_folders(json_dir, output_csv)
+    
+    # Print all encountered categories
+    print("\nAll encountered domain categories:")
+    for category in sorted(ALL_CATEGORIES_ENCOUNTERED):
+        print(f"- {category}")
+
+    if UNMATCHED_CATEGORIES:
+        print("\nUnmatched categories (not explicitly handled):")
+        for category in sorted(UNMATCHED_CATEGORIES):
+            print(f"- {category}") 
