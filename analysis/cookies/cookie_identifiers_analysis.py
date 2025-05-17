@@ -11,7 +11,7 @@ import seaborn as sns
 from analysis.display_names import DISPLAY_NAMES, PROFILE_GROUPS
 
 # Load the dataset
-df = pd.read_csv("data/csv/non-kameleo.csv")
+df = pd.read_csv("data/csv/final_data2.csv")
 
 # Filter for successful page loads
 df_loaded = df[df['page_status'] == 'loaded']
@@ -37,17 +37,17 @@ all_profiles = [p for p in ordered_profiles if p in df_loaded['profile'].unique(
 
 # Function to identify outliers for a group
 def get_outliers(group_data):
-    q1 = group_data['potential_tracking_cookies_count'].quantile(0.25)
-    q3 = group_data['potential_tracking_cookies_count'].quantile(0.75)
+    q1 = group_data['shared_identifiers_count'].quantile(0.25)
+    q3 = group_data['shared_identifiers_count'].quantile(0.75)
     iqr = q3 - q1
     upper_bound = q3 + 1.5 * iqr
-    return group_data[group_data['potential_tracking_cookies_count'] > upper_bound]
+    return group_data[group_data['shared_identifiers_count'] > upper_bound]
 
 # Create the box plot
 plt.figure(figsize=(16, 8))
 
 # Create box plot with black and white style
-sns.boxplot(data=df_loaded, x='profile', y='potential_tracking_cookies_count', 
+sns.boxplot(data=df_loaded, x='profile', y='shared_identifiers_count', 
             order=all_profiles,
             color='white',          # White boxes
             flierprops={'marker': '.', 'markerfacecolor': 'black', 'markersize': 4},  # Black outlier dots
@@ -72,13 +72,13 @@ for i, profile in enumerate(all_profiles):
 # Combine all outliers and get top "some number"
 if all_outliers:
     all_outliers_df = pd.concat(all_outliers)
-    top_outliers = all_outliers_df.nlargest(12, 'potential_tracking_cookies_count')
+    top_outliers = all_outliers_df.nlargest(12, 'shared_identifiers_count')
 
     # Annotate top outliers
     for _, outlier in top_outliers.iterrows():
         plt.annotate(
             outlier['domain'],
-            xy=(outlier['profile_idx'], outlier['potential_tracking_cookies_count']),
+            xy=(outlier['profile_idx'], outlier['shared_identifiers_count']),
             xytext=(10, 10),
             textcoords='offset points',
             fontsize=8,
@@ -87,7 +87,7 @@ if all_outliers:
         )
 
 # Add group labels above the plot
-y_max = df_loaded['potential_tracking_cookies_count'].max()
+y_max = df_loaded['shared_identifiers_count'].max()
 current_position = 0
 for group_name, group_profiles in PROFILE_GROUPS.items():
     group_profiles_in_data = [p for p in group_profiles if p in all_profiles]
@@ -113,9 +113,9 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
             plt.axvline(x=current_position - 0.5, color='black', linestyle=':', alpha=0.7)
 
 # Customize the plot
-plt.title('Distribution of Potential Tracking Cookies per Profile\n(For domains that loaded successfully across all profiles)',
+plt.title('Distribution of First Party Tracking Cookies per Profile\n(For domains that loaded successfully across all profiles)',
           fontsize=16, pad=40)
-plt.ylabel('Number of Potential Tracking Cookies', fontsize=14, labelpad=10)
+plt.ylabel('Number of First Party Tracking Cookies', fontsize=14, labelpad=10)
 plt.xlabel('Browser Profile', fontsize=14, labelpad=10)
 plt.grid(axis='y', linestyle='--', alpha=0.3)
 
@@ -128,13 +128,13 @@ plt.xticks(range(len(all_profiles)),
 plt.subplots_adjust(bottom=0.25, top=0.85)
 
 # Save and show the plot
-plt.savefig('potential_tracking_cookies_distribution.png', dpi=300, bbox_inches='tight')
+plt.savefig('analysis/graphs/first_party_tracking_cookies_distribution.png', dpi=300, bbox_inches='tight')
 plt.show()
 
 # Print summary statistics
 print("\nSummary Statistics:")
 for profile in all_profiles:
-    profile_data = df_loaded[df_loaded['profile'] == profile]['potential_tracking_cookies_count']
+    profile_data = df_loaded[df_loaded['profile'] == profile]['shared_identifiers_count']
     print(f"\n{DISPLAY_NAMES.get(profile, profile)}:")
     print(f"  Median: {profile_data.median():.1f}")
     print(f"  Mean: {profile_data.mean():.1f}")
@@ -144,12 +144,12 @@ for profile in all_profiles:
     print(f"  Max: {profile_data.max():.1f}")
 
 # Print all outliers for reference
-print("\nOutliers (domains with unusually high tracking cookie counts):")
+print("\nOutliers (domains with unusually high first party tracking cookie counts):")
 for profile in all_profiles:
     profile_data = df_loaded[df_loaded['profile'] == profile]
     outliers = get_outliers(profile_data)
     
     if not outliers.empty:
         print(f"\n{DISPLAY_NAMES.get(profile, profile)}:")
-        for _, row in outliers.sort_values('potential_tracking_cookies_count', ascending=False).iterrows():
-            print(f"  {row['domain']}: {int(row['potential_tracking_cookies_count'])} tracking cookies") 
+        for _, row in outliers.sort_values('shared_identifiers_count', ascending=False).iterrows():
+            print(f"  {row['domain']}: {int(row['shared_identifiers_count'])} tracking cookies") 

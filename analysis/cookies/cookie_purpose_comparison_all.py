@@ -12,7 +12,7 @@ sys.path.insert(0, project_root)
 from analysis.display_names import DISPLAY_NAMES, PROFILE_GROUPS
 
 # Load the dataset
-df = pd.read_csv("data/csv/trial02.csv")
+df = pd.read_csv("data/csv/final_data2.csv")
 
 # Filter for successful page loads
 df_loaded = df[df['page_status'] == 'loaded']
@@ -158,7 +158,7 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
             plt.axvline(x=current_position - 0.5, color='black', linestyle=':', alpha=0.7)
 
 # Set title with more padding and simplified text
-plt.title('Cookie Categories per Profile\n(For domains that loaded successfully across all profiles)', 
+plt.title('Cookie Categories per Profile\n(For domains that loaded successfully across all profiles \n and exluding "Others" and "Unknown")', 
           fontsize=16, pad=40)
 
 # Customize the plot
@@ -190,5 +190,5 @@ plt.ylim(bottom=0)
 # Adjust layout with even more space for title
 plt.subplots_adjust(top=0.85)  # Reduced from 0.88 to 0.85 to prevent title cutoff
 
-plt.savefig('cookie_purpose_categories_comparison_all.png', dpi=300, bbox_inches='tight')
+plt.savefig('analysis/graphs/cookie_purpose_categories_comparison_all.png', dpi=300, bbox_inches='tight')
 plt.show() 

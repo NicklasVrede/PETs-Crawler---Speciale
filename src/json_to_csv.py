@@ -107,7 +107,7 @@ def analyze_crawler_data(json_file):
         page_loaded = None  # Start with None (no assumption)
         
         # Get the visit ID from the JSON if available, otherwise use default
-        visit_id = data.get('visit_id', '0')
+        visit_id = '1'
         visit_key = f"visit{visit_id}"  # Format as visit0, visit1, etc.
         
         # Enhanced banner analysis extraction - simplified
@@ -147,7 +147,7 @@ def analyze_crawler_data(json_file):
                 page_loaded = bool(page_loaded_info)
         
         # Get the visit ID from the JSON if available, otherwise use default
-        fallback_id = '0' if visit_id != '0' else '1'  # If primary is 0, try 1 as fallback
+        fallback_id = '1'
         
         # Function to get visit-specific data or fall back to another visit
         def get_visit_data(key, primary_id, fallback_id):
@@ -731,10 +731,32 @@ def process_folder(folder_path, extension_name):
     results = []
     json_files = []
     
+    # First, check for duplicate domain JSONs
+    domain_files = defaultdict(list)
     for root, dirs, files in os.walk(folder_path):
         for file in files:
             if file.endswith('.json'):
-                json_files.append(os.path.join(root, file))
+                domain = file[:-5]  # Remove .json extension
+                full_path = os.path.join(root, file)
+                domain_files[domain].append(full_path)
+    
+    # Check and warn about duplicates
+    duplicates_found = False
+    for domain, paths in domain_files.items():
+        if len(paths) > 1:
+            if not duplicates_found:
+                tqdm.write(f"\nWARNING: Found duplicate domain files in {extension_name}:")
+                duplicates_found = True
+            tqdm.write(f"\nDomain: {domain}")
+            for path in paths:
+                tqdm.write(f"  - {path}")
+            # Only process the first file found
+            json_files.append(paths[0])
+        else:
+            json_files.append(paths[0])
+    
+    if duplicates_found:
+        tqdm.write("\nOnly the first file for each duplicate domain will be processed.")
     
     tqdm.write(f"Processing folder '{extension_name}': {len(json_files)} JSON files")
     
@@ -743,11 +765,6 @@ def process_folder(folder_path, extension_name):
         result = analyze_crawler_data(json_file)
         if result:
             results.append(result)
-    
-    # Print all the unique categories we've found once per folder
-    #tqdm.write(f"\nCategories encountered in '{extension_name}':")
-    #tqdm.write(f"- All categories: {sorted(ALL_CATEGORIES_ENCOUNTERED)}")
-    #tqdm.write(f"- Unmatched categories: {sorted(UNMATCHED_CATEGORIES)}\n")
             
     return results
 

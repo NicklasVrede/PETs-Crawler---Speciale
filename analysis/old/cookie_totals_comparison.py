@@ -7,11 +7,12 @@ sys.path.insert(0, project_root)
 
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
 from analysis.display_names import DISPLAY_NAMES, PROFILE_GROUPS
 
 # Load the dataset
-df = pd.read_csv("data/csv/final_data2.csv")
+df = pd.read_csv("data/csv/trial02.csv")
 
 # Filter for successful page loads
 df_loaded = df[df['page_status'] == 'loaded']
@@ -27,6 +28,12 @@ for domain in df_loaded['domain'].unique():
 # Filter for only those domains
 df_loaded = df_loaded[df_loaded['domain'].isin(successful_domains)]
 
+# Calculate first party cookies (total - third party), ensuring no negative values
+df_loaded['first_party_cookies'] = np.maximum(
+    0, 
+    df_loaded['unique_cookies'] - df_loaded['third_party_cookies']
+)
+
 # Flatten and order the profiles according to groups
 ordered_profiles = []
 for group_profiles in PROFILE_GROUPS.values():
@@ -35,39 +42,57 @@ for group_profiles in PROFILE_GROUPS.values():
 # Ensure we only use profiles that exist in our data
 all_profiles = [p for p in ordered_profiles if p in df_loaded['profile'].unique()]
 
-# Calculate total CNAME cloaking instances per profile
-profile_stats = []
-for profile in all_profiles:
-    profile_data = df_loaded[df_loaded['profile'] == profile]
-    total_instances = profile_data['potential_cname_cloaking'].sum()
-    domains_with_cloaking = len(profile_data[profile_data['potential_cname_cloaking'] > 0])
-    
-    profile_stats.append({
-        'profile': profile,
-        'total_instances': total_instances,
-        'domains_with_cloaking': domains_with_cloaking
-    })
-
-# Create the bar plot
+# Create the stacked bar chart
 plt.figure(figsize=(16, 8))
 
-# Create bars with smaller width (default is 0.8)
-x = range(len(all_profiles))
-bars = plt.bar(x, [stat['total_instances'] for stat in profile_stats], 
-               color='white', 
-               edgecolor='black',
-               width=0.5)  # Changed from default 0.8 to 0.5
+# Calculate means for each profile
+means_data = []
+for profile in all_profiles:
+    profile_data = df_loaded[df_loaded['profile'] == profile]
+    means_data.append({
+        'profile': profile,
+        'first_party_mean': profile_data['first_party_cookies'].mean(),
+        'third_party_mean': profile_data['third_party_cookies'].mean()
+    })
 
-# Add value labels on top of each bar
-for i, bar in enumerate(bars):
-    height = bar.get_height()
-    if height > 0:
-        plt.text(bar.get_x() + bar.get_width()/2, height,
-                f'{int(height)}', ha='center', va='bottom', fontsize=10)
+# Convert to DataFrame
+means_df = pd.DataFrame(means_data)
 
-# Add group labels above the plot
-y_max = max(stat['total_instances'] for stat in profile_stats)
+# Create the stacked bar chart
+x = np.arange(len(all_profiles))
+width = 0.8
+
+# Create bars
+plt.bar(x, means_df['first_party_mean'], width, 
+        label='First Party Cookies', color='lightblue')
+plt.bar(x, means_df['third_party_mean'], width,
+        bottom=means_df['first_party_mean'], 
+        label='Third Party Cookies', color='coral')
+
+# Add value labels on the bars
+for i in range(len(x)):
+    first_party = means_df['first_party_mean'].iloc[i]
+    third_party = means_df['third_party_mean'].iloc[i]
+    total = first_party + third_party
+    
+    # Add first party value in the middle of its section
+    if first_party > 0.1:
+        plt.text(i, first_party/2, f'{first_party:.1f}', 
+                ha='center', va='center')
+    
+    # Add third party value in the middle of its section
+    if third_party > 0.1:
+        plt.text(i, first_party + third_party/2, f'{third_party:.1f}', 
+                ha='center', va='center')
+    
+    # Add total on top
+    if total > 0.1:
+        plt.text(i, total + 0.5, f'Total: {total:.1f}', 
+                ha='center', va='bottom')
+
+# Add group labels above the bars
 current_position = 0
+y_max = plt.gca().get_ylim()[1]
 for group_name, group_profiles in PROFILE_GROUPS.items():
     group_profiles_in_data = [p for p in group_profiles if p in all_profiles]
     if group_profiles_in_data:
@@ -76,7 +101,7 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
         
         # Place the group label in the middle of the group
         label_position = (group_start + group_end) / 2
-        plt.text(label_position, y_max * 1.10, group_name,
+        plt.text(label_position, y_max * 1.01, group_name,
                 ha='center', va='bottom', fontsize=12,
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2))
         
@@ -92,39 +117,21 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
             plt.axvline(x=current_position - 0.5, color='black', linestyle=':', alpha=0.7)
 
 # Customize the plot
-plt.title('Total CNAME Cloaking Instances per Profile\n(For domains that loaded successfully across all profiles)',
+plt.title('Average Number of Cookies per Profile\n(For domains that loaded successfully across all profiles)',
           fontsize=16, pad=40)
-plt.ylabel('Total Number of CNAME Cloaking Instances', fontsize=14, labelpad=10)
+plt.ylabel('Average Cookie Count', fontsize=14, labelpad=10)
 plt.xlabel('Browser Profile', fontsize=14, labelpad=10)
 plt.grid(axis='y', linestyle='--', alpha=0.3)
 
 # Use display names for x-tick labels
-plt.xticks(range(len(all_profiles)), 
-          [DISPLAY_NAMES.get(profile, profile) for profile in all_profiles],
+plt.xticks(x, [DISPLAY_NAMES.get(profile, profile) for profile in all_profiles],
           rotation=45, ha='right', fontsize=10)
 
 # Adjust layout
-plt.subplots_adjust(bottom=0.25, top=0.85)
+plt.subplots_adjust(bottom=0.2, top=0.85)
 
-# Save and show the plot
-plt.savefig('cname_cloaking_total_instances.png', dpi=300, bbox_inches='tight')
-plt.show()
+# Add legend
+plt.legend()
 
-# Print detailed statistics
-print("\nDetailed Statistics:")
-for stat in profile_stats:
-    profile_name = DISPLAY_NAMES.get(stat['profile'], stat['profile'])
-    print(f"\n{profile_name}:")
-    print(f"  Total CNAME cloaking instances: {int(stat['total_instances'])}")
-    print(f"  Number of domains with cloaking: {stat['domains_with_cloaking']}")
-
-# Print domains with CNAME cloaking for each profile
-print("\nDomains with CNAME cloaking by profile:")
-for profile in all_profiles:
-    profile_data = df_loaded[df_loaded['profile'] == profile]
-    cloaking_domains = profile_data[profile_data['potential_cname_cloaking'] > 0]
-    
-    if not cloaking_domains.empty:
-        print(f"\n{DISPLAY_NAMES.get(profile, profile)}:")
-        for _, row in cloaking_domains.iterrows():
-            print(f"  {row['domain']}: {int(row['potential_cname_cloaking'])} instances")
+plt.savefig('analysis/graphs/cookie_totals_comparison.png', dpi=300, bbox_inches='tight')
+plt.show() 
