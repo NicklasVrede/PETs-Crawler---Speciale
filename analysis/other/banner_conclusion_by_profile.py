@@ -1,10 +1,19 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-from display_names import DISPLAY_NAMES, PROFILE_GROUPS
+import os
+import sys
+import glob
+
+# Add the project root directory to the Python path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, project_root)
+
+
+from analysis.display_names import DISPLAY_NAMES, PROFILE_GROUPS
 
 # Load the dataset
-df = pd.read_csv("data/csv/trial02.csv")
+df = pd.read_csv("data/csv/final_data2.csv")
 
 # Order the profiles in a meaningful way using imported groups
 ordered_profiles = []
@@ -44,10 +53,23 @@ for domain in domains_to_check:
     if domain_loaded_for_all_profiles:
         loaded_domains.add(domain)
 
-print(f"Found {len(loaded_domains)} domains that loaded successfully for all profiles")
 
 # Filter the dataframe to include only these domains
 filtered_df = df[df['domain'].isin(loaded_domains)]
+
+# Check for duplicate domain entries per profile
+duplicate_check = filtered_df.groupby(['profile', 'domain']).size().reset_index(name='count')
+duplicates = duplicate_check[duplicate_check['count'] > 1]
+pd.set_option('display.max_rows', None)  # Show all rows
+print("Duplicate entries found:")
+print(duplicates)
+
+# Remove duplicates, keeping the first occurrence
+filtered_df = filtered_df.drop_duplicates(subset=['profile', 'domain'], keep='first')
+
+print("\nDEBUG: Checking total entries per profile after removing duplicates:")
+profile_totals = filtered_df.groupby('profile').size()
+print(profile_totals)
 
 profile = 'adblock'
 # List domains where adguard has "removed" status
@@ -59,10 +81,6 @@ for domain in adguard_removed_domains:
 
 # Calculate counts for each profile and banner conclusion
 banner_counts = filtered_df.groupby(['profile', 'banner_conclusion']).size().unstack(fill_value=0)
-
-# Remove "unknown" category from the results
-if 'unknown' in banner_counts.columns:
-    banner_counts = banner_counts.drop('unknown', axis=1)
 
 # Create a new combined category for all removal-related conclusions
 banner_counts['removed/likely removed'] = 0
@@ -78,35 +96,39 @@ for category in removal_categories:
 available_ordered_profiles = [p for p in ordered_profiles if p in banner_counts.index]
 banner_counts = banner_counts.reindex(available_ordered_profiles)
 
-# Define colors for the bars - adjusted to be more distinct
+# Define colors for the bars - removed 'unknown'
 colors = {
-    'not_removed': '#4682B4',      # Steel Blue - a stronger, more visible blue
-    'removed/likely removed': '#98FB98'  # Pale Green - a softer but visible green
+    'not_removed': '#4682B4',      # Steel Blue
+    'removed/likely removed': '#98FB98',  # Pale Green
 }
 
 # Create a stacked bar chart
 fig, ax = plt.subplots(figsize=(14, 8))
 x = np.arange(len(banner_counts.index))
 
+# Define the order of categories (removed 'unknown')
+category_order = ['not_removed', 'removed/likely removed']
+
 # Plot each banner conclusion as a stacked bar using our custom colors
 bottom = np.zeros(len(banner_counts.index))
-for i, conclusion in enumerate(banner_counts.columns):
-    bars = ax.bar(x, banner_counts[conclusion], bottom=bottom, 
-                 label=conclusion, color=colors[conclusion])
-    
-    # Add count labels inside the bars (only for bars with count > 1)
-    for j, bar in enumerate(bars):
-        height = bar.get_height()
-        if height > 1:  # Only show label if bar has meaningful count
-            ax.text(
-                bar.get_x() + bar.get_width()/2., 
-                bottom[j] + height/2,
-                f"{int(height)}", 
-                ha='center', va='center', 
-                color='black', fontsize=8  # Changed text color to black for better visibility
-            )
-    
-    bottom += banner_counts[conclusion].values
+for conclusion in category_order:
+    if conclusion in banner_counts.columns:
+        bars = ax.bar(x, banner_counts[conclusion], bottom=bottom, 
+                     label=conclusion, color=colors[conclusion])
+        
+        # Add count labels inside the bars (only for bars with count > 1)
+        for j, bar in enumerate(bars):
+            height = bar.get_height()
+            if height > 1:  # Only show label if bar has meaningful count
+                ax.text(
+                    bar.get_x() + bar.get_width()/2., 
+                    bottom[j] + height/2,
+                    f"{int(height)}", 
+                    ha='center', va='center', 
+                    color='black', fontsize=8
+                )
+        
+        bottom += banner_counts[conclusion].values
 
 # Add labels and title
 ax.set_ylabel('Number of Pages')
@@ -177,5 +199,5 @@ plt.subplots_adjust(top=0.85, right=0.85)  # Keep these margins the same
 plt.subplots_adjust(bottom=0.2)  # Adjust this value as needed for x-tick label clarity
 
 plt.tight_layout()
-plt.savefig('banner_conclusion_by_profile_without_unknown.png', dpi=300, bbox_inches='tight')
+plt.savefig('analysis/graphs/banner_conclusion_by_profile_without_unknown.png', dpi=300, bbox_inches='tight')
 plt.show() 

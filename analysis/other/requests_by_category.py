@@ -4,7 +4,7 @@ import os
 import sys
 
 # Add the project root directory to the Python path
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, project_root)
 
 from analysis.display_names import DISPLAY_NAMES, PROFILE_GROUPS
@@ -22,26 +22,25 @@ simplified_cols = [
     "adult_advertising_requests",  # Adult Advertising
     "utilities_requests",          # Utilities
     "miscellaneous_requests",      # Miscellaneous
-    "uncategorized_requests"       # Uncategorized
 ]
 
-# Colors for each category (we'll need to add more colors)
+# Colors for each category with a better color for advertising
 simplified_colors = [
-    "#ff0000",  # Social Media - bright red
-    "#ff9999",  # Advertising - light red/pink
-    "#008800",  # Analytics - green
-    "#ccff99",  # Consent Management - light green
-    "#0066cc",  # Hosting - blue
-    "#99ccff",  # Customer Interaction - light blue
-    "#ff00ff",  # Audio/Video - magenta
-    "#ffcc00",  # Extensions - yellow
-    "#ff6600",  # Adult Advertising - orange
-    "#666666",  # Utilities - gray
-    "#000000",  # Miscellaneous - black
-    "#cccccc",  # Uncategorized - light gray
+    "#FF8C69",  # Social Media - salmon pink (less washed out)
+    "#e36868",  # Advertising - strong red
+    "#4DAF4A",  # Analytics - forest green
+    "#98FB98",  # Consent Management - pale green
+    "#377EB8",  # Hosting - strong blue
+    "#80B1D3",  # Customer Interaction - light blue
+    "#984EA3",  # Audio/Video - purple
+    "#FFD700",  # Extensions - gold
+    "#FF7F00",  # Adult Advertising - dark orange
+    "#999999",  # Utilities - medium gray
+    "#333333",  # Miscellaneous - dark gray
+    "#CCCCCC",  # Uncategorized - light gray
 ]
 
-df = pd.read_csv("data/csv/trial02.csv")
+df = pd.read_csv("data/csv/final_data2.csv")
 
 # Filter for successful page loads
 df_loaded = df[df['page_status'] == 'loaded']
@@ -111,7 +110,7 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
         group_start = current_position
         group_end = current_position + len(group_profiles_in_data) - 1
         label_position = (group_start + group_end) / 2
-        plt.text(label_position, y_max * 1.10, group_name,
+        plt.text(label_position, y_max * 0.98, group_name,
                 ha='center', va='bottom', fontsize=12,
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2))
         current_position += len(group_profiles_in_data)
@@ -145,7 +144,7 @@ for i, label in enumerate(legend_labels):
     else:
         legend_labels[i] = label.title()
 
-ax.legend(handles, legend_labels, bbox_to_anchor=(1.05, 1), loc='upper left')
+ax.legend(handles, legend_labels, bbox_to_anchor=(1.01, 1), loc='upper left')
 
 # Updated y-axis label to clarify that it includes all requests (both first-party and third-party)
 ax.set_ylabel("All requests by category relative to baseline (100%)")
@@ -156,6 +155,9 @@ ax.axhline(y=100, color='black', linestyle='-', alpha=0.5, linewidth=1)
 
 # Add grid lines
 plt.grid(axis='y', linestyle='-', alpha=0.2)
+
+# Add a title to the plot
+plt.title('Tracking requests by category, relative to Baseline Profile\n(For domains that loaded successfully across all profiles)', pad=20)
 
 # Add a text annotation for bars exceeding 100%
 for i, profile in enumerate(scaled_share.index):
@@ -168,5 +170,9 @@ plt.xticks(range(len(all_profiles)),
           [DISPLAY_NAMES.get(profile, profile) for profile in all_profiles],
           rotation=45, ha="right")
 
-plt.tight_layout()
+# Create the graphs directory if it doesn't exist
+os.makedirs("analysis/graphs", exist_ok=True)
+
+# Save figure in the graphs directory
+plt.savefig("analysis/graphs/Overall_Requests_by_Category.png", dpi=300, bbox_inches='tight')
 plt.show()

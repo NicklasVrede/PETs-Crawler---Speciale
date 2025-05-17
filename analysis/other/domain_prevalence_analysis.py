@@ -8,28 +8,29 @@ from urllib.parse import urlparse
 from tqdm import tqdm
 import numpy as np
 
-# Use evenly sized buckets (100k each) to ensure consistent data representation
+# Use sampling buckets to ensure consistent data representation
 RANK_BUCKETS = [
-    (1, 100000),          # [1-100k]
-    (100001, 200000),     # [100k-200k]
-    (200001, 300000),     # [200k-300k]
-    (300001, 400000),     # [300k-400k]
-    (400001, 500000),     # [400k-500k]
-    (500001, 600000),     # [500k-600k]
-    (600001, 700000),     # [600k-700k]
-    (700001, 800000),     # [700k-800k]
-    (800001, 900000),     # [800k-900k]
-    (900001, 1000000),    # [900k-1M]
+    (1, 5000),           # [1-5k]
+    (5001, 10000),       # [5k-10k]
+    (10001, 50000),      # [10k-50k]
+    (50001, 250000),     # [50k-250k]
+    (250001, 500000),    # [250k-500k]
+    (500001, 1000000),   # [500k-1M]
 ]
 
 def get_rank_bucket_label(rank):
     """Convert a rank to a bucket label"""
     for start, end in RANK_BUCKETS:
         if start <= rank <= end:
-            if end == 1000000:
-                return f"[{start//1000}k-1M]"
+            if start < 1000:
+                start_label = str(start)
             else:
-                return f"[{start//1000}k-{end//1000}k]"
+                start_label = f"{start//1000}k"
+            if end < 1000:
+                end_label = str(end)
+            else:
+                end_label = f"{end//1000}k"
+            return f"[{start_label}-{end_label}]"
     return "unknown"
 
 def load_site_rankings(csv_path='data/db+ref/Tranco_final_sample.csv'):
@@ -264,11 +265,6 @@ def analyze_data(json_dir, output_dir, profile="no_extensions"):
             
     df = pd.DataFrame(df_data)
     
-    # Save data to CSV
-    csv_file = os.path.join(output_dir, 'domain_prevalence.csv')
-    df.to_csv(csv_file, index=False)
-    print(f"Saved domain prevalence data to {csv_file}")
-    
     # Generate visualization
     generate_domain_prevalence_visualization(df, top_domains, output_dir, profile)
 
@@ -279,28 +275,18 @@ def generate_domain_prevalence_visualization(df, top_domains, output_dir, profil
     # Get ordered bucket labels
     bucket_labels = [get_rank_bucket_label(bucket[0]) for bucket in RANK_BUCKETS]
     
-    # Define colors similar to the reference image
-    colors = [
-        '#20B2AA',  # Light Sea Green (google-analytics.com)
-        '#FFD700',  # Gold (googleapis.com)
-        '#FF6347',  # Tomato (gstatic.com)
-        '#4169E1',  # Royal Blue (google.com)
-        '#9370DB',  # Medium Purple (google-analytics.com)
-        '#FF7F50',  # Coral (doubleclick.net)
-        '#A9A9A9',  # Dark Gray (facebook.net)
-        '#00CED1',  # Dark Turquoise (facebook.com)
-        '#32CD32',  # Lime Green (google.dk)
-        '#FF69B4',  # Hot Pink (googlesyndication.com)
-        '#FFFF00',  # Yellow (cloudflare.com)
-        '#98FB98',  # Pale Green (jsdelivr.net)
-        '#DDA0DD',  # Plum
-        '#FFDEAD',  # Navajo White
-    ]
+    # Create custom x-axis positions - slightly wider spacing for larger buckets
+    x_positions = [0, 0.4, 0.8, 1.5, 2.3, 3.0]  # Manually adjusted positions
     
-    # Define distinct markers
+    # Rest of the color and marker definitions remain the same
+    colors = [
+        '#20B2AA', '#FFD700', '#FF6347', '#4169E1', '#9370DB',
+        '#FF7F50', '#A9A9A9', '#00CED1', '#32CD32', '#FF69B4',
+        '#FFFF00', '#98FB98', '#DDA0DD', '#FFDEAD',
+    ]
     markers = ['o', 'v', 'D', 'x', 's', '^', 'o', 'v', 'D', 'o', 'v', 'D', 'x', 's']
     
-    # Plot each domain
+    # Plot each domain with the new x_positions
     lines = []
     legend_labels = []
     
@@ -309,78 +295,66 @@ def generate_domain_prevalence_visualization(df, top_domains, output_dir, profil
         
         # Create a complete dataset with all buckets
         complete_data = []
-        for bucket in bucket_labels:
+        for bucket, x_pos in zip(bucket_labels, x_positions):
             bucket_data = domain_data[domain_data['rank_bucket'] == bucket]
-            if len(bucket_data) > 0:
-                percentage = bucket_data['percentage'].values[0]
-            else:
-                percentage = 0
-            complete_data.append({'rank_bucket': bucket, 'percentage': percentage})
+            percentage = bucket_data['percentage'].values[0] if len(bucket_data) > 0 else 0
+            complete_data.append({'x_position': x_pos, 'percentage': percentage})
             
         complete_df = pd.DataFrame(complete_data)
         
-        # Plot with black-bordered markers and ULTRA-THICK lines
         line, = plt.plot(
-            complete_df['rank_bucket'], 
+            complete_df['x_position'],
             complete_df['percentage'],
             color=colors[i % len(colors)],
             marker=markers[i % len(markers)],
-            markersize=8,                # Larger markers
-            markeredgecolor='black',     # Black border on markers
-            markeredgewidth=1.5,         # Thicker marker border
-            linestyle='-',               # All solid lines
-            linewidth=5.0,               # ULTRA-THICK lines (was 3.5)
+            markersize=8,
+            markeredgecolor='black',
+            markeredgewidth=1.5,
+            linestyle='-',
+            linewidth=5.0,
             label=f"{domain} ({avg_pct:.1f}%)"
         )
         
         lines.append(line)
         legend_labels.append(f"{domain}")
     
-    # Create a box around the plot area
+    # Set custom x-tick positions and labels
+    plt.xticks(x_positions, bucket_labels, rotation=45)
+    
+    # Rest of the formatting remains the same
     plt.box(True)
-    
-    # Format y-axis as percentages
     plt.gca().yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{int(x)}%'))
-    
-    # Set y-axis range from 10% to 100% as requested
     plt.ylim(10, 100)
-    
-    # Add horizontal grid lines
     plt.grid(axis='y', color='lightgray', linestyle='-', linewidth=0.5, alpha=0.7)
     
-    # Set axis labels
     plt.xlabel("Alexa Rank", fontsize=14)
     plt.ylabel("% of pages including 3rd party domain", fontsize=12)
     
-    # Create legend with more rows and less width
     legend = plt.legend(
         lines, 
         legend_labels,
         loc='upper center',
-        bbox_to_anchor=(0.5, 1.15),  # Moved down slightly
-        ncol=3,  # Reduced number of columns to create more rows
-        frameon=True,  # Show frame
+        bbox_to_anchor=(0.5, 1.15),
+        ncol=3,
+        frameon=True,
         fontsize=10,
-        handlelength=3,  # Longer legend lines
-        borderpad=1.0,   # More padding inside the legend
+        handlelength=3,
+        borderpad=1.0,
         labelspacing=0.5,
         columnspacing=1.0
     )
     
-    # Add black border to legend
     frame = legend.get_frame()
     frame.set_edgecolor('black')
     frame.set_linewidth(1.0)
     
     plt.tight_layout()
-    plt.subplots_adjust(top=0.75)  # Keep the increased top margin
+    plt.subplots_adjust(top=0.75)
     
-    # Adjust title position - lowering the y value
     plt.suptitle(f"Third-Party Domain Prevalence ({profile})", 
                 fontsize=16, 
                 y=0.90)
     
-    # Save figure
     output_file = os.path.join(output_dir, f'domain_prevalence_{profile}.png')
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
     print(f"Generated domain prevalence visualization: {output_file}")
@@ -388,7 +362,7 @@ def generate_domain_prevalence_visualization(df, top_domains, output_dir, profil
 if __name__ == "__main__":
     # Base directory for crawler data
     json_dir = "data/crawler_data"
-    output_dir = "data/analysis/domain_prevalence_analysis"
+    output_dir = "analysis/graphs"
     
     # Analyze data - try different profiles
     analyze_data(json_dir, output_dir, profile="no_extensions") 

@@ -8,18 +8,14 @@ sys.path.insert(0, project_root)
 
 from analysis.display_names import DISPLAY_NAMES, PROFILE_GROUPS
 
-# Define rank buckets
+# Define rank buckets to match sampling buckets
 RANK_BUCKETS = [
-    (1, 100000),          # [1-100k]
-    (100001, 200000),     # [100k-200k]
-    (200001, 300000),     # [200k-300k]
-    (300001, 400000),     # [300k-400k]
-    (400001, 500000),     # [400k-500k]
-    (500001, 600000),     # [500k-600k]
-    (600001, 700000),     # [600k-700k]
-    (700001, 800000),     # [700k-800k]
-    (800001, 900000),     # [800k-900k]
-    (900001, 1000000),    # [900k-1M]
+    (1, 5000),           # [1-5k]
+    (5001, 10000),       # [5k-10k]
+    (10001, 50000),      # [10k-50k]
+    (50001, 250000),     # [50k-250k]
+    (250001, 500000),    # [250k-500k]
+    (500001, 1000000),   # [500k-1M]
 ]
 
 def get_bucket_label(rank):
@@ -39,7 +35,7 @@ def analyze_bucket_distribution(df, message):
     return bucket_counts
 
 # Load the dataset
-df = pd.read_csv("data/csv/trial02.csv")
+df = pd.read_csv("data/csv/final_data.csv")
 
 # Print initial counts and bucket distribution
 print(f"Total entries before filtering: {len(df)}")

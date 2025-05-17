@@ -85,6 +85,12 @@ def analyze_cookie_frequency_by_profile(domain_profile_cookies: Dict[str, Dict[s
                 cookie_name = cookie.get('name', 'unknown')
                 cookie_counts_by_profile[profile_name][cookie_name] += 1
     
+    # Find the maximum count across all profiles for y-axis scaling
+    max_count = 0
+    for profile_counts in cookie_counts_by_profile.values():
+        profile_max = max(profile_counts.values()) if profile_counts else 0
+        max_count = max(max_count, profile_max)
+    
     # Create output directory
     output_dir = 'analysis/cookies/frequency_analysis'
     os.makedirs(output_dir, exist_ok=True)
@@ -102,9 +108,10 @@ def analyze_cookie_frequency_by_profile(domain_profile_cookies: Dict[str, Dict[s
         cookie_names = [cookie[0] for cookie in top_cookies]
         counts = [cookie[1] for cookie in top_cookies]
         
-        # Create bar chart
+        # Create bar chart with common y-axis scale
         plt.bar(range(len(counts)), counts)
         plt.xticks(range(len(cookie_names)), cookie_names, rotation=45, ha='right')
+        plt.ylim(0, max_count * 1.1)  # Add 10% padding to the top
         
         plt.xlabel('Cookie Name')
         plt.ylabel('Presence on origins')

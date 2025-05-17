@@ -11,7 +11,7 @@ import seaborn as sns
 from analysis.display_names import DISPLAY_NAMES, PROFILE_GROUPS
 
 # Load the dataset
-df = pd.read_csv("data/csv/trial02.csv")
+df = pd.read_csv("data/csv/final_data2.csv")
 
 # Filter for successful page loads
 df_loaded = df[df['page_status'] == 'loaded']
@@ -86,7 +86,7 @@ for _, outlier in top_outliers.iterrows():
     )
 
 # Add group labels above the plot
-y_max = df_loaded['unique_cookies'].max()
+y_max = 150  # Use our new maximum y-value instead of df_loaded['unique_cookies'].max()
 current_position = 0
 for group_name, group_profiles in PROFILE_GROUPS.items():
     group_profiles_in_data = [p for p in group_profiles if p in all_profiles]
@@ -96,7 +96,8 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
         
         # Place the group label in the middle of the group
         label_position = (group_start + group_end) / 2
-        plt.text(label_position, y_max * 1.05, group_name,
+        plt.text(label_position, y_max * 1.05,  # This will now be just above our 150 limit
+                group_name,
                 ha='center', va='bottom', fontsize=12,
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2))
         
@@ -112,7 +113,7 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
             plt.axvline(x=current_position - 0.5, color='black', linestyle=':', alpha=0.7)
 
 # Customize the plot
-plt.title('Distribution of Cookies per Profile\n(For domains that loaded successfully across all profiles)',
+plt.title('Cookies observed per page per profile\n(For domains that loaded successfully across all profiles)',
           fontsize=16, pad=40)
 plt.ylabel('Number of Cookies', fontsize=14, labelpad=10)
 plt.xlabel('Browser Profile', fontsize=14, labelpad=10)
@@ -123,11 +124,24 @@ plt.xticks(range(len(all_profiles)),
           [DISPLAY_NAMES.get(profile, profile) for profile in all_profiles],
           rotation=45, ha='right', fontsize=10)
 
-# Adjust layout
+# Adjust layout to make room for labels
 plt.subplots_adjust(bottom=0.2, top=0.85)
 
+# Set y-axis limit to focus on the main distribution
+plt.ylim(0, y_max * 1.15)  # Give a little extra space for the labels
+
+# Add a text annotation indicating there are outliers above
+plt.text(
+    0.02, 0.98,  # Position in axes coordinates
+    'Note: Some outliers exceed 150 cookies (up to 500)',
+    transform=plt.gca().transAxes,
+    fontsize=10,
+    verticalalignment='top',
+    bbox=dict(facecolor='white', alpha=0.8, edgecolor='none')
+)
+
 # Save and show the plot
-plt.savefig('cookie_distribution_comparison.png', dpi=300, bbox_inches='tight')
+plt.savefig('analysis/graphs/cookies_per_page_with_different_profiles.png', dpi=300, bbox_inches='tight')
 plt.show()
 
 # Print summary statistics

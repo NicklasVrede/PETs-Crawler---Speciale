@@ -27,7 +27,7 @@ fp_colors = [
 ]
 
 # Load the dataset
-df = pd.read_csv("data/csv/trial02.csv")
+df = pd.read_csv("data/csv/final_data2.csv")
 
 # Filter for successful page loads
 df_loaded = df[df['page_status'] == 'loaded']
@@ -71,6 +71,11 @@ for i, (col, color) in enumerate(zip(fingerprinting_cols, fp_colors)):
     ax.bar(x + offset, values, width, label=col.replace('_fingerprinting_calls', '').replace('_', ' ').title(),
            color=color)
 
+# Add reference lines for baseline profile values
+baseline_values = g.loc['no_extensions']
+for (col, color), baseline_value in zip(zip(fingerprinting_cols, fp_colors), baseline_values):
+    ax.axhline(y=baseline_value, color=color, linestyle='--', alpha=0.3, zorder=1)
+
 # Add group labels above the plot
 y_max = g.max().max()
 current_position = 0
@@ -82,7 +87,7 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
         
         # Place the group label in the middle of the group
         label_position = (group_start + group_end) / 2
-        plt.text(label_position, y_max * 1.10, group_name,
+        plt.text(label_position, y_max * 1, group_name,
                 ha='center', va='bottom', fontsize=12,
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2))
         
@@ -107,17 +112,17 @@ plt.grid(axis='y', linestyle='--', alpha=0.3)
 # Format legend labels with proper colors and style
 legend_labels = ["Canvas", "AudioContext", "WebRTC", "Canvas Font"]
 handles = [plt.Rectangle((0,0),1,1, color=color) for color in fp_colors]  # Create colored rectangles
-ax.legend(handles, legend_labels, bbox_to_anchor=(1.05, 1), loc='upper left')
+ax.legend(handles, legend_labels, bbox_to_anchor=(1.0, 1.22), loc='upper right')
 
 # Use display names for x-tick labels
 plt.xticks(x, [DISPLAY_NAMES.get(profile, profile) for profile in all_profiles],
            rotation=45, ha='right', fontsize=10)
 
 # Adjust layout
-plt.subplots_adjust(bottom=0.25, top=0.85, right=0.85)
+plt.subplots_adjust(bottom=0.25, top=0.85)
 
 # Save and show the plot
-plt.savefig('fingerprinting_methods_distribution.png', dpi=300, bbox_inches='tight')
+plt.savefig('analysis/graphs/fingerprinting_methods_distribution.png', dpi=300, bbox_inches='tight')
 plt.show()
 
 # Print statistics
