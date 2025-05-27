@@ -4,6 +4,7 @@ import numpy as np
 import os
 import sys
 import glob
+import matplotlib.patheffects as path_effects
 
 # Add the project root directory to the Python path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -116,30 +117,34 @@ for conclusion in category_order:
         bars = ax.bar(x, banner_counts[conclusion], bottom=bottom, 
                      label=conclusion, color=colors[conclusion])
         
-        # Add count labels inside the bars (only for bars with count > 1)
+        # Add count labels inside the bars with white outline
         for j, bar in enumerate(bars):
             height = bar.get_height()
             if height > 1:  # Only show label if bar has meaningful count
-                ax.text(
+                text = ax.text(
                     bar.get_x() + bar.get_width()/2., 
                     bottom[j] + height/2,
                     f"{int(height)}", 
                     ha='center', va='center', 
-                    color='black', fontsize=8
+                    color='black', 
+                    fontsize=9,
+                    fontweight='bold'
                 )
+                # Add white outline
+                text.set_path_effects([
+                    path_effects.Stroke(linewidth=0.8, foreground='white'),
+                    path_effects.Normal()
+                ])
         
         bottom += banner_counts[conclusion].values
 
 # Add labels and title
-ax.set_ylabel('Number of Pages')
-ax.set_title('Cookie Banners Removed per Browser Profile\n' + 
-             '(For domains that loaded successfully across all profiles, English/Danish only)',
-             loc='center', pad=20)  # loc='center' centers the title in the available space
+ax.set_ylabel('Number of Pages', fontsize=14)
 ax.set_xticks(x)
 
-# Use the imported display names for the x-tick labels
+# Use the imported display names for the x-tick labels with consistent styling
 x_tick_labels = [DISPLAY_NAMES.get(profile, profile) for profile in banner_counts.index]
-ax.set_xticklabels(x_tick_labels, rotation=45, ha='right')
+ax.set_xticklabels(x_tick_labels, rotation=45, ha='right', fontsize=10)
 
 # Set y-axis limit based on the data
 y_max = banner_counts.sum(axis=1).max()
@@ -148,11 +153,11 @@ ax.set_ylim(0, y_max * 1.1)  # Add 10% margin above the highest bar
 # Add a grid for better readability
 ax.grid(axis='y', linestyle='--', alpha=0.3)
 
-# Move legend to the top right, but more to the left
+# Move legend inside the plot area instead of outside
 ax.legend(title='Banner Conclusion', 
-         bbox_to_anchor=(0.98, 1.17),
-         loc='upper right',
-         ncol=1)  # Stack legend items vertically
+         loc='upper left',
+         bbox_to_anchor=(1.02, 1),  # Matched position
+         fontsize=10)  # Added font size
 
 # Determine the positions for the group dividers
 group_dividers = []
@@ -171,7 +176,7 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
 for divider_pos in group_dividers:
     ax.axvline(x=divider_pos, color='black', linestyle=':', alpha=0.7)
 
-# Add group labels above the bars
+# Add group labels with consistent styling
 current_position = 0
 for group_name, group_profiles in PROFILE_GROUPS.items():
     group_profiles_in_chart = [p for p in group_profiles if p in available_ordered_profiles]
@@ -182,22 +187,44 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
         # Place the group label in the middle of the group
         label_position = (group_start + group_end) / 2
         
-        # Add group label above the bars
+        # Add group label with consistent styling
         ax.text(
-            label_position, y_max * 1.05,  # Position above the bars
+            label_position, y_max * 1.05,
             group_name, 
-            ha='center', va='bottom', fontsize=10,
-            bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=0.5)
+            ha='center', va='bottom',
+            fontsize=12,  # Matched font size
+            bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2)  # Matched box style
         )
         
         current_position += len(group_profiles_in_chart)
 
-# Adjust the layout to accommodate the legend
-plt.subplots_adjust(top=0.85, right=0.85)  # Keep these margins the same
-
-# Adjust the bottom margin since we removed the n-values
-plt.subplots_adjust(bottom=0.2)  # Adjust this value as needed for x-tick label clarity
-
+# Adjust layout consistently
 plt.tight_layout()
+plt.subplots_adjust(top=0.9)  # Matched top margin
+
 plt.savefig('analysis/graphs/banner_conclusion_by_profile_without_unknown.png', dpi=300, bbox_inches='tight')
+
+profile = 'decentraleyes'
+decentraleyes_removed_domains = filtered_df[
+    (filtered_df['profile'] == profile) & 
+    (filtered_df['banner_conclusion'].isin(['removed', 'likely removed', 'likely_removed']))
+]['domain'].unique()
+
+print(f"\nFound {len(decentraleyes_removed_domains)} domains where {profile} has 'removed' or 'likely removed' banner status:")
+for domain in decentraleyes_removed_domains:
+    print(f"  - {domain}")
+
+# Check removed banners for specific profiles
+profiles_to_check = ['adblock_plus', 'disconnect', 'privacy_badger']
+
+for profile in profiles_to_check:
+    removed_domains = filtered_df[
+        (filtered_df['profile'] == profile) & 
+        (filtered_df['banner_conclusion'].isin(['removed', 'likely removed', 'likely_removed']))
+    ]['domain'].unique()
+    
+    print(f"\nFound {len(removed_domains)} domains where {profile} has 'removed' or 'likely removed' banner status:")
+    for domain in removed_domains:
+        print(f"  - {domain}")
+
 plt.show() 

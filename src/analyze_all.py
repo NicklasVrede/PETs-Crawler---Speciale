@@ -83,7 +83,7 @@ def process_all_crawler_data(base_dir=None, banner_data_dir=None, max_workers=4)
                 progress_bar.update(1)
 
 
-    run_all_analyzers(base_dir)
+    #run_all_analyzers(base_dir)
     
     # Run banner analysis as the final step (processes all folders at once)
     tqdm.write("Running banner analysis...")

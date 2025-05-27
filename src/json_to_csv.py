@@ -580,7 +580,7 @@ def analyze_crawler_data(json_file):
         
         # Now extract category counts from our dictionary
         advertising_requests = category_requests["Advertising"]
-        analytics_requests = category_requests["Analytics"]
+        analytics_requests = category_requests.get("Site Analytics", 0)
         social_media_requests = category_requests.get("Social Media", 0)
         essential_requests = category_requests.get("Essential", 0)
         hosting_requests = category_requests.get("Hosting", 0)

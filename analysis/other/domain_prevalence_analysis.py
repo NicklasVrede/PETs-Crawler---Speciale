@@ -7,6 +7,15 @@ from collections import defaultdict
 from urllib.parse import urlparse
 from tqdm import tqdm
 import numpy as np
+import sys
+
+
+# Add the project root directory to the Python path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, project_root)
+
+
+from analysis.third_party.third_party_domain_prevalence import get_successful_domains
 
 # Use sampling buckets to ensure consistent data representation
 RANK_BUCKETS = [
@@ -180,8 +189,9 @@ def extract_domain_data(json_file, site_rankings):
 
 def analyze_data(json_dir, output_dir, profile="no_extensions"):
     """Analyze data from specified profile and generate domain prevalence graph"""
-    # Load site rankings
+    # Load site rankings and successful domains
     site_rankings = load_site_rankings()
+    successful_domains = get_successful_domains()
     
     # Get path to the directory
     target_dir = os.path.join(json_dir, profile)
@@ -198,9 +208,15 @@ def analyze_data(json_dir, output_dir, profile="no_extensions"):
     for root, _, files in os.walk(target_dir):
         for file in files:
             if file.endswith('.json'):
-                json_files.append(os.path.join(root, file))
+                # Extract domain from filename
+                domain = file[:-5]  # Remove '.json'
+                if domain.startswith('www.'):
+                    domain = domain[4:]
+                # Only include files for domains that loaded successfully across all profiles
+                if domain.lower() in successful_domains:
+                    json_files.append(os.path.join(root, file))
                 
-    print(f"Found {len(json_files)} JSON files in {target_dir}")
+    print(f"Found {len(json_files)} JSON files for successfully loaded domains in {target_dir}")
     
     # Process JSON files
     sites_data = []
@@ -327,7 +343,7 @@ def generate_domain_prevalence_visualization(df, top_domains, output_dir, profil
     plt.ylim(10, 100)
     plt.grid(axis='y', color='lightgray', linestyle='-', linewidth=0.5, alpha=0.7)
     
-    plt.xlabel("Alexa Rank", fontsize=14)
+    plt.xlabel("", fontsize=14)
     plt.ylabel("% of pages including 3rd party domain", fontsize=12)
     
     legend = plt.legend(
@@ -344,16 +360,16 @@ def generate_domain_prevalence_visualization(df, top_domains, output_dir, profil
         columnspacing=1.0
     )
     
+    # Remove suptitle
+    plt.suptitle("")
+    
+    # Keep other formatting elements
     frame = legend.get_frame()
     frame.set_edgecolor('black')
     frame.set_linewidth(1.0)
     
     plt.tight_layout()
     plt.subplots_adjust(top=0.75)
-    
-    plt.suptitle(f"Third-Party Domain Prevalence ({profile})", 
-                fontsize=16, 
-                y=0.90)
     
     output_file = os.path.join(output_dir, f'domain_prevalence_{profile}.png')
     plt.savefig(output_file, dpi=300, bbox_inches='tight')

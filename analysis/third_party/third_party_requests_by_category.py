@@ -6,6 +6,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import matplotlib.patheffects as path_effects
 
 
 # Add the project root directory to the Python path
@@ -111,25 +112,38 @@ def plot_third_party_requests(profile_data):
     
     bars = []
     for category in categories:
-        bars.append(ax.bar(range(len(ordered_profiles)), 
-                          category_data[category],
-                          bottom=bottom,
-                          label=category,
-                          color=category_colors.get(category, '#808080'),
-                          width=0.6))
+        bar = ax.bar(range(len(ordered_profiles)), 
+                    category_data[category],
+                    bottom=bottom,
+                    label=category,
+                    color=category_colors.get(category, '#808080'),
+                    width=0.6)
+        bars.append(bar)
+        
+        # Add percentage annotations
+        for i, value in enumerate(category_data[category]):
+            # Show all Site Analytics values, or other categories if >5%
+            if category == 'Site Analytics' or value > 5:
+                y_center = float(bottom[i] + value/2)
+                text = ax.text(float(i), y_center,
+                             f'{value:.0f}%',
+                             ha='center', va='center',
+                             color='black',
+                             fontsize=9,
+                             fontweight='bold')
+                # Add thinner white outline
+                text.set_path_effects([
+                    path_effects.Stroke(linewidth=0.8, foreground='white'),
+                    path_effects.Normal()
+                ])
+            
         bottom += category_data[category]
     
     # Add horizontal line at 100%
     plt.axhline(y=100, color='black', linestyle='--', alpha=0.5)
     
-    # Customize the plot
-    plt.title('Third-party Requests by Category Across Profiles', fontsize=14, pad=20)
-    # Add smaller subtitle below the main title
-    plt.figtext(0.5, 0.95, 'Only domains that loaded successfully across all profiles are included\nNormalized to Baseline Profile.',
-                ha='center', va='top', fontsize=10, style='italic')
-    
     plt.ylabel('Percentage of Requests (relative to Baseline Profile)', fontsize=14)
-    plt.xlabel('Browser Profile', fontsize=14)
+    plt.xlabel('', fontsize=14)
     
     # Use display names for x-tick labels
     plt.xticks(range(len(ordered_profiles)),

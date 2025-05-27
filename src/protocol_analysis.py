@@ -291,8 +291,8 @@ def generate_protocol_visualization(df, output_dir):
             bottom=bottom_cookie, color='#90EE90')
     
     # Set titles and labels
-    ax1.set_title('Activated Browser Extension')
-    ax2.set_title('Activated Cookie/Consent Manager')
+    # ax1.set_title('Activated Browser Extension')
+    # ax2.set_title('Activated Cookie/Consent Manager')
     
     ax1.set_ylabel('Requests to distinct 3rd party domains in %')
     ax2.set_ylabel('')

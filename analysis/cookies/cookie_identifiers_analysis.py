@@ -112,11 +112,8 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
         if current_position < len(all_profiles):
             plt.axvline(x=current_position - 0.5, color='black', linestyle=':', alpha=0.7)
 
-# Customize the plot
-plt.title('Distribution of First Party Tracking Cookies per Profile\n(For domains that loaded successfully across all profiles)',
-          fontsize=16, pad=40)
 plt.ylabel('Number of First Party Tracking Cookies', fontsize=14, labelpad=10)
-plt.xlabel('Browser Profile', fontsize=14, labelpad=10)
+plt.xlabel('', fontsize=14, labelpad=10)
 plt.grid(axis='y', linestyle='--', alpha=0.3)
 
 # Use display names for x-tick labels

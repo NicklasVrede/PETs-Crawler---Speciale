@@ -77,8 +77,7 @@ def plot_cloaked_domains(cloaked_domains):
     # Customize the plot
     plt.yticks(y_pos, domains)
     plt.xlabel('# of cloaked trackers')
-    plt.title('Most Common CNAME-cloaked Domains\n(For domains that loaded successfully across all profiles)')
-    
+
     # Add value labels on the bars
     for i, v in enumerate(frequencies):
         plt.text(v, i, f' {v}', va='center')

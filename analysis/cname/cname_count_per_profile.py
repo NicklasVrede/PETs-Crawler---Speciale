@@ -92,10 +92,8 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
             plt.axvline(x=current_position - 0.5, color='black', linestyle=':', alpha=0.7)
 
 # Customize the plot
-plt.title('Total CNAME Cloaking Instances per Profile\n(For domains that loaded successfully across all profiles)',
-          fontsize=16, pad=40)
 plt.ylabel('Total Number of CNAME Cloaking Instances', fontsize=14, labelpad=10)
-plt.xlabel('Browser Profile', fontsize=14, labelpad=10)
+plt.xlabel('', fontsize=14, labelpad=10)
 plt.grid(axis='y', linestyle='--', alpha=0.3)
 
 # Use display names for x-tick labels
@@ -107,7 +105,7 @@ plt.xticks(range(len(all_profiles)),
 plt.subplots_adjust(bottom=0.25, top=0.85)
 
 # Save and show the plot
-plt.savefig('cname_cloaking_total_instances.png', dpi=300, bbox_inches='tight')
+plt.savefig('analysis/graphs/cname_cloaking_total_instances.png', dpi=300, bbox_inches='tight')
 plt.show()
 
 # Print detailed statistics

@@ -86,8 +86,7 @@ def plot_cloaking_by_profile(profile_counts):
     # Customize the plot
     plt.xticks(x_pos, display_names, rotation=45, ha='right')
     plt.ylabel('# of cloaked trackers')
-    plt.title('CNAME Cloaking Instances by Profile')
-    
+
     # Add value labels on top of the bars
     for i, v in enumerate(counts):
         plt.text(i, v, str(v), ha='center', va='bottom')

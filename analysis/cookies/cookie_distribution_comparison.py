@@ -44,49 +44,46 @@ def get_outliers(group_data):
     return group_data[group_data['unique_cookies'] > upper_bound]
 
 # Create the box plot
-plt.figure(figsize=(16, 8))
+plt.figure(figsize=(16, 6))
 
 # Create box plot with black and white style
 sns.boxplot(data=df_loaded, x='profile', y='unique_cookies', 
             order=all_profiles,
-            color='white',          # White boxes
-            flierprops={'marker': '.', 'markerfacecolor': 'black', 'markersize': 4},  # Black outlier dots
-            medianprops={'color': 'black'},  # Black median line
-            boxprops={'edgecolor': 'black'},  # Black box edges
-            whiskerprops={'color': 'black'},  # Black whiskers
-            capprops={'color': 'black'},      # Black caps
-            showfliers=True,  # Show outlier points
-            whis=1.5)        # Set whisker length to 1.5 IQR (standard)
+            color='white',          
+            flierprops={'marker': '.', 'markerfacecolor': 'black', 'markersize': 4},  
+            medianprops={'color': 'black'},  
+            boxprops={'edgecolor': 'black'},  
+            whiskerprops={'color': 'black'},  
+            capprops={'color': 'black'},      
+            showfliers=False,  # Changed to False to hide outliers
+            whis=1.5)        
 
-# Find and annotate top outliers
-all_outliers = []
+# Define a softer red color
+mean_color = '#E68080'  # Light coral red
+# Alternative options: '#CD5C5C' (Indian Red) or '#E68080' (Soft red)
+
+# Add median and mean annotations for each profile
 for i, profile in enumerate(all_profiles):
-    profile_data = df_loaded[df_loaded['profile'] == profile]
-    outliers = get_outliers(profile_data)
+    profile_data = df_loaded[df_loaded['profile'] == profile]['unique_cookies']
+    median = profile_data.median()
+    mean = profile_data.mean()
     
-    if not outliers.empty:
-        # Add profile index and sort by cookie count
-        outliers['profile_idx'] = i
-        all_outliers.append(outliers)
-
-# Combine all outliers and get top "some number"
-all_outliers_df = pd.concat(all_outliers)
-top_outliers = all_outliers_df.nlargest(12, 'unique_cookies')
-
-# Annotate top outliers
-for _, outlier in top_outliers.iterrows():
-    plt.annotate(
-        outlier['domain'],
-        xy=(outlier['profile_idx'], outlier['unique_cookies']),
-        xytext=(10, 10),
-        textcoords='offset points',
-        fontsize=8,
-        bbox=dict(facecolor='white', edgecolor='none', alpha=0.7),
-        arrowprops=dict(arrowstyle='->', color='gray')
-    )
+    # Annotate median 
+    plt.text(i+ 0.17, median - 3.75, f'{median:.1f}',
+             ha='right', va='bottom', fontsize=8, fontweight='bold')
+    
+    # Show mean with a dashed line across the box
+    plt.plot([i-0.4, i+0.4], [mean, mean], '--', 
+             color=mean_color, 
+             linewidth=1, 
+             alpha=0.8)
+    
+    # Annotate mean value
+    plt.text(i + 0.17, mean, f'{mean:.1f}',
+             ha='right', va='bottom', fontsize=8, color=mean_color, fontweight='bold')
 
 # Add group labels above the plot
-y_max = 150  # Use our new maximum y-value instead of df_loaded['unique_cookies'].max()
+y_max = plt.ylim()[1]  # Get the current y-axis limit
 current_position = 0
 for group_name, group_profiles in PROFILE_GROUPS.items():
     group_profiles_in_data = [p for p in group_profiles if p in all_profiles]
@@ -94,9 +91,9 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
         group_start = current_position
         group_end = current_position + len(group_profiles_in_data) - 1
         
-        # Place the group label in the middle of the group
+        # Place the group label in the middle of the group, much closer to the plot
         label_position = (group_start + group_end) / 2
-        plt.text(label_position, y_max * 1.05,  # This will now be just above our 150 limit
+        plt.text(label_position, y_max * 1.05,
                 group_name,
                 ha='center', va='bottom', fontsize=12,
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2))
@@ -113,10 +110,8 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
             plt.axvline(x=current_position - 0.5, color='black', linestyle=':', alpha=0.7)
 
 # Customize the plot
-plt.title('Cookies observed per page per profile\n(For domains that loaded successfully across all profiles)',
-          fontsize=16, pad=40)
 plt.ylabel('Number of Cookies', fontsize=14, labelpad=10)
-plt.xlabel('Browser Profile', fontsize=14, labelpad=10)
+plt.xlabel('')
 plt.grid(axis='y', linestyle='--', alpha=0.3)
 
 # Use display names for x-tick labels
@@ -124,21 +119,20 @@ plt.xticks(range(len(all_profiles)),
           [DISPLAY_NAMES.get(profile, profile) for profile in all_profiles],
           rotation=45, ha='right', fontsize=10)
 
-# Adjust layout to make room for labels
-plt.subplots_adjust(bottom=0.2, top=0.85)
+# Adjust layout with even less space at the top
+plt.subplots_adjust(bottom=0.2, top=0.95)  # Changed top from 0.92 to 0.95
 
-# Set y-axis limit to focus on the main distribution
-plt.ylim(0, y_max * 1.15)  # Give a little extra space for the labels
+# Adjust y-axis limit to be lower
+q1 = df_loaded['unique_cookies'].quantile(0.25)
+q3 = df_loaded['unique_cookies'].quantile(0.75)
+iqr = q3 - q1
+upper_bound = q3 + 4 * iqr
+y_max = min(upper_bound, 150)
+plt.ylim(-2, y_max)
 
-# Add a text annotation indicating there are outliers above
-plt.text(
-    0.02, 0.98,  # Position in axes coordinates
-    'Note: Some outliers exceed 150 cookies (up to 500)',
-    transform=plt.gca().transAxes,
-    fontsize=10,
-    verticalalignment='top',
-    bbox=dict(facecolor='white', alpha=0.8, edgecolor='none')
-)
+# Update legend for mean marker
+plt.plot([], [], '--', color=mean_color, label='Mean', alpha=0.8)
+plt.legend(loc='upper right', bbox_to_anchor=(1, 0.95))
 
 # Save and show the plot
 plt.savefig('analysis/graphs/cookies_per_page_with_different_profiles.png', dpi=300, bbox_inches='tight')

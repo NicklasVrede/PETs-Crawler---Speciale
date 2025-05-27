@@ -21,9 +21,8 @@ DISPLAY_NAMES = {
     "consent_o_matic_opt_out": "Consent-O-Matic (Opt-out)",
     "ghostery_tracker_&_ad_blocker_only_never_consent": "Ghostery (Never Consent)",
     "i_dont_care_about_cookies": "I Don't Care About Cookies",
-    "super_agent": f'Super Agent ("Opt-out")', #"Legacy Suport"
-    "super_agent_opt_in": f'Super Agent ("Opt-in")',
-    "super_agent_opt_out": f'Super Agent ("Opt-out")',
+    "super_agent_opt_in": 'Super Agent ("Opt-in")',
+    "super_agent_opt_out": 'Super Agent ("Opt-out")',
     
     # Other
     "decentraleyes": "Decentraleyes"
@@ -44,7 +43,6 @@ PROFILE_GROUPS = {
         "consent_o_matic_opt_in", "consent_o_matic_opt_out", 
         "ghostery_tracker_&_ad_blocker_only_never_consent",
         "i_dont_care_about_cookies", 
-        "super_agent", #"Legacy Suport"
         "super_agent_opt_in", 
         "super_agent_opt_out"
     ],

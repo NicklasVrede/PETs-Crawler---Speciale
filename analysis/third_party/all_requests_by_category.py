@@ -120,14 +120,7 @@ def plot_all_requests(profile_data):
     # Add horizontal line at 100%
     plt.axhline(y=100, color='black', linestyle='--', alpha=0.5)
     
-    # Customize the plot
-    plt.title('All Requests by Category Across Profiles', fontsize=14, pad=20)
-    # Add smaller subtitle below the main title
-    plt.figtext(0.5, 0.95, 'Only domains that loaded successfully across all profiles are included\nNormalized to Baseline Profile.',
-                ha='center', va='top', fontsize=10, style='italic')
-    
     plt.ylabel('Percentage of Requests (relative to Baseline Profile)', fontsize=14)
-    plt.xlabel('Browser Profile', fontsize=14)
     
     # Use display names for x-tick labels
     plt.xticks(range(len(ordered_profiles)),

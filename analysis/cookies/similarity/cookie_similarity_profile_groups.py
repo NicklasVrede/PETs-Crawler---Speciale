@@ -7,38 +7,36 @@ from tqdm import tqdm
 import sys
 
 # Add the project root directory to the Python path
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 sys.path.insert(0, project_root)
 
 from analysis.display_names import DISPLAY_NAMES, PROFILE_GROUPS
+from analysis.third_party.third_party_domain_prevalence import get_successful_domains
 
-def load_cookies_from_json(json_dir, profile):
+def load_cookies_from_json(json_dir, profile, successful_domains):
     """Load cookies from JSON files for a specific profile."""
     cookies_by_domain = defaultdict(list)
     
-    # Get path to the profile directory
     target_dir = os.path.join(json_dir, profile)
     if not os.path.exists(target_dir):
         print(f"Warning: {profile} directory not found at {target_dir}")
         return cookies_by_domain
 
-    # Find all JSON files
+    # Only process JSON files for successful domains
     json_files = []
-    for root, _, files in os.walk(target_dir):
-        for file in files:
-            if file.endswith('.json'):
-                json_files.append(os.path.join(root, file))
-                
+    for domain in successful_domains:
+        json_file = os.path.join(target_dir, f"{domain}.json")
+        if os.path.exists(json_file):
+            json_files.append(json_file)
+    
     print(f"Found {len(json_files)} JSON files in {target_dir}")
 
-    # Process each JSON file
     for json_file in tqdm(json_files, desc=f"Loading cookies for {profile}"):
         try:
             with open(json_file, 'r') as f:
                 data = json.load(f)
-                domain = data.get('domain', os.path.basename(json_file)[:-5])  # Remove .json
+                domain = data.get('domain', os.path.basename(json_file)[:-5])
                 
-                # Get cookies from visit "1"
                 if 'cookies' in data and '1' in data['cookies']:
                     for cookie in data['cookies']['1']:
                         if 'classification' in cookie:
@@ -67,7 +65,6 @@ def calculate_cookie_similarity(cookies1, cookies2):
     return intersection / union if union > 0 else 0
 
 def analyze_profile_similarities():
-    # Base directory for crawler data
     json_dir = "data/crawler_data"
     
     # Get list of actually existing profiles
@@ -75,23 +72,22 @@ def analyze_profile_similarities():
     for profile_id, display_name in DISPLAY_NAMES.items():
         profile_path = os.path.join(json_dir, profile_id)
         if os.path.exists(profile_path):
-            # Check if directory contains JSON files
-            json_files = [f for f in os.listdir(profile_path) if f.endswith('.json')]
-            if json_files:
-                existing_profiles[profile_id] = display_name
-                print(f"Found profile: {display_name} ({len(json_files)} JSON files)")
-            else:
-                print(f"Skipping {display_name} - no JSON files found")
+            existing_profiles[profile_id] = display_name
+            print(f"Found profile: {display_name}")
         else:
             print(f"Skipping {display_name} - directory not found")
     
     print(f"\nFound {len(existing_profiles)} valid profiles")
+
+    # Get domains that loaded successfully across all profiles
+    successful_domains = get_successful_domains()
+    print(f"\nFound {len(successful_domains)} domains that loaded successfully across all profiles")
     
     # Load cookies for existing profiles
     profile_cookies = {}
     for profile_id, display_name in existing_profiles.items():
         print(f"\nLoading cookies for {display_name}...")
-        profile_cookies[profile_id] = load_cookies_from_json(json_dir, profile_id)
+        profile_cookies[profile_id] = load_cookies_from_json(json_dir, profile_id, successful_domains)
     
     # Calculate similarity matrix between all existing profiles
     similarity_matrix = defaultdict(dict)
@@ -166,9 +162,6 @@ def analyze_profile_similarities():
             plt.axvline(x=current_pos - 0.5, color='black', linewidth=2)
             plt.axhline(y=current_pos - 0.5, color='black', linewidth=2)
         current_pos += group_size
-    
-    # Add title
-    plt.title('Profile Similarity Heatmap')
     
     # Add text annotations
     for i in range(len(ordered_profiles)):
