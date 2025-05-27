@@ -5,14 +5,17 @@ import numpy as np
 from collections import defaultdict
 from tqdm import tqdm
 import sys
+from matplotlib.patheffects import Stroke, Normal
 
 # Add the project root directory to the Python path
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 sys.path.insert(0, project_root)
 
 from analysis.display_names import DISPLAY_NAMES, PROFILE_GROUPS
+from analysis.third_party.third_party_domain_prevalence import get_successful_domains
 
-def load_cookies_from_json(json_dir, profile):
+
+def load_cookies_from_json(json_dir, profile, successful_domains):
     """Load cookies from JSON files for a specific profile."""
     cookies_by_domain = defaultdict(list)
     
@@ -21,11 +24,12 @@ def load_cookies_from_json(json_dir, profile):
         print(f"Warning: {profile} directory not found at {target_dir}")
         return cookies_by_domain
 
+    # Only process JSON files for successful domains
     json_files = []
-    for root, _, files in os.walk(target_dir):
-        for file in files:
-            if file.endswith('.json'):
-                json_files.append(os.path.join(root, file))
+    for domain in successful_domains:
+        json_file = os.path.join(target_dir, f"{domain}.json")
+        if os.path.exists(json_file):
+            json_files.append(json_file)
 
     for json_file in tqdm(json_files, desc=f"Loading cookies for {profile}"):
         try:
@@ -62,7 +66,7 @@ def analyze_banner_extension_similarities():
     json_dir = "data/crawler_data"
     
     # Get cookie banner extensions and baseline profile
-    banner_profiles = PROFILE_GROUPS['Cookie Extensions'] + ['no_extensions']
+    banner_profiles = PROFILE_GROUPS['Cookie Extensions'] + ['no_extensions', 'decentraleyes']
     
     # Get list of actually existing profiles
     existing_profiles = {}
@@ -70,18 +74,17 @@ def analyze_banner_extension_similarities():
         if profile_id in DISPLAY_NAMES:
             profile_path = os.path.join(json_dir, profile_id)
             if os.path.exists(profile_path):
-                json_files = [f for f in os.listdir(profile_path) if f.endswith('.json')]
-                if json_files:
-                    existing_profiles[profile_id] = DISPLAY_NAMES[profile_id]
-                    print(f"Found profile: {DISPLAY_NAMES[profile_id]} ({len(json_files)} JSON files)")
+                existing_profiles[profile_id] = DISPLAY_NAMES[profile_id]
+
+    # Get domains that loaded successfully across all profiles
+    successful_domains = get_successful_domains()
+    print(f"\nFound {len(successful_domains)} domains that loaded successfully across all profiles")
     
-    print(f"\nFound {len(existing_profiles)} valid profiles")
-    
-    # Load cookies for existing profiles
+    # Load cookies for existing profiles (only for successful domains)
     profile_cookies = {}
     for profile_id in existing_profiles:
         print(f"\nLoading cookies for {existing_profiles[profile_id]}...")
-        profile_cookies[profile_id] = load_cookies_from_json(json_dir, profile_id)
+        profile_cookies[profile_id] = load_cookies_from_json(json_dir, profile_id, successful_domains)
     
     # Calculate similarity matrix
     similarity_matrix = defaultdict(dict)
@@ -135,11 +138,17 @@ def analyze_banner_extension_similarities():
     # Add text annotations
     for i in range(len(ordered_profiles)):
         for j in range(len(ordered_profiles)):
-            color = 'black' if similarity_values[i, j] < 0.7 else 'white'
-            plt.text(j, i, f'{similarity_values[i, j]:.2f}',
-                    ha='center', va='center', color=color)
+            text = plt.text(j, i, f'{similarity_values[i, j]:.2f}',
+                    ha='center', va='center',
+                    color='black',
+                    fontsize=9,
+                    fontweight='bold')
+            # Add white outline like in banner_conclusion_by_profile.py
+            text.set_path_effects([
+                Stroke(linewidth=0.8, foreground='white'),
+                Normal()
+            ])
     
-    plt.title('Cookie Extension Similarity Heatmap')
     plt.tight_layout()
     plt.savefig('analysis/graphs/cookie_extension_similarity_heatmap.png', 
                 dpi=300, bbox_inches='tight')

@@ -155,9 +155,7 @@ for plot_type, profiles_to_include in [
         if idx == len(categories) - 1:
             ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
 
-    plt.suptitle(f'Cookies observed per profile based by rank and type - {plot_type}', 
-                 y=1.00)  # Reduced y value to move title closer
-    
+
     plt.tight_layout(
         rect=[0, 0, 0.92, 0.94],  # Adjusted top margin to be smaller
         h_pad=0.2,

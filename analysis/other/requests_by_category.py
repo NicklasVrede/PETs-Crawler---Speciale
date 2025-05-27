@@ -156,9 +156,6 @@ ax.axhline(y=100, color='black', linestyle='-', alpha=0.5, linewidth=1)
 # Add grid lines
 plt.grid(axis='y', linestyle='-', alpha=0.2)
 
-# Add a title to the plot
-plt.title('Tracking requests by category, relative to Baseline Profile\n(For domains that loaded successfully across all profiles)', pad=20)
-
 # Add a text annotation for bars exceeding 100%
 for i, profile in enumerate(scaled_share.index):
     total = scaled_share.loc[profile].sum()

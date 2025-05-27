@@ -45,8 +45,17 @@ sns.violinplot(data=df_loaded, x='profile', y='shared_identifiers_count',
                cut=0,         # Cut off violin at observed data limits
                width=0.9)     # Adjust width (default is 0.8, smaller number = narrower violins)
 
-# Add group labels above the plot
+# Calculate y_max first before using it
 y_max = df_loaded['shared_identifiers_count'].max()
+
+# Add small n=XXX counts below each violin but moved up slightly
+for idx, profile in enumerate(all_profiles):
+    profile_total = df_loaded[df_loaded['profile'] == profile]['shared_identifiers_count'].sum()
+    plt.text(idx, -0.5,  # Moved up from -0.8 to -0.5
+             f'n={profile_total:,.0f}',
+             ha='center', va='top', fontsize=8)
+
+# Add group labels above the plot but moved down slightly
 current_position = 0
 for group_name, group_profiles in PROFILE_GROUPS.items():
     group_profiles_in_data = [p for p in group_profiles if p in all_profiles]
@@ -54,9 +63,9 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
         group_start = current_position
         group_end = current_position + len(group_profiles_in_data) - 1
         
-        # Place the group label in the middle of the group
+        # Place the group label in the middle of the group (moved lower)
         label_position = (group_start + group_end) / 2
-        plt.text(label_position, y_max * 1.05,
+        plt.text(label_position, y_max * 1.1,  # Reduced from 1.25 to 1.1
                 group_name,
                 ha='center', va='bottom', fontsize=12,
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2))
@@ -73,10 +82,8 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
             plt.axvline(x=current_position - 0.5, color='black', linestyle=':', alpha=0.7)
 
 # Customize the plot
-plt.title('First Party Tracking Cookies per Page by Profile\n(For domains that loaded successfully across all profiles)',
-          fontsize=16, pad=40)
 plt.ylabel('Number of First Party Tracking Cookies', fontsize=14, labelpad=10)
-plt.xlabel('Browser Profile', fontsize=14, labelpad=10)
+plt.xlabel('', fontsize=14, labelpad=10)
 plt.grid(axis='y', linestyle='--', alpha=0.3)
 
 # Use display names for x-tick labels
@@ -85,12 +92,22 @@ plt.xticks(range(len(all_profiles)),
           rotation=45, ha='right', fontsize=10)
 
 
-# Adjust layout
-plt.subplots_adjust(bottom=0.2, top=0.85)
+# Adjust layout (increased top margin to accommodate labels)
+plt.subplots_adjust(bottom=0.2, top=0.8)
 
 # Save the plot
 plt.savefig('analysis/graphs/first_party_cookies_violin.png', dpi=300, bbox_inches='tight')
 plt.close()
+
+# Calculate and print total cookies per profile before summary statistics
+print("\nTotal First Party Tracking Cookies per Profile:")
+for profile in all_profiles:
+    profile_total = df_loaded[df_loaded['profile'] == profile]['shared_identifiers_count'].sum()
+    print(f"{DISPLAY_NAMES.get(profile, profile)}: {profile_total:,.0f}")
+
+# Calculate and print total cookies before summary statistics
+total_cookies = df_loaded['shared_identifiers_count'].sum()
+print(f"\nTotal First Party Tracking Cookies (all profiles): {total_cookies:,.0f}")
 
 # Print summary statistics
 print("\nSummary Statistics:")

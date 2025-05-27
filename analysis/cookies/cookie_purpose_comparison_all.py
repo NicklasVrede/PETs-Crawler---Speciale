@@ -4,6 +4,7 @@ import numpy as np
 import seaborn as sns
 import os
 import sys
+import matplotlib.patheffects as path_effects
 
 # Add the project root directory to the Python path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -105,7 +106,19 @@ total_width = bar_width * len(cookie_categories)
 colors = sns.color_palette("Dark2", len(cookie_categories))
 
 # Plot each category as a group of bars
+skipped_positions = {}  # Dictionary to store positions by height and profile
+TOLERANCE = 0.3  # Tolerance for considering heights as equal and for skipping labels
+
+def find_matching_key(positions_dict, profile_idx, height):
+    """Find existing key with similar height for the same profile"""
+    for (p_idx, h), data in positions_dict.items():
+        if p_idx == profile_idx and abs(h - height) < TOLERANCE:
+            return (p_idx, h)
+    return None
+
+print("\nDebugging skipped positions:")
 for i, category in enumerate(cookie_categories):
+    print(f"\nProcessing category: {category}")
     category_data = stats_df[stats_df['category'] == category]
     category_means = []
     
@@ -116,20 +129,89 @@ for i, category in enumerate(cookie_categories):
         else:
             category_means.append(0)
     
-    # Calculate position for this group of bars
     pos = x - total_width/2 + i * bar_width + bar_width/2
-    
-    # Create readable label
     label = category.replace('_', ' ').title().replace('Cookies', '')
     
-    bars = plt.bar(pos, category_means, width=bar_width, label=label, color=colors[i], alpha=1.0)  # Set alpha to 1.0 for Dark2
+    bars = plt.bar(pos, category_means, width=bar_width, label=label, color=colors[i], alpha=1.0)
     
-    # Add value labels on top of each bar
+    # Add value labels with bold text and white outline
     for j, bar in enumerate(bars):
         height = bar.get_height()
-        if height > 0.1:  # Only add labels for non-trivial values
-            plt.text(bar.get_x() + bar.get_width()/2, height + 0.1,
-                    f'{height:.1f}', ha='center', va='bottom', fontsize=9, rotation=90)
+        
+        # Get heights of adjacent bars at this x-position
+        adjacent_heights = []
+        if i > 0:
+            left_category = cookie_categories[i-1]
+            left_data = stats_df[(stats_df['category'] == left_category) & 
+                               (stats_df['profile'] == all_profiles[j])]
+            if not left_data.empty:
+                adjacent_heights.append(left_data['mean'].values[0])
+        
+        if i < len(cookie_categories) - 1:
+            right_category = cookie_categories[i+1]
+            right_data = stats_df[(stats_df['category'] == right_category) & 
+                                (stats_df['profile'] == all_profiles[j])]
+            if not right_data.empty:
+                adjacent_heights.append(right_data['mean'].values[0])
+        
+        # Store position if label should be skipped
+        should_show = (height > 0.1 and
+                     (not adjacent_heights or
+                      all(abs(height - adj) > TOLERANCE for adj in adjacent_heights)))
+        
+        # Find existing similar height or create new key
+        existing_key = find_matching_key(skipped_positions, j, height)
+        position_key = existing_key if existing_key else (j, height)
+        
+        if not should_show:
+            if position_key not in skipped_positions:
+                skipped_positions[position_key] = {
+                    'positions': [],
+                    'categories': [],
+                    'height': height
+                }
+            skipped_positions[position_key]['positions'].append((bar.get_x() + bar.get_width() - 0.18, height + 0.1))
+            skipped_positions[position_key]['categories'].append(category)
+            print(f"  Skipped label at profile {all_profiles[j]}, height {height:.1f}, category {category}")
+        else:
+            text = plt.text(bar.get_x() + bar.get_width() - 0.18,
+                    height + 0.1,
+                    f'{height:.1f}', 
+                    ha='left',
+                    va='center',
+                    fontsize=9,
+                    fontweight='bold',
+                    rotation=0)
+            text.set_path_effects([
+                path_effects.Stroke(linewidth=0.8, foreground='white'),
+                path_effects.Normal()
+            ])
+
+# Add common labels for skipped positions
+print("\nProcessing common labels:")
+for (profile_idx, height), data in skipped_positions.items():
+    if len(data['positions']) >= 2:  # Only process if we have at least 2 positions
+        avg_x = sum(pos[0] for pos in data['positions']) / len(data['positions'])
+        avg_y = sum(pos[1] for pos in data['positions']) / len(data['positions'])
+        
+        print(f"\nProfile {all_profiles[profile_idx]}, Height {height:.1f}:")
+        print(f"  Categories: {', '.join(data['categories'])}")
+        print(f"  Number of positions: {len(data['positions'])}")
+        print(f"  Averaged position: x={avg_x:.2f}, y={avg_y:.2f}")
+        
+        # Use the average height for the label, now with "~" prefix
+        avg_height = sum(pos[1] - 0.1 for pos in data['positions']) / len(data['positions'])
+        text = plt.text(avg_x - 0.1, avg_y,
+                f'~{avg_height:.1f}',  # Added "~" before the value
+                ha='left',
+                va='center',
+                fontsize=9,
+                fontweight='bold',
+                rotation=0)
+        text.set_path_effects([
+            path_effects.Stroke(linewidth=0.8, foreground='white'),
+            path_effects.Normal()
+        ])
 
 # Add group labels above the bars with more space from title
 current_position = 0
@@ -157,13 +239,9 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
         if current_position < len(all_profiles):
             plt.axvline(x=current_position - 0.5, color='black', linestyle=':', alpha=0.7)
 
-# Set title with more padding and simplified text
-plt.title('Cookie Categories per Profile\n(For domains that loaded successfully across all profiles \n and exluding "Others" and "Unknown")', 
-          fontsize=16, pad=40)
-
 # Customize the plot
 plt.ylabel('Average Cookie Count', fontsize=14, labelpad=10)
-plt.xlabel('Browser Profile', fontsize=14, labelpad=10)  # Added labelpad
+plt.xlabel('')
 plt.grid(axis='y', linestyle='--', alpha=0.3)
 
 # Use display names for x-tick labels with more space

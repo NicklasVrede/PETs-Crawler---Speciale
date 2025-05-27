@@ -38,6 +38,9 @@ all_profiles = [p for p in ordered_profiles if p in df_loaded['profile'].unique(
 def create_violin_plot(data, metric, title, ylabel, output_file):
     plt.figure(figsize=(16, 8))
     
+    # Calculate y_max first before using it
+    y_max = data[metric].max()
+    
     # Create violin plot
     sns.violinplot(data=data, x='profile', y=metric,
                    order=all_profiles,
@@ -45,14 +48,17 @@ def create_violin_plot(data, metric, title, ylabel, output_file):
                    cut=0,
                    width=0.7)
     
-    # Customize the plot
-    plt.title(f'{title}\n(For domains that loaded successfully across all profiles)',
-              fontsize=16, pad=40)
-    plt.ylabel(ylabel, fontsize=14, labelpad=10)
-    plt.xlabel('Browser Profile', fontsize=14, labelpad=10)
+    # Add small n=XXX counts below each violin
+    for idx, profile in enumerate(all_profiles):
+        profile_total = data[data['profile'] == profile][metric].sum()
+        plt.text(idx, -0.5,  # Position below the violins
+                f'n={profile_total:,.0f}',
+                ha='center', va='top', fontsize=8)
     
-    # Add group labels above the plot
-    y_max = data[metric].max()
+    plt.ylabel(ylabel, fontsize=14, labelpad=10)
+    plt.xlabel('', fontsize=14, labelpad=10)
+    
+    # Add group labels above the plot (adjusted position)
     current_position = 0
     for group_name, group_profiles in PROFILE_GROUPS.items():
         group_profiles_in_data = [p for p in group_profiles if p in all_profiles]
@@ -60,7 +66,7 @@ def create_violin_plot(data, metric, title, ylabel, output_file):
             group_start = current_position
             group_end = current_position + len(group_profiles_in_data) - 1
             label_position = (group_start + group_end) / 2
-            plt.text(label_position, y_max * 1.05, group_name,
+            plt.text(label_position, y_max * 1.1, group_name,
                     ha='center', va='bottom', fontsize=12,
                     bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2))
             current_position += len(group_profiles_in_data)

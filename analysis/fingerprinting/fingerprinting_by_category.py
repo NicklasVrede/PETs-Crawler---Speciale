@@ -12,17 +12,17 @@ from analysis.display_names import DISPLAY_NAMES, PROFILE_GROUPS
 
 # Use the 4 fingerprinting methods from available columns
 fingerprinting_cols = [
-    "canvas_fingerprinting_calls",  # Canvas
-    "media_fingerprinting_calls",   # AudioContext
-    "hardware_fingerprinting_calls", # Hardware (WebRTC)
-    "webgl_fingerprinting_calls"    # Canvas Font
+    "canvas_fingerprinting_calls",    # Canvas
+    "media_fingerprinting_calls",     # AudioContext
+    "hardware_fingerprinting_calls",  # WebRTC
+    "webgl_fingerprinting_calls"      # Canvas Font
 ]
 
 # Define colors for fingerprinting categories
 fp_colors = [
     "#4286f4",  # Canvas - blue
     "#f79646",  # AudioContext - orange
-    "#4ba651",  # Hardware/WebRTC - green
+    "#4ba651",  # WebRTC - green
     "#de2d26",  # Canvas Font - red
 ]
 
@@ -103,16 +103,14 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
             plt.axvline(x=current_position - 0.5, color='black', linestyle=':', alpha=0.7)
 
 # Customize the plot
-plt.title('Distribution of Fingerprinting Methods per Profile\n(For domains that loaded successfully across all profiles)',
-          fontsize=16, pad=40)
 plt.ylabel('Number of Fingerprinting Calls', fontsize=14, labelpad=10)
-plt.xlabel('Browser Profile', fontsize=14, labelpad=10)
+plt.xlabel('', fontsize=14, labelpad=10)
 plt.grid(axis='y', linestyle='--', alpha=0.3)
 
 # Format legend labels with proper colors and style
 legend_labels = ["Canvas", "AudioContext", "WebRTC", "Canvas Font"]
 handles = [plt.Rectangle((0,0),1,1, color=color) for color in fp_colors]  # Create colored rectangles
-ax.legend(handles, legend_labels, bbox_to_anchor=(1.0, 1.22), loc='upper right')
+ax.legend(handles, legend_labels, bbox_to_anchor=(0.02, 0.95), loc='upper left')
 
 # Use display names for x-tick labels
 plt.xticks(x, [DISPLAY_NAMES.get(profile, profile) for profile in all_profiles],
