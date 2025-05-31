@@ -121,14 +121,24 @@ def analyze_third_party_prevalence(profiles, successful_domains):
             for tp_domain in third_party_domains:
                 baseline_domain_freq[tp_domain] += 1
     
+    # Filter out domains that only appear once
+    baseline_domain_freq = {domain: freq for domain, freq in baseline_domain_freq.items() if freq > 1}
+    
     # Sort domains by frequency (most frequent first)
     sorted_domains = sorted(baseline_domain_freq.items(), key=lambda x: x[1], reverse=True)
     
+    # Debug print for frequency information
+    print("\nTop 10 most frequent domains and their appearances:")
+    for domain, freq in sorted_domains[:10]:
+        print(f"{domain}: {freq} appearances")
+    
+    print(f"\nTotal unique domains appearing more than once: {len(sorted_domains)}")
+    
     # Group domains by their prevalence ranking (not frequency)
     freq_groups = {
-        "2-20": set(domain for domain, _ in sorted_domains[1:20]),  # 2nd to 20th most prevalent
-        "20-200": set(domain for domain, _ in sorted_domains[20:200]),  # 21st to 200th most prevalent
-        "200-10000": set(domain for domain, _ in sorted_domains[200:10000])  # 201st to 10000th most prevalent
+        "2-6": set(domain for domain, _ in sorted_domains[1:6]),  # 2nd to 20th most prevalent
+        "6-20": set(domain for domain, _ in sorted_domains[6:20]),  # 21st to 200th most prevalent
+        "20-10000": set(domain for domain, _ in sorted_domains[20:10000])  # 201st to 10000th most prevalent
     }
     
     # Debug print
@@ -139,54 +149,63 @@ def analyze_third_party_prevalence(profiles, successful_domains):
         for domain in sample_domains:
             print(f"  {domain}: {baseline_domain_freq[domain]} appearances")
     
-    results = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
-    
     # Track missing domains specifically for decentraleyes
+    print("\nAnalyzing domains missing in Decentraleyes...")
     decentraleyes_missing = defaultdict(set)
     target_profile = "decentraleyes"
+    freq_group = "20-10000"
     
-    # Process baseline domains first
-    print("\nAnalyzing domains missing in Decentraleyes...")
-    for rank_start, rank_end in RANK_BUCKETS:
+    # Use the already filtered baseline_domain_freq that only includes domains appearing more than once
+    freq_domains = {domain for domain, freq in baseline_domain_freq.items() 
+                   if domain in freq_groups[freq_group]}
+    
+    # Process all rank buckets with a progress bar
+    for rank_start, rank_end in tqdm(RANK_BUCKETS, desc="Processing rank buckets"):
+        bucket_label = get_rank_bucket_label(rank_start)
         bucket_websites = {d for d in successful_domains 
                          if rank_start <= tranco_ranks.get(d, float('inf')) <= rank_end}
         
-        # Only for 200-10000 frequency group
-        freq_group = "200-10000"
-        freq_domains = freq_groups[freq_group]
-        
+        # Process all websites in this bucket at once
         baseline_domains = set()
         decentraleyes_domains = set()
         
-        # Get baseline domains
+        # Process baseline profile
         for website in bucket_websites:
             baseline_path = os.path.join("data/crawler_data", baseline_profile, f"{website}.json")
+            decentraleyes_path = os.path.join("data/crawler_data", target_profile, f"{website}.json")
+            
             if os.path.exists(baseline_path):
                 third_party_domains = set(get_third_party_domains(baseline_path))
+                # Only include domains that appear more than once
                 baseline_domains.update(third_party_domains & freq_domains)
             
-            # Get decentraleyes domains
-            decentraleyes_path = os.path.join("data/crawler_data", target_profile, f"{website}.json")
             if os.path.exists(decentraleyes_path):
                 current_domains = set(get_third_party_domains(decentraleyes_path))
                 decentraleyes_domains.update(current_domains & freq_domains)
         
-        # Track domains that are in baseline but not in decentraleyes
+        # Calculate missing domains for this bucket
         missing = baseline_domains - decentraleyes_domains
         if missing:
-            bucket_label = get_rank_bucket_label(rank_start)
             decentraleyes_missing[bucket_label] = missing
     
-    # Print detailed report for Decentraleyes
-    print("\nDetailed report of domains missing in Decentraleyes (200-10000 most prevalent domains):")
+    # Print summary report for Decentraleyes
+    print("\nSummary of domains missing in Decentraleyes (200-10000 most prevalent domains, appearing more than once):")
+    total_missing = 0
     for rank_bucket, domains in decentraleyes_missing.items():
-        print(f"\n{rank_bucket}:")
-        print(f"Number of missing domains: {len(domains)}")
-        print("All missing domains:")
-        for domain in sorted(domains):
-            print(f"  - {domain}")
+        missing_count = len(domains)
+        total_missing += missing_count
+        print(f"\n{rank_bucket}: {missing_count} missing domains")
+        if missing_count > 0:
+            print("Sample missing domains and their frequencies:")
+            for domain in sorted(list(domains))[:5]:  # Show only first 5 domains as sample
+                print(f"  - {domain}: {baseline_domain_freq[domain]} appearances")
     
-    # For each profile, rank bucket, and frequency group, calculate percentage of domains not blocked
+    print(f"\nTotal missing domains across all buckets: {total_missing}")
+    
+    # Process the results for other profiles
+    print("\nProcessing other profiles...")
+    results = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
+    
     for profile in tqdm(profiles_to_process, desc="Processing profiles"):
         for rank_start, rank_end in RANK_BUCKETS:
             bucket_websites = {d for d in successful_domains 
@@ -210,7 +229,6 @@ def analyze_third_party_prevalence(profiles, successful_domains):
                         current_domains = set(get_third_party_domains(json_path))
                         unblocked_domains.update(current_domains & baseline_domains)
                 
-                # Calculate percentage of domains that weren't blocked
                 if baseline_domains:
                     percentage = (len(unblocked_domains) / len(baseline_domains)) * 100
                     results[freq_group][profile][get_rank_bucket_label(rank_start)] = percentage
@@ -219,40 +237,50 @@ def analyze_third_party_prevalence(profiles, successful_domains):
 
 def plot_domain_prevalence_by_rank(results):
     """Create line plots showing percentage of domains still present across rank buckets."""
+    print("Creating visualization...")
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    freq_groups = ["2-20", "20-200", "200-10000"]
+    freq_groups = ["2-6", "6-20", "20-10000"]  # Updated to match the defined groups
     
     # Define custom x-axis positions
     x_positions = [0, 0.4, 0.8, 1.5, 2.3, 3.0]
     
     for idx, freq_group in enumerate(freq_groups):
         ax = axes[idx]
+        print(f"Processing frequency group: {freq_group}")
         
+        # Check if freq_group exists in results
+        if freq_group not in results:
+            print(f"Warning: No data for frequency group {freq_group}")
+            continue
+            
         for profile in results[freq_group]:
             style = profile_styles.get(profile, {'marker': 'o', 'color': 'black'})
             data = results[freq_group][profile]
+            
+            # Debug print the data
+            print(f"Profile {profile} data: {data}")
             
             # Map rank buckets to custom x positions
             profile_x_positions = []
             profile_y_values = []
             
-            for bucket in [get_rank_bucket_label(bucket[0]) for bucket in RANK_BUCKETS]:
+            for bucket in [get_rank_bucket_label(b[0]) for b in RANK_BUCKETS]:
                 if bucket in data:
                     pos_idx = [get_rank_bucket_label(b[0]) for b in RANK_BUCKETS].index(bucket)
                     profile_x_positions.append(x_positions[pos_idx])
                     profile_y_values.append(data[bucket])
             
-            # Plot lines with markers
-            ax.plot(profile_x_positions, profile_y_values,
-                   marker=style['marker'],
-                   color=style['color'],
-                   label=DISPLAY_NAMES.get(profile, profile),
-                   markersize=8,
-                   alpha=0.5,
-                   markerfacecolor=style['color'],
-                   markeredgecolor='black',
-                   markeredgewidth=1.0,
-                   linewidth=1.5)
+            if profile_x_positions and profile_y_values:  # Only plot if we have data
+                ax.plot(profile_x_positions, profile_y_values,
+                       marker=style['marker'],
+                       color=style['color'],
+                       label=DISPLAY_NAMES.get(profile, profile),
+                       markersize=8,
+                       alpha=0.5,
+                       markerfacecolor=style['color'],
+                       markeredgecolor='black',
+                       markeredgewidth=1.0,
+                       linewidth=1.5)
         
         ax.set_title(f'{freq_group} inclusions')
         ax.set_xlabel('')
@@ -277,12 +305,14 @@ def plot_domain_prevalence_by_rank(results):
                     unique_handles.append(handle)
             ax.legend(unique_handles, unique_labels, bbox_to_anchor=(1.05, 1), loc='upper left')
     
-
     plt.tight_layout(
         rect=[0, 0, 0.92, 0.95],
         h_pad=0.2,
         w_pad=0.2
     )
+    
+    # Create output directory if it doesn't exist
+    os.makedirs('analysis/graphs', exist_ok=True)
     
     print("Saving graph...")
     plt.savefig('analysis/graphs/third_party_blocking_effectiveness.png', 
@@ -290,6 +320,7 @@ def plot_domain_prevalence_by_rank(results):
                 bbox_inches='tight',
                 pad_inches=0.1)
     plt.close()
+    print("Graph saved successfully!")
 
 def analyze_and_print_domains(profiles, successful_domains):
     """Print domains and their third-party counts for each rank group."""

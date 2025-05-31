@@ -40,6 +40,7 @@ def create_tracking_table():
         'Social': 'social_media_requests',
         'Consent': 'consent_management_requests',
         'Hosting': 'hosting_requests',
+        'Total FP': 'total_fingerprinting_calls',
         'Canvas': 'canvas_fingerprinting_calls',
         'Audio': 'media_fingerprinting_calls',
         'WebRTC': 'hardware_fingerprinting_calls',
@@ -63,9 +64,9 @@ def create_tracking_table():
 \\caption{Overview of tracking requests and fingerprinting calls per profile.}
 \\label{tab:tracking-summary}
 \\footnotesize
-\\begin{tabular}{lrrrrrrrrr}
+\\begin{tabular}{lrrrrrrrrrr}
 \\toprule
-\\textbf{Profile} & \\shortstack{\\textbf{Advert.}\\\\\\textbf{Req.}} & \\shortstack{\\textbf{Analyt.}\\\\\\textbf{Req.}} & \\shortstack{\\textbf{Social}\\\\\\textbf{Req.}} & \\shortstack{\\textbf{Consent}\\\\\\textbf{Req.}} & \\shortstack{\\textbf{Hosting}\\\\\\textbf{Req.}} & \\shortstack{\\textbf{Canvas}\\\\\\textbf{Calls}} & \\shortstack{\\textbf{Audio}\\\\\\textbf{Calls}} & \\shortstack{\\textbf{WebRTC}\\\\\\textbf{Calls}} & \\shortstack{\\textbf{WebGL}\\\\\\textbf{Calls}} \\\\
+\\textbf{Profile} & \\shortstack{\\textbf{Advert.}\\\\\\textbf{Req.}} & \\shortstack{\\textbf{Analyt.}\\\\\\textbf{Req.}} & \\shortstack{\\textbf{Social}\\\\\\textbf{Req.}} & \\shortstack{\\textbf{Consent}\\\\\\textbf{Req.}} & \\shortstack{\\textbf{Hosting}\\\\\\textbf{Req.}} & \\shortstack{\\textbf{Total}\\\\\\textbf{FP}} & \\shortstack{\\textbf{Canvas}\\\\\\textbf{Calls}} & \\shortstack{\\textbf{Audio}\\\\\\textbf{Calls}} & \\shortstack{\\textbf{WebRTC}\\\\\\textbf{Calls}} & \\shortstack{\\textbf{WebGL}\\\\\\textbf{Calls}} \\\\
 \\midrule
 """
 
@@ -82,6 +83,7 @@ def create_tracking_table():
                           f"{data['Social']:,} & "
                           f"{data['Consent']:,} & "
                           f"{data['Hosting']:,} & "
+                          f"{data['Total FP']:,} & "
                           f"{data['Canvas']:,} & "
                           f"{data['Audio']:,} & "
                           f"{data['WebRTC']:,} & "

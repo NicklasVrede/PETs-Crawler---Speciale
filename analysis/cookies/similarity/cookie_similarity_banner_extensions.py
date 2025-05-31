@@ -66,7 +66,7 @@ def analyze_banner_extension_similarities():
     json_dir = "data/crawler_data"
     
     # Get cookie banner extensions and baseline profile
-    banner_profiles = PROFILE_GROUPS['Cookie Extensions'] + ['no_extensions', 'decentraleyes']
+    banner_profiles = PROFILE_GROUPS['Cookie Extensions'] + ['no_extensions']
     
     # Get list of actually existing profiles
     existing_profiles = {}

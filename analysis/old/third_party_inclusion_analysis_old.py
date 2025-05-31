@@ -77,17 +77,17 @@ def group_domains_by_prevalence(domain_prevalence):
     # Sort domains by prevalence (highest to lowest)
     sorted_domains = sorted(domain_prevalence.items(), key=lambda x: x[1], reverse=True)
     
-    # Group by prevalence count (not rank)
+    # Group by rank (skip the first most prevalent domain)
     groups = {
-        "2-5": set(domain for domain, count in sorted_domains if 2 <= count <= 5),
-        "6-20": set(domain for domain, count in sorted_domains if 6 <= count <= 20),
-        "20+": set(domain for domain, count in sorted_domains if count > 20)
+        "2-20": set(domain for domain, _ in sorted_domains[1:20]),  # 2nd to 20th most prevalent
+        "20-200": set(domain for domain, _ in sorted_domains[20:200]),  # 21st to 200th
+        "200-10000": set(domain for domain, _ in sorted_domains[200:10000])  # 201st to 10000th
     }
     
     # Print statistics about the groups
     print("\nOverall third-party domain groups:")
     for group_name, domains in groups.items():
-        print(f"{group_name} prevalence count: {len(domains)} domains")
+        print(f"{group_name} prevalence rank: {len(domains)} domains")
         if domains:
             sample = list(domains)[:3]
             counts = [domain_prevalence[d] for d in sample]
@@ -164,13 +164,7 @@ def analyze_blocking_effectiveness(inclusion_groups, bucket_domains, profiles):
             if not group_domains:
                 continue
             
-            # Set thresholds
-            if group_name == "2-5":
-                threshold = 1
-            elif group_name == "6-20":
-                threshold = 1
-            else:  # 20+
-                threshold = 1
+            threshold = 1
             
             # Count domains that meet the threshold
             domains_still_present = sum(1 for domain in group_domains 
@@ -258,7 +252,7 @@ def plot_results(all_results):
     # Save the figure
     output_dir = "analysis/graphs"
     os.makedirs(output_dir, exist_ok=True)
-    plt.savefig(os.path.join(output_dir, 'blocking_effectiveness.png'), 
+    plt.savefig(os.path.join(output_dir, 'blocking_effectivenes2.png'), 
                 bbox_inches='tight', dpi=300, pad_inches=0.1)
     plt.close()
 
