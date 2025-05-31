@@ -6,9 +6,8 @@ from tqdm import tqdm
 class UserSimulator:
     """Class to simulate realistic user behavior during web browsing"""
     
-    def __init__(self, seed=None, verbose=False):
+    def __init__(self, verbose=False):
         """Initialize the simulator with configurable parameters"""
-        self.random = random.Random(seed)
         self.verbose = verbose
         
     def _log(self, message):
@@ -26,9 +25,9 @@ class UserSimulator:
                 page_random = random.Random(page_seed)
                 self._log(f"URL: {url} -> Using deterministic seed: {page_seed}")
             else:
-                # Fallback to the instance random generator
-                page_random = self.random
-                self._log(f"No URL provided, using instance random generator")
+                # Use a fixed seed if no URL provided
+                page_random = random.Random(42)  # Default seed
+                self._log(f"No URL provided, using default seed: 42")
                 
 
             # Deterministic scrolling based on URL
