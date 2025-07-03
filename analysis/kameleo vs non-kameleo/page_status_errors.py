@@ -1,16 +1,6 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# Set font sizes
-plt.rcParams.update({
-    'font.size': 14,
-    'axes.labelsize': 16,
-    'axes.titlesize': 16,
-    'xtick.labelsize': 14,
-    'ytick.labelsize': 14,
-    'legend.fontsize': 14
-})
-
 # Read the CSV files
 kameleo_df = pd.read_csv('data/csv/kameleo.csv')
 non_kameleo_df = pd.read_csv('data/csv/non-kameleo.csv')
@@ -29,7 +19,9 @@ plt.bar([i + 0.2 for i in x], non_kameleo_counts.values, 0.4, label='non-kameleo
 
 # Customize the plot
 plt.xlabel('')
-plt.ylabel('# pages')
+plt.ylabel('# pages', fontsize=20)
+plt.xticks(fontsize=20)
+plt.yticks(fontsize=20)
 
 # Set x-axis labels
 plt.xticks(x, kameleo_counts.index)

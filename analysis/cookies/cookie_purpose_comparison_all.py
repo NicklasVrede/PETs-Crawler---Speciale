@@ -44,6 +44,17 @@ cookie_categories = [
     'unknown_cookies'
 ]
 
+# Custom color palette for cookie categories
+cookie_palette = {
+    'necessary_cookies':   '#42A5F5',
+    'functional_cookies':  '#90CAF9',
+    'advertising_cookies': '#EF5350',
+    'analytics_cookies':   '#81C784',
+    'performance_cookies': '#AED581',
+    'other_cookies':       '#FFB300',
+    'unknown_cookies':     '#BDBDBD',
+}
+
 # Check which categories are actually in the dataset
 available_categories = [col for col in cookie_categories if col in df_loaded.columns]
 if len(available_categories) < len(cookie_categories):
@@ -95,7 +106,7 @@ for group_profiles in PROFILE_GROUPS.values():
 all_profiles = [p for p in ordered_profiles if p in df_loaded['profile'].unique()]
 
 # Create the grouped bar chart
-plt.figure(figsize=(16, 8))
+plt.figure(figsize=(17, 8))
 
 # Set up the bar positions
 x = np.arange(len(all_profiles))
@@ -103,7 +114,7 @@ bar_width = 0.8 / len(cookie_categories)
 total_width = bar_width * len(cookie_categories)
 
 # Create a color palette - use Dark2 palette
-colors = sns.color_palette("Dark2", len(cookie_categories))
+colors = [cookie_palette[cat] for cat in cookie_categories]
 
 # Plot each category as a group of bars
 skipped_positions = {}  # Dictionary to store positions by height and profile
@@ -179,7 +190,7 @@ for i, category in enumerate(cookie_categories):
                     f'{height:.1f}', 
                     ha='left',
                     va='center',
-                    fontsize=9,
+                    fontsize=11,
                     fontweight='bold',
                     rotation=0)
             text.set_path_effects([
@@ -205,7 +216,7 @@ for (profile_idx, height), data in skipped_positions.items():
                 f'~{avg_height:.1f}',  # Added "~" before the value
                 ha='left',
                 va='center',
-                fontsize=9,
+                fontsize=11,
                 fontweight='bold',
                 rotation=0)
         text.set_path_effects([
@@ -224,8 +235,8 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
         
         # Place the group label in the middle of the group
         label_position = (group_start + group_end) / 2
-        plt.text(label_position, y_max * 1.01, group_name,  # Reduced from 1.02 to 1.01
-                ha='center', va='bottom', fontsize=12,
+        plt.text(label_position, y_max * 1.01, group_name,
+                ha='center', va='bottom', fontsize=14,
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2))
         
         current_position += len(group_profiles_in_data)
@@ -240,33 +251,35 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
             plt.axvline(x=current_position - 0.5, color='black', linestyle=':', alpha=0.7)
 
 # Customize the plot
-plt.ylabel('Average Cookie Count', fontsize=14, labelpad=10)
+plt.ylabel('Average Cookie Count', fontsize=16, labelpad=10)
+plt.yticks(fontsize=14)
 plt.xlabel('')
 plt.grid(axis='y', linestyle='--', alpha=0.3)
 
 # Use display names for x-tick labels with more space
 plt.xticks(x, [DISPLAY_NAMES.get(profile, profile) for profile in all_profiles], 
-          rotation=45, ha='right', fontsize=10)
+          rotation=45, ha='right', fontsize=14)
 
 # Adjust layout to prevent label cutoff
-plt.subplots_adjust(bottom=0.2)  # Increased bottom margin for x-labels
+plt.subplots_adjust(bottom=0.2)
 plt.tight_layout()
 
 # Verify all profiles are included
-print("Profiles being plotted:", all_profiles)  # Debug line to check if Super Agent profiles are in the data
+print("Profiles being plotted:", all_profiles)
 
 # Move legend inside the plot
 ax = plt.gca()
 plt.legend(title='Cookie Category', 
-          bbox_to_anchor=(1, 1),  # Position at the right edge of the plot
+          bbox_to_anchor=(1.065, 1),
           loc='upper right',
-          bbox_transform=ax.transAxes)  # Use axes coordinates
+          bbox_transform=ax.transAxes,
+          fontsize=12)
 
 # Ensure y-axis starts at 0
 plt.ylim(bottom=0)
-
-# Adjust layout with even more space for title
-plt.subplots_adjust(top=0.85)  # Reduced from 0.88 to 0.85 to prevent title cutoff
+    
+# Adjust layout
+plt.subplots_adjust(top=0.85)
 
 plt.savefig('analysis/graphs/cookie_purpose_categories_comparison_all.png', dpi=300, bbox_inches='tight')
 plt.show() 

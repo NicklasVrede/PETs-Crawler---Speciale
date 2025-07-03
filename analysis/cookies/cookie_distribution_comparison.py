@@ -44,7 +44,7 @@ def get_outliers(group_data):
     return group_data[group_data['unique_cookies'] > upper_bound]
 
 # Create the box plot
-plt.figure(figsize=(16, 6))
+plt.figure(figsize=(16, 10))
 
 # Create box plot with black and white style
 sns.boxplot(data=df_loaded, x='profile', y='unique_cookies', 
@@ -70,7 +70,7 @@ for i, profile in enumerate(all_profiles):
     
     # Annotate median 
     plt.text(i+ 0.17, median - 3.75, f'{median:.1f}',
-             ha='right', va='bottom', fontsize=8, fontweight='bold')
+             ha='right', va='bottom', fontsize=12, fontweight='bold')
     
     # Show mean with a dashed line across the box
     plt.plot([i-0.4, i+0.4], [mean, mean], '--', 
@@ -80,7 +80,7 @@ for i, profile in enumerate(all_profiles):
     
     # Annotate mean value
     plt.text(i + 0.17, mean, f'{mean:.1f}',
-             ha='right', va='bottom', fontsize=8, color=mean_color, fontweight='bold')
+             ha='right', va='bottom', fontsize=12, color=mean_color, fontweight='bold')
 
 # Add group labels above the plot
 y_max = plt.ylim()[1]  # Get the current y-axis limit
@@ -95,7 +95,7 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
         label_position = (group_start + group_end) / 2
         plt.text(label_position, y_max * 1.05,
                 group_name,
-                ha='center', va='bottom', fontsize=12,
+                ha='center', va='bottom', fontsize=14,
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2))
         
         current_position += len(group_profiles_in_data)
@@ -110,17 +110,17 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
             plt.axvline(x=current_position - 0.5, color='black', linestyle=':', alpha=0.7)
 
 # Customize the plot
-plt.ylabel('Number of Cookies', fontsize=14, labelpad=10)
+plt.ylabel('Number of Cookies', fontsize=16, labelpad=10)
 plt.xlabel('')
 plt.grid(axis='y', linestyle='--', alpha=0.3)
 
 # Use display names for x-tick labels
 plt.xticks(range(len(all_profiles)), 
           [DISPLAY_NAMES.get(profile, profile) for profile in all_profiles],
-          rotation=45, ha='right', fontsize=10)
+          rotation=45, ha='right', fontsize=14)
 
 # Adjust layout with even less space at the top
-plt.subplots_adjust(bottom=0.2, top=0.95)  # Changed top from 0.92 to 0.95
+plt.subplots_adjust(bottom=0.2, top=0.95)
 
 # Adjust y-axis limit to be lower
 q1 = df_loaded['unique_cookies'].quantile(0.25)
@@ -132,7 +132,8 @@ plt.ylim(-2, y_max)
 
 # Update legend for mean marker
 plt.plot([], [], '--', color=mean_color, label='Mean', alpha=0.8)
-plt.legend(loc='upper right', bbox_to_anchor=(1, 0.95))
+plt.legend(loc='upper right', bbox_to_anchor=(1, 0.95), fontsize=14)
+plt.yticks(fontsize=14)
 
 # Save and show the plot
 plt.savefig('analysis/graphs/cookies_per_page_with_different_profiles.png', dpi=300, bbox_inches='tight')

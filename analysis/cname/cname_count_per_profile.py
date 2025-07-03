@@ -49,21 +49,21 @@ for profile in all_profiles:
     })
 
 # Create the bar plot
-plt.figure(figsize=(16, 8))
+plt.figure(figsize=(16, 9))
 
-# Create bars with smaller width (default is 0.8)
+# Create bars
 x = range(len(all_profiles))
 bars = plt.bar(x, [stat['total_instances'] for stat in profile_stats], 
                color='white', 
                edgecolor='black',
-               width=0.5)  # Changed from default 0.8 to 0.5
+               width=0.5) 
 
 # Add value labels on top of each bar
 for i, bar in enumerate(bars):
     height = bar.get_height()
     if height > 0:
         plt.text(bar.get_x() + bar.get_width()/2, height,
-                f'{int(height)}', ha='center', va='bottom', fontsize=10)
+                f'{int(height)}', ha='center', va='bottom', fontsize=14)
 
 # Add group labels above the plot
 y_max = max(stat['total_instances'] for stat in profile_stats)
@@ -77,7 +77,7 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
         # Place the group label in the middle of the group
         label_position = (group_start + group_end) / 2
         plt.text(label_position, y_max * 1.10, group_name,
-                ha='center', va='bottom', fontsize=12,
+                ha='center', va='bottom', fontsize=14,
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2))
         
         current_position += len(group_profiles_in_data)
@@ -92,14 +92,14 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
             plt.axvline(x=current_position - 0.5, color='black', linestyle=':', alpha=0.7)
 
 # Customize the plot
-plt.ylabel('Total Number of CNAME Cloaking Instances', fontsize=14, labelpad=10)
+plt.ylabel('Total Number of CNAME Cloaking Instances', fontsize=16, labelpad=10)
 plt.xlabel('', fontsize=14, labelpad=10)
 plt.grid(axis='y', linestyle='--', alpha=0.3)
 
 # Use display names for x-tick labels
 plt.xticks(range(len(all_profiles)), 
           [DISPLAY_NAMES.get(profile, profile) for profile in all_profiles],
-          rotation=45, ha='right', fontsize=10)
+          rotation=45, ha='right', fontsize=14)
 
 # Adjust layout
 plt.subplots_adjust(bottom=0.25, top=0.85)

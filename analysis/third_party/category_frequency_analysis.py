@@ -146,7 +146,7 @@ def plot_category_distribution(category_counts, freq_bands):
         bars.append(bar)
     
     # Customize plot
-    plt.ylabel('Percentage of Domains', size=12)
+    plt.ylabel('Percentage of Domains', fontsize=16)
     
     # Add value labels on the bars
     for i in range(len(bands)):
@@ -156,17 +156,17 @@ def plot_category_distribution(category_counts, freq_bands):
                 height = data_percentages[j, i]
                 plt.text(i, bottom + height/2, 
                         f'{data_percentages[j, i]:.1f}%',
-                        ha='center', va='center')
+                        ha='center', va='center', fontsize=14)
                 bottom += height
     
     # Add total domain counts to x-axis labels
     x_ticks = plt.gca().get_xticks()
     x_labels = [f"{band}\n({len(freq_bands[band])} domains)" for band in bands]
-    plt.xticks(x_ticks, x_labels)
+    plt.xticks(x_ticks, x_labels, fontsize=14)
     
     # Add legend
     plt.legend(title='Categories', bbox_to_anchor=(1.05, 1), 
-              loc='upper left', borderaxespad=0.)
+              loc='upper left', borderaxespad=0., fontsize=14)
     
     # Adjust layout
     plt.tight_layout()

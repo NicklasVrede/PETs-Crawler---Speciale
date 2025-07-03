@@ -108,7 +108,7 @@ def plot_all_domains(profile_data):
             category_data[category].append(percentage)
     
     # Create the stacked bar chart
-    fig, ax = plt.subplots(figsize=(16, 8))
+    fig, ax = plt.subplots(figsize=(20, 8))
     
     # Calculate maximum height for y-axis limit
     bottom = np.zeros(len(ordered_profiles))
@@ -128,7 +128,7 @@ def plot_all_domains(profile_data):
                     bottom=bottom,
                     label=category,
                     color=category_colors.get(category, '#808080'),
-                    width=0.6)
+                    width=0.8)
         bars.append(bar)
         
         # Add percentage annotations
@@ -140,7 +140,7 @@ def plot_all_domains(profile_data):
                              f'{value:.0f}%',
                              ha='center', va='center',
                              color='black',
-                             fontsize=9,
+                             fontsize=11,
                              fontweight='bold')
                 # Add thinner white outline
                 text.set_path_effects([
@@ -159,14 +159,15 @@ def plot_all_domains(profile_data):
                    if category != 'Uncategorized')
         ax.text(i, -5, f'n={total}', 
                 ha='center', va='center', 
-                fontsize=9)
+                fontsize=11)
     
-    plt.ylabel('Percentage of Unique Third-Party Domains\n(relative to Baseline Profile)', fontsize=14)
+    plt.ylabel('Percentage of Unique Third-Party Domains\n(relative to Baseline Profile)', fontsize=16)
     
     # Use display names for x-tick labels
     plt.xticks(range(len(ordered_profiles)),
                [DISPLAY_NAMES.get(profile, profile) for profile in ordered_profiles],
-               rotation=45, ha='right')
+               rotation=45, ha='right', fontsize=14)
+    plt.yticks(fontsize=14)
     
     # Add group labels and separators
     y_max = max(bottom)
@@ -182,7 +183,7 @@ def plot_all_domains(profile_data):
             plt.text(label_position, y_max * 1.05,
                     group_name,
                     ha='center', va='bottom',
-                    fontsize=12,
+                    fontsize=14,
                     bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2))
             
             # Add separator line
@@ -195,7 +196,7 @@ def plot_all_domains(profile_data):
             current_position += len(group_profiles_in_data)
     
     # Add legend with adjusted position
-    plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left')
+    plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left', fontsize=14)
     
     # Adjust layout
     plt.tight_layout()

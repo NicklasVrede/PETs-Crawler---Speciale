@@ -111,7 +111,7 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
         group_end = current_position + len(group_profiles_in_data) - 1
         label_position = (group_start + group_end) / 2
         plt.text(label_position, y_max * 0.98, group_name,
-                ha='center', va='bottom', fontsize=12,
+                ha='center', va='bottom', fontsize=14,
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2))
         current_position += len(group_profiles_in_data)
 
@@ -144,10 +144,10 @@ for i, label in enumerate(legend_labels):
     else:
         legend_labels[i] = label.title()
 
-ax.legend(handles, legend_labels, bbox_to_anchor=(1.01, 1), loc='upper left')
+ax.legend(handles, legend_labels, bbox_to_anchor=(1.01, 1), loc='upper left', fontsize=14)
 
 # Updated y-axis label to clarify that it includes all requests (both first-party and third-party)
-ax.set_ylabel("All requests by category relative to baseline (100%)")
+ax.set_ylabel("All requests by category relative to baseline (100%)", fontsize=16)
 ax.set_ylim(0, y_limit)  # Set dynamic limit based on data
 
 # Add a horizontal line at 100% for reference
@@ -160,12 +160,13 @@ plt.grid(axis='y', linestyle='-', alpha=0.2)
 for i, profile in enumerate(scaled_share.index):
     total = scaled_share.loc[profile].sum()
     if total > 100:
-        plt.text(i, 100, f"{total:.0f}%", ha='center', va='bottom', fontsize=8, rotation=0)
+        plt.text(i, total, f"{total:.0f}%", ha='center', va='bottom', fontsize=14, rotation=0)
 
 # Use display names for x-tick labels
 plt.xticks(range(len(all_profiles)), 
           [DISPLAY_NAMES.get(profile, profile) for profile in all_profiles],
-          rotation=45, ha="right")
+          rotation=45, ha="right", fontsize=14)
+plt.yticks(fontsize=14)
 
 # Create the graphs directory if it doesn't exist
 os.makedirs("analysis/graphs", exist_ok=True)

@@ -61,19 +61,18 @@ width = 0.35
 mean_bars = plt.bar(x - width/2, cookies_by_rank['mean'], width, label='Mean', color='steelblue', alpha=0.8)
 median_bars = plt.bar(x + width/2, cookies_by_rank['median'], width, label='Median', color='lightsteelblue', alpha=0.8)
 
-# Add value labels
-for bars, values in [(mean_bars, cookies_by_rank['mean']), (median_bars, cookies_by_rank['median'])]:
-    for i, bar in enumerate(bars):
-        height = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width()/2, height + 0.1,
-                f'{height:.2f}', ha='center', va='bottom', fontsize=9)
+# Add value labels - only for mean bars since median values are all 0
+for i, bar in enumerate(mean_bars):
+    height = bar.get_height()
+    plt.text(bar.get_x() + bar.get_width()/2, height,
+            f'{height:.2f}', ha='center', va='bottom', fontsize=14)
 
 # Add count labels below each group
 for i, count in enumerate(cookies_by_rank['count']):
-    plt.text(i, -0.2, f'n={count}', ha='center', va='top', fontsize=9)
+    plt.text(i, -0.2, f'n={count}', ha='center', va='top', fontsize=14)
 
 # Add a legend
-plt.legend()
+plt.legend(fontsize=14)
 
 # Let's also add domain count distribution information
 # Add this code to print top domains with most tracking cookies
@@ -87,13 +86,13 @@ zero_cookies = baseline_df[baseline_df['shared_identifiers_count'] == 0]
 print(f"\nDomains with zero tracking cookies: {len(zero_cookies)} ({len(zero_cookies)/len(baseline_df)*100:.1f}%)")
 
 # Customize the plot
-plt.ylabel('Average Number of First-Party Tracking Cookies', fontsize=12)
+plt.ylabel('Average Number of First-Party Tracking Cookies', fontsize=16)
 plt.grid(axis='y', linestyle='--', alpha=0.3)
 
 # Set x-tick positions and labels
 plt.xticks(range(len(cookies_by_rank)), 
           [rb.replace('[', '').replace(']', '') for rb in cookies_by_rank.index],
-          rotation=45, ha='right')
+          rotation=45, ha='right', fontsize=14)
 
 # Adjust layout
 plt.tight_layout()

@@ -6,6 +6,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import matplotlib.patheffects as path_effects
 
 # Add the project root directory to the Python path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -13,6 +14,13 @@ sys.path.insert(0, project_root)
 
 from analysis.third_party.third_party_domain_prevalence import get_successful_domains
 from analysis.display_names import DISPLAY_NAMES, PROFILE_GROUPS
+
+def format_number_with_k(num):
+    """Format numbers with 'k' suffix for thousands."""
+    if num >= 1000:
+        return f"{num/1000:.1f}k"
+    else:
+        return str(num)
 
 def analyze_all_requests(profile, successful_domains=None):
     """Analyze all requests (first and third party) for a specific profile."""
@@ -104,28 +112,65 @@ def plot_all_requests(profile_data):
             category_data[category].append(percentage)
     
     # Create the stacked bar chart
-    fig, ax = plt.subplots(figsize=(16, 8))
+    fig, ax = plt.subplots(figsize=(22, 8))
+    
+    # Calculate maximum height for y-axis limit
+    bottom = np.zeros(len(ordered_profiles))
+    for category in categories:
+        bottom += category_data[category]
+    
+    # Adjust y-axis to make room below 0
+    ax.set_ylim(-10, max(bottom) * 1.1)
+    
+    # Reset bottom for bar stacking
     bottom = np.zeros(len(ordered_profiles))
     
     bars = []
     for category in categories:
-        bars.append(ax.bar(range(len(ordered_profiles)), 
-                          category_data[category],
-                          bottom=bottom,
-                          label=category,
-                          color=category_colors.get(category, '#808080'),
-                          width=0.6))
+        bar = ax.bar(range(len(ordered_profiles)), 
+                    category_data[category],
+                    bottom=bottom,
+                    label=category,
+                    color=category_colors.get(category, '#808080'),
+                    width=0.8)
+        bars.append(bar)
+        
+        # Add percentage annotations
+        for i, value in enumerate(category_data[category]):
+            # Show all Site Analytics values, or other categories if >5%
+            if category == 'Site Analytics' or value > 5:
+                y_center = float(bottom[i] + value/2)
+                text = ax.text(float(i), y_center,
+                             f'{value:.0f}%',
+                             ha='center', va='center',
+                             color='black',
+                             fontsize=11,
+                             fontweight='bold')
+                # Add thinner white outline
+                text.set_path_effects([
+                    path_effects.Stroke(linewidth=0.8, foreground='white'),
+                    path_effects.Normal()
+                ])
+            
         bottom += category_data[category]
     
     # Add horizontal line at 100%
     plt.axhline(y=100, color='black', linestyle='--', alpha=0.5)
     
-    plt.ylabel('Percentage of Requests (relative to Baseline Profile)', fontsize=14)
+    # Add total counts at the bottom
+    for i, profile in enumerate(ordered_profiles):
+        total = sum(count for category, count in profile_data[profile].items() 
+                   if category != 'Uncategorized')
+        ax.text(i, -5, f'n={format_number_with_k(total)}', 
+                ha='center', va='center', 
+                fontsize=11)
+    
+    plt.ylabel('Percentage of Requests (relative to Baseline Profile)', fontsize=16)
     
     # Use display names for x-tick labels
     plt.xticks(range(len(ordered_profiles)),
                [DISPLAY_NAMES.get(profile, profile) for profile in ordered_profiles],
-               rotation=45, ha='right')
+               rotation=45, ha='right', fontsize=14)
     
     # Add group labels and separators
     y_max = max(bottom)
@@ -141,7 +186,7 @@ def plot_all_requests(profile_data):
             plt.text(label_position, y_max * 1.05,
                     group_name,
                     ha='center', va='bottom',
-                    fontsize=12,
+                    fontsize=14,
                     bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2))
             
             # Add separator line
@@ -154,7 +199,7 @@ def plot_all_requests(profile_data):
             current_position += len(group_profiles_in_data)
     
     # Add legend with adjusted position
-    plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left')
+    plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left', fontsize=14)
     
     # Adjust layout
     plt.tight_layout()

@@ -11,16 +11,6 @@ import numpy as np
 from tqdm import tqdm
 from analysis.display_names import DISPLAY_NAMES, PROFILE_GROUPS
 
-# Set font sizes
-plt.rcParams.update({
-    'font.size': 12,
-    'axes.labelsize': 14,
-    'axes.titlesize': 14,
-    'xtick.labelsize': 12,
-    'ytick.labelsize': 12,
-    'legend.fontsize': 12
-})
-
 # Modified PROFILE_GROUPS for our legacy dataset
 LEGACY_PROFILE_GROUPS = {
     "Baseline Profile": ["no_extensions"],
@@ -147,7 +137,7 @@ for group_name, group_profiles in LEGACY_PROFILE_GROUPS.items():
         
         # Add group label
         plt.text(group_center, y_max * 1.05, group_name,
-                ha='center', va='bottom', fontsize=12,
+                ha='center', va='bottom', fontsize=16,
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2))
         
         # Add separator line
@@ -157,10 +147,11 @@ for group_name, group_profiles in LEGACY_PROFILE_GROUPS.items():
         
         current_position += group_size
 
-plt.ylabel('# advertising requests')
+plt.ylabel('# advertising requests', fontsize=18)
 plt.xlabel('')
-plt.xticks(x, kameleo_profile_stats['display_name'], rotation=45, ha='right')
-plt.legend()
+plt.xticks(x, kameleo_profile_stats['display_name'], rotation=45, ha='right', fontsize=14)
+plt.tick_params(axis='y', labelsize=16)
+plt.legend(fontsize=16)
 
 # Adjust layout
 plt.subplots_adjust(bottom=0.2, top=0.85)

@@ -81,7 +81,7 @@ if all_outliers:
             xy=(outlier['profile_idx'], outlier['shared_identifiers_count']),
             xytext=(10, 10),
             textcoords='offset points',
-            fontsize=8,
+            fontsize=11,
             bbox=dict(facecolor='white', edgecolor='none', alpha=0.7),
             arrowprops=dict(arrowstyle='->', color='gray')
         )
@@ -98,7 +98,7 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
         # Place the group label in the middle of the group
         label_position = (group_start + group_end) / 2
         plt.text(label_position, y_max * 1.10, group_name,
-                ha='center', va='bottom', fontsize=12,
+                ha='center', va='bottom', fontsize=14,
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2))
         
         current_position += len(group_profiles_in_data)
@@ -112,14 +112,15 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
         if current_position < len(all_profiles):
             plt.axvline(x=current_position - 0.5, color='black', linestyle=':', alpha=0.7)
 
-plt.ylabel('Number of First Party Tracking Cookies', fontsize=14, labelpad=10)
+plt.ylabel('Number of First Party Tracking Cookies', fontsize=16, labelpad=10)
+plt.yticks(fontsize=14)
 plt.xlabel('', fontsize=14, labelpad=10)
 plt.grid(axis='y', linestyle='--', alpha=0.3)
 
 # Use display names for x-tick labels
 plt.xticks(range(len(all_profiles)), 
           [DISPLAY_NAMES.get(profile, profile) for profile in all_profiles],
-          rotation=45, ha='right', fontsize=10)
+          rotation=45, ha='right', fontsize=14)
 
 # Adjust layout
 plt.subplots_adjust(bottom=0.25, top=0.85)

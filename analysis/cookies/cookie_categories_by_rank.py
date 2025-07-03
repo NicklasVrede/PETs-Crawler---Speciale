@@ -14,8 +14,8 @@ from analysis.display_names import DISPLAY_NAMES, PROFILE_GROUPS
 # Load the dataset
 df = pd.read_csv("data/csv/final_data2.csv")
 
-# Filter for successful page loads
-df_loaded = df[df['page_status'] == 'loaded']
+# Filter for successful page loads - use .copy() to avoid SettingWithCopyWarning
+df_loaded = df[df['page_status'] == 'loaded'].copy()
 
 RANK_BUCKETS = [
     (1, 5000),           # [1-5k]
@@ -83,8 +83,8 @@ profile_styles = {
     'ublock': {'marker': '+', 'color': colors[7]},                # tab20 light purple
 }
 
-# Filter the dataframe to exclude unwanted profiles
-df_loaded = df_loaded[~df_loaded['profile'].isin(excluded_profiles)]
+# Filter the dataframe to exclude unwanted profiles - use .copy() to avoid warnings
+df_loaded = df_loaded[~df_loaded['profile'].isin(excluded_profiles)].copy()
 
 # Define custom x-axis positions - slightly wider spacing for larger buckets
 x_positions = [0, 0.4, 0.8, 1.5, 2.3, 3.0]  # Manually adjusted positions
@@ -143,31 +143,32 @@ for plot_type, profiles_to_include in [
                    linewidth=1.5)
 
         # Customize subplot
-        ax.set_title(category_name, pad=10)
+        ax.set_title(category_name, pad=10, fontsize=16)
         ax.set_xticks(x_positions)
-        ax.set_xticklabels([rb.replace('Top ', '') for rb in rank_order], rotation=45)
-        ax.set_ylabel('Average number of cookies' if idx % 3 == 0 else '')
+        ax.set_xticklabels([rb.replace('Top ', '') for rb in rank_order], rotation=45, fontsize=14)
+        ax.set_ylabel('Average number of cookies' if idx % 3 == 0 else '', fontsize=14)
+        ax.tick_params(axis='y', labelsize=14)
         
         # Set y-axis limits for this category
-        ax.set_ylim(bottom=0, top=max_y * 1.1)  # Add 10% padding
+        ax.set_ylim(bottom=0, top=max_y * 1.1)
 
         # Only show legend for the last subplot
         if idx == len(categories) - 1:
-            ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=14)
 
 
     plt.tight_layout(
-        rect=[0, 0, 0.92, 0.94],  # Adjusted top margin to be smaller
+        rect=[0, 0, 0.92, 0.94],
         h_pad=0.2,
         w_pad=0.2
     )
 
-    # Save with less padding
+    # Save
     plt.savefig(
         f'analysis/graphs/cookie_categories_by_rank_{plot_type.lower().replace(" ", "_")}.png',
         bbox_inches='tight',
         dpi=300,
-        pad_inches=0.1  # Reduced padding
+        pad_inches=0.1
     )
     plt.close()
 

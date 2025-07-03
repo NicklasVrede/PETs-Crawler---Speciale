@@ -76,8 +76,8 @@ def main():
     plt.title('Average Cookie Similarity Between Profiles', pad=20)
     
     # Rotate x-axis labels for better readability
-    plt.xticks(rotation=45, ha='right')
-    plt.yticks(rotation=0)
+    plt.xticks(rotation=45, ha='right', fontsize=16)
+    plt.yticks(rotation=0, fontsize=16)
     
     # Adjust layout to prevent label cutoff
     plt.tight_layout()

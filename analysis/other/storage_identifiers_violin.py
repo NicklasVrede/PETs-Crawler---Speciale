@@ -36,7 +36,7 @@ for group_profiles in PROFILE_GROUPS.values():
 all_profiles = [p for p in ordered_profiles if p in df_loaded['profile'].unique()]
 
 def create_violin_plot(data, metric, title, ylabel, output_file):
-    plt.figure(figsize=(16, 8))
+    plt.figure(figsize=(20, 8))
     
     # Calculate y_max first before using it
     y_max = data[metric].max()
@@ -48,14 +48,14 @@ def create_violin_plot(data, metric, title, ylabel, output_file):
                    cut=0,
                    width=0.7)
     
-    # Add small n=XXX counts below each violin
+    # Add small n= counts below each violin
     for idx, profile in enumerate(all_profiles):
         profile_total = data[data['profile'] == profile][metric].sum()
         plt.text(idx, -0.5,  # Position below the violins
                 f'n={profile_total:,.0f}',
-                ha='center', va='top', fontsize=8)
+                ha='center', va='top', fontsize=12)
     
-    plt.ylabel(ylabel, fontsize=14, labelpad=10)
+    plt.ylabel(ylabel, fontsize=16, labelpad=10)
     plt.xlabel('', fontsize=14, labelpad=10)
     
     # Add group labels above the plot (adjusted position)
@@ -67,7 +67,7 @@ def create_violin_plot(data, metric, title, ylabel, output_file):
             group_end = current_position + len(group_profiles_in_data) - 1
             label_position = (group_start + group_end) / 2
             plt.text(label_position, y_max * 1.1, group_name,
-                    ha='center', va='bottom', fontsize=12,
+                    ha='center', va='bottom', fontsize=14,
                     bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2))
             current_position += len(group_profiles_in_data)
     
@@ -83,7 +83,9 @@ def create_violin_plot(data, metric, title, ylabel, output_file):
     # Use display names for x-tick labels
     plt.xticks(range(len(all_profiles)), 
               [DISPLAY_NAMES.get(p, p) for p in all_profiles],
-              rotation=45, ha='right', fontsize=10)
+              rotation=45, ha='right', fontsize=14)
+    plt.yticks(fontsize=14)
+    
     
     # Add grid for better readability
     plt.grid(axis='y', linestyle='--', alpha=0.3)

@@ -114,8 +114,10 @@ category_order = ['not_removed', 'removed/likely removed']
 bottom = np.zeros(len(banner_counts.index))
 for conclusion in category_order:
     if conclusion in banner_counts.columns:
+        # Create custom label for two-line display
+        label = "removed/\nlikely removed" if conclusion == "removed/likely removed" else conclusion
         bars = ax.bar(x, banner_counts[conclusion], bottom=bottom, 
-                     label=conclusion, color=colors[conclusion])
+                     label=label, color=colors[conclusion])
         
         # Add count labels inside the bars with white outline
         for j, bar in enumerate(bars):
@@ -127,7 +129,7 @@ for conclusion in category_order:
                     f"{int(height)}", 
                     ha='center', va='center', 
                     color='black', 
-                    fontsize=9,
+                    fontsize=11,
                     fontweight='bold'
                 )
                 # Add white outline
@@ -139,12 +141,12 @@ for conclusion in category_order:
         bottom += banner_counts[conclusion].values
 
 # Add labels and title
-ax.set_ylabel('Number of Pages', fontsize=14)
+ax.set_ylabel('Number of Pages', fontsize=16)
 ax.set_xticks(x)
 
 # Use the imported display names for the x-tick labels with consistent styling
 x_tick_labels = [DISPLAY_NAMES.get(profile, profile) for profile in banner_counts.index]
-ax.set_xticklabels(x_tick_labels, rotation=45, ha='right', fontsize=10)
+ax.set_xticklabels(x_tick_labels, rotation=45, ha='right', fontsize=14)
 
 # Set y-axis limit based on the data
 y_max = banner_counts.sum(axis=1).max()
@@ -155,9 +157,10 @@ ax.grid(axis='y', linestyle='--', alpha=0.3)
 
 # Move legend inside the plot area instead of outside
 ax.legend(title='Banner Conclusion', 
+          title_fontsize=16,
          loc='upper left',
          bbox_to_anchor=(1.02, 1),  # Matched position
-         fontsize=10)  # Added font size
+         fontsize=14)  # Added font size
 
 # Determine the positions for the group dividers
 group_dividers = []
@@ -192,14 +195,15 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
             label_position, y_max * 1.05,
             group_name, 
             ha='center', va='bottom',
-            fontsize=12,  # Matched font size
+            fontsize=15,
             bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2)  # Matched box style
         )
         
         current_position += len(group_profiles_in_chart)
 
 # Adjust layout consistently
-plt.tight_layout()
+plt.yticks(fontsize=14)
+plt.xticks(fontsize=14)
 plt.subplots_adjust(top=0.9)  # Matched top margin
 
 plt.savefig('analysis/graphs/banner_conclusion_by_profile_without_unknown.png', dpi=300, bbox_inches='tight')
