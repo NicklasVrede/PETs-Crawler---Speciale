@@ -6,6 +6,10 @@ analysis_output/
 *.json
 
 # Python
+json_explorer.py
+format_data.py
+
+
 __pycache__/
 *.py[cod]
 *$py.class
