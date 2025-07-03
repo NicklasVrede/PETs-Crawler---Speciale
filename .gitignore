@@ -3,6 +3,7 @@ data/
 analysis/
 banner_system_eval/
 analysis_output/
+
 *.json
 
 # Python
