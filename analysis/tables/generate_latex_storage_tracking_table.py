@@ -31,7 +31,7 @@ profile_shortcuts = {
 def get_cname_stats(profile, successful_domains):
     """Get CNAME cloaking statistics for a profile."""
     json_dir = os.path.join("data/crawler_data", profile)
-    cloaked_domains = set()
+    cloaked_domains = defaultdict(int)  # Change to defaultdict to track requests per domain
     cloaked_requests = 0
     
     for domain in tqdm(successful_domains, 
@@ -45,10 +45,25 @@ def get_cname_stats(profile, successful_domains):
                     if 'domain_analysis' in data and 'domains' in data['domain_analysis']:
                         for domain_entry in data['domain_analysis']['domains']:
                             if domain_entry.get('cname_cloaking', False):
-                                cloaked_domains.add(domain_entry.get('domain', ''))
-                                cloaked_requests += domain_entry.get('request_count', 0)
+                                domain_name = domain_entry.get('domain', '')
+                                request_count = domain_entry.get('request_count', 0)
+                                cloaked_domains[domain_name] += request_count
+                                cloaked_requests += request_count
             except Exception as e:
                 print(f"Error processing {json_path}: {e}")
+    
+    # Save detailed stats to file
+    os.makedirs('analysis/cname/cname_details', exist_ok=True)
+    with open(f'analysis/cname/cname_details/{profile}_cname_stats.txt', 'w') as f:
+        f.write(f"CNAME Cloaking Statistics for {profile}\n")
+        f.write("=" * 50 + "\n\n")
+        f.write(f"Total unique cloaked domains: {len(cloaked_domains)}\n")
+        f.write(f"Total cloaked requests: {cloaked_requests}\n\n")
+        f.write("Detailed breakdown:\n")
+        f.write("-" * 50 + "\n")
+        # Sort domains by number of requests (descending)
+        for domain, requests in sorted(cloaked_domains.items(), key=lambda x: x[1], reverse=True):
+            f.write(f"{domain}: {requests} requests\n")
     
     return len(cloaked_domains), cloaked_requests
 

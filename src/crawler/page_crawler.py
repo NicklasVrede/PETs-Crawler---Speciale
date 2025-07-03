@@ -13,27 +13,34 @@ from playwright_stealth import Stealth
 
 
 class WebsiteCrawler:
-    def __init__(self, subpages_nr=20, visits=2, verbose=False, monitors=None, extension_name=None, headless=False, viewport=None, domain=None, channel=None):
+    def __init__(self, subpages_nr=20, visits=2, verbose=False, monitors=None, extension_name=None, headless=False, viewport=None, domain=None, channel=None, window_position=None, window_size=None, demo=False, slow_mo=0):
         """Initialize the crawler with configuration parameters"""
         self.subpages_nr = subpages_nr
         self.visits = visits
         self.verbose = verbose
-        self.base_domain = domain.lower().replace('www.', '')
+        self.base_domain = domain.lower().replace('www.', '') if domain else None
         self.extension_name = extension_name or "no_extension"
         self.headless = headless
         self.viewport = viewport
-        self.user_simulator = UserSimulator()
+        self.window_position = window_position
+        self.window_size = window_size
+        self.user_simulator = UserSimulator(verbose=verbose)
         self.stealth = Stealth()
+        self.slow_mo = slow_mo
         self.channel = channel
         self.playwright = None  # Store the Playwright instance
+        self.demo = demo  # Demo mode flag
 
-        # Use provided monitors or create defaults
-        self.monitors = monitors or {
-            'network': NetworkMonitor(verbose=verbose),
-            'storage': StorageMonitor(verbose=verbose),
-            'fingerprint': FingerprintCollector(verbose=verbose),
-            'banner': BannerMonitor(verbose=verbose)
-        }
+        # Use provided monitors or create defaults (unless in demo mode)
+        if demo:
+            self.monitors = None
+        else:
+            self.monitors = monitors or {
+                'network': NetworkMonitor(verbose=verbose),
+                'storage': StorageMonitor(verbose=verbose),
+                'fingerprint': FingerprintCollector(verbose=verbose),
+                'banner': BannerMonitor(verbose=verbose)
+            }
 
     def _log(self, message):
         """Log message if verbose mode is enabled"""
@@ -44,25 +51,29 @@ class WebsiteCrawler:
     async def _setup_browser(self, p, user_data_dir, full_extension_path, headless, viewport):
         """Setup browser context and clear cookies."""
         browser_args = {}
+        browser_args["args"] = []  # Always initialize
         
-        # Only add extension arguments if an extension is specified
         if full_extension_path and full_extension_path != "no_extension":
-            browser_args["args"] = [
+            browser_args["args"] += [
                 f'--disable-extensions-except={full_extension_path}',
                 f'--load-extension={full_extension_path}',
-                f'--window-position=9999,9999' # To avoid taking screenspace
             ]
-        else:
-            browser_args["args"] = [
-                f'--window-position=9999,9999'
-            ]
+
+        if self.window_position:
+            browser_args["args"].append(f'--window-position={self.window_position[0]},{self.window_position[1]}')
+        if self.window_size:
+            browser_args["args"].append(f'--window-size={self.window_size[0]},{self.window_size[1]}')
+
+        if not self.window_position:
+            self.window_position = (9999, 9999)
 
         context = await p.chromium.launch_persistent_context(
             user_data_dir=user_data_dir,
             headless=self.headless,
             viewport=self.viewport,
             channel=self.channel,
-            **browser_args
+            slow_mo=self.slow_mo,
+            args=browser_args["args"],
         )
 
         # Clear cookies context-wide before any navigation in this visit
@@ -141,14 +152,16 @@ class WebsiteCrawler:
                         return {'domain': domain, 'error': f'visit_0_timeout', 'timestamp': datetime.now().isoformat()}
                     # If timeout occurs after the first visit, we continue with next visit
         finally:
-            # Close Playwright once at the end of all visits
-            if self.playwright:
+            # Close Playwright once at the end of all visits (unless in demo mode with shared instance)
+            if self.playwright and not self.demo:
                 try:
                     await self.playwright.stop()
                     self._log("Playwright instance stopped at end of crawl")
                 except Exception as p_err:
                     tqdm.write(f"WARNING: Error stopping Playwright for {domain}: {p_err}")
                 self.playwright = None
+            elif self.demo:
+                self._log("Demo mode: Keeping Playwright instance open (shared between crawlers)")
 
         if visit_results:
             # Construct final data if there were successful visits
@@ -174,6 +187,11 @@ class WebsiteCrawler:
 
     async def _setup_monitoring(self, page, visit):
         """Setup network, fingerprint, and storage monitoring"""
+        # Skip monitoring setup if in demo mode
+        if self.demo:
+            self._log("Demo mode: Skipping monitoring setup")
+            return
+            
         # No need to apply stealth mode here anymore, as it's applied at the context level
         
         # Continue with your existing monitoring setup
@@ -185,12 +203,16 @@ class WebsiteCrawler:
         """Captures data (final URL, banner, storage) and simulates interaction."""
         final_url = page.url
 
-        if idx == 1:
-            await self.monitors['banner'].capture_on_subpage(
-                page, domain=self.base_domain, visit_number=visit, extension_name=self.extension_name
-            )
+        # Skip data capture if in demo mode
+        if not self.demo:
+            if idx == 1:
+                await self.monitors['banner'].capture_on_subpage(
+                    page, domain=self.base_domain, visit_number=visit, extension_name=self.extension_name
+                )
 
-        await self.monitors['storage'].capture_snapshot(page, visit_number=visit)
+            await self.monitors['storage'].capture_snapshot(page, visit_number=visit)
+        else:
+            self._log("Demo mode: Skipping data capture")
 
         simulation_timeout = 15
         try:
@@ -258,14 +280,31 @@ class WebsiteCrawler:
 
     async def _collect_visit_results(self, visit, visited_in_this_cycle):
         """Collect and structure the results of each visit"""
-        return {
-            'visit_number': visit,
-            'network': self.monitors['network'].get_results()['network_data'],
-            'visited_urls': visited_in_this_cycle
-        }
+        if self.demo:
+            # Return minimal data for demo mode
+            return {
+                'visit_number': visit,
+                'visited_urls': visited_in_this_cycle
+            }
+        else:
+            # Return full data with monitoring results
+            return {
+                'visit_number': visit,
+                'network': self.monitors['network'].get_results()['network_data'],
+                'visited_urls': visited_in_this_cycle
+            }
 
     async def _construct_final_data(self, domain, visit_results):
         """Construct the final data structure and save it using CrawlDataManager"""
+        
+        if self.demo:
+            # Return minimal data for demo mode
+            return {
+                'domain': domain,
+                'timestamp': 'demo_run',
+                'demo_mode': True,
+                'visited_urls': [visit.get('visited_urls', []) for visit in visit_results]
+            }
         
         # Create a new network_data structure with visit numbers as keys
         network_data = {}

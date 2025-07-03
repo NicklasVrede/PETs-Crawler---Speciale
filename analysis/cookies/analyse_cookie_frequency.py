@@ -92,7 +92,7 @@ def analyze_cookie_frequency_by_profile(domain_profile_cookies: Dict[str, Dict[s
         max_count = max(max_count, profile_max)
     
     # Create output directory
-    output_dir = 'analysis/cookies/frequency_analysis'
+    output_dir = 'analysis/graphs/cookies/frequency_analysis'
     os.makedirs(output_dir, exist_ok=True)
     
     # Create separate plot for each profile
@@ -113,9 +113,9 @@ def analyze_cookie_frequency_by_profile(domain_profile_cookies: Dict[str, Dict[s
         plt.xticks(range(len(cookie_names)), cookie_names, rotation=45, ha='right')
         plt.ylim(0, max_count * 1.1)  # Add 10% padding to the top
         
-        plt.xlabel('Cookie Name')
-        plt.ylabel('Presence on origins')
-        plt.title(f'Top {top_n} Most Common Cookies - Profile: {profile_name}')
+        plt.xlabel('Cookie Name', fontsize=14)
+        plt.ylabel('Presence on origins', fontsize=14)
+        plt.title(f'Top {top_n} Most Common Cookies - Profile: {profile_name}', fontsize=16)
         plt.tight_layout()
         
         # Save the plot

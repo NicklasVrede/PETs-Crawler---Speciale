@@ -2,16 +2,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-# Set font sizes
-plt.rcParams.update({
-    'font.size': 14,
-    'axes.labelsize': 16,
-    'axes.titlesize': 16,
-    'xtick.labelsize': 14,
-    'ytick.labelsize': 14,
-    'legend.fontsize': 14
-})
-
 def get_successful_domains():
     """Get domains that loaded successfully across all profiles in both datasets."""
     # Read and prepare datasets with source labels
@@ -88,27 +78,31 @@ plt.subplots_adjust(wspace=0.5)
 # Plot domains (left subplot)
 x = [0, 0.3]
 bars1 = ax1.bar(x, domains_sums, color=['#2ecc71', '#3498db'], width=0.15)
-ax1.set_ylabel('# advertising domains')
+ax1.set_ylabel('# advertising domains', fontsize=18)
 ax1.set_xlabel('')
 ax1.set_xticks(x)
 ax1.set_xticklabels(['kameleo', 'non-kameleo'])
+ax1.tick_params(axis='x', labelsize=20)
+ax1.tick_params(axis='y', labelsize=18)
 
 # Add value annotations for domains
-ax1.text(x[0], domains_sums[0], f'{int(domains_sums[0]):,}', ha='center', va='bottom')
-ax1.text(x[0], domains_sums[0]*0.95, f'(+{domains_increase:.1f}%)', ha='center', va='top')
-ax1.text(x[1], domains_sums[1], f'{int(domains_sums[1]):,}', ha='center', va='bottom')
+ax1.text(x[0], domains_sums[0], f'{int(domains_sums[0]):,}', ha='center', va='bottom', fontsize=16)
+ax1.text(x[0], domains_sums[0]*0.95, f'(+{domains_increase:.1f}%)', ha='center', va='top', fontsize=16)
+ax1.text(x[1], domains_sums[1], f'{int(domains_sums[1]):,}', ha='center', va='bottom', fontsize=16)
 
 # Plot requests (right subplot)
 bars2 = ax2.bar(x, requests_sums, color=['#2ecc71', '#3498db'], width=0.15)
-ax2.set_ylabel('# advertising requests')
+ax2.set_ylabel('# advertising requests', fontsize=18)
 ax2.set_xlabel('')
 ax2.set_xticks(x)
 ax2.set_xticklabels(['kameleo', 'non-kameleo'])
+ax2.tick_params(axis='x', labelsize=20)
+ax2.tick_params(axis='y', labelsize=18)
 
 # Add value annotations for requests
-ax2.text(x[0], requests_sums[0], f'{int(requests_sums[0]):,}', ha='center', va='bottom')
-ax2.text(x[0], requests_sums[0]*0.95, f'(+{requests_increase:.1f}%)', ha='center', va='top')
-ax2.text(x[1], requests_sums[1], f'{int(requests_sums[1]):,}', ha='center', va='bottom')
+ax2.text(x[0], requests_sums[0], f'{int(requests_sums[0]):,}', ha='center', va='bottom', fontsize=16)
+ax2.text(x[0], requests_sums[0]*0.95, f'(+{requests_increase:.1f}%)', ha='center', va='top', fontsize=16)
+ax2.text(x[1], requests_sums[1], f'{int(requests_sums[1]):,}', ha='center', va='bottom', fontsize=16)
 
 # Save the plot
 plt.savefig('analysis/graphs/kameleo vs non-kameleo/advertising_comparison.png')

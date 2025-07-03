@@ -284,14 +284,15 @@ def plot_domain_prevalence_by_rank(results):
         
         ax.set_title(f'{freq_group} inclusions')
         ax.set_xlabel('')
-        ax.set_ylabel('% of domains still present' if idx == 0 else '')
+        ax.set_ylabel('% of domains still present' if idx == 0 else '', fontsize=16)
+        ax.set_yticks(fontsize=14)
         ax.set_ylim(0, 100)
         ax.grid(True, alpha=0.3)
         
         # Set custom x-ticks with adjusted positions
         ax.set_xticks(x_positions)
         x_labels = [rb.replace('Top ', '') for rb in [get_rank_bucket_label(b[0]) for b in RANK_BUCKETS]]
-        ax.set_xticklabels(x_labels, rotation=45)
+        ax.set_xticklabels(x_labels, rotation=45, fontsize=14)
         
         # Only show legend for the last subplot
         if idx == len(freq_groups) - 1:

@@ -131,9 +131,9 @@ def analyze_banner_extension_similarities():
     # Add labels
     plt.xticks(range(len(ordered_profiles)), 
                [DISPLAY_NAMES[p] for p in ordered_profiles], 
-               rotation=45, ha='right')
+               rotation=45, ha='right', fontsize=14)
     plt.yticks(range(len(ordered_profiles)), 
-               [DISPLAY_NAMES[p] for p in ordered_profiles])
+               [DISPLAY_NAMES[p] for p in ordered_profiles], fontsize=14)
     
     # Add text annotations
     for i in range(len(ordered_profiles)):
@@ -141,7 +141,7 @@ def analyze_banner_extension_similarities():
             text = plt.text(j, i, f'{similarity_values[i, j]:.2f}',
                     ha='center', va='center',
                     color='black',
-                    fontsize=9,
+                    fontsize=11,
                     fontweight='bold')
             # Add white outline like in banner_conclusion_by_profile.py
             text.set_path_effects([

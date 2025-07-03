@@ -47,13 +47,29 @@ async def crawl_with_profile(config, profile, sites, subpages_nr=2, verbose=Fals
                 if verbose:
                     print(f"Crawling {domain} with profile {profile}")
                 
-                await crawl_domain(
-                    profile=profile,
-                    site_info=site_info,
-                    data_dir=temp_profile_dir,
-                    subpages_nr=subpages_nr,
-                    verbose=verbose
-                )
+                # Add retry logic for robustness
+                retry_attempts = 3
+                for attempt in range(retry_attempts):
+                    try:
+                        await crawl_domain(
+                            profile=profile,
+                            site_info=site_info,
+                            data_dir=temp_profile_dir,
+                            subpages_nr=subpages_nr,
+                            verbose=verbose
+                        )
+                        break  # Success, exit retry loop
+                    except Exception as e:
+                        if "Target page, context or browser has been closed" in str(e):
+                            if attempt < retry_attempts - 1:
+                                wait_time = (attempt + 1) * 2  # Progressive backoff: 2s, 4s, 6s
+                                if verbose:
+                                    print(f"Browser context error, waiting {wait_time}s before retry...")
+                                await asyncio.sleep(wait_time)
+                            else:
+                                raise  # Re-raise on final attempt
+                        else:
+                            raise  # Re-raise other exceptions
                 
                 if verbose:
                     print(f"Completed crawl of {domain} with profile {profile}")
@@ -243,10 +259,10 @@ if __name__ == "__main__":
         config=config,
         profiles=profiles,
         sites=sites,
-        max_concurrent=9,
+        max_concurrent=2,
         subpages_nr=15,
         verbose=verbose,
-        delay_between_profiles=5
+        delay_between_profiles=2
     ))
     
     print("\nCrawls completed!")

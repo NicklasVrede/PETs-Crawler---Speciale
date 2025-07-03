@@ -2,16 +2,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-# Set font sizes
-plt.rcParams.update({
-    'font.size': 14,
-    'axes.labelsize': 16,
-    'axes.titlesize': 16,
-    'xtick.labelsize': 14,
-    'ytick.labelsize': 14,
-    'legend.fontsize': 14
-})
-
 # Get successful domains (reuse function from above)
 def get_successful_domains():
     kameleo_df = pd.read_csv('data/csv/kameleo.csv')
@@ -46,7 +36,9 @@ plt.bar(['kameleo', 'non-kameleo'], [kameleo_sum, non_kameleo_sum],
 
 # Customize the plot
 plt.xlabel('')
-plt.ylabel('# advertising requests')
+plt.xticks(fontsize=20)
+plt.yticks(fontsize=18)
+plt.ylabel('# advertising requests', fontsize=18)
 
 # Save the plot
 plt.tight_layout()

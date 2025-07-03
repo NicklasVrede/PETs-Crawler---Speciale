@@ -342,9 +342,11 @@ def generate_domain_prevalence_visualization(df, top_domains, output_dir, profil
     plt.gca().yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{int(x)}%'))
     plt.ylim(10, 100)
     plt.grid(axis='y', color='lightgray', linestyle='-', linewidth=0.5, alpha=0.7)
+    plt.xticks(fontsize=14)
+    plt.yticks(fontsize=14)
     
     plt.xlabel("", fontsize=14)
-    plt.ylabel("% of pages including 3rd party domain", fontsize=12)
+    plt.ylabel("% of pages including 3rd party domain", fontsize=16)
     
     legend = plt.legend(
         lines, 

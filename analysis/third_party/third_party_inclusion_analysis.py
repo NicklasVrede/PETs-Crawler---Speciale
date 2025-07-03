@@ -215,11 +215,12 @@ def plot_results(all_results):
                        markeredgewidth=1.0,
                        linewidth=1.5)
         
-        ax.set_title(title)
+        ax.set_title(title, fontsize=16)
         ax.set_xlabel('')
-        ax.set_ylabel('% Domains Still Present')
+        ax.set_ylabel('% Domains Still Present', fontsize=16)
         ax.set_xticks(x_positions)
-        ax.set_xticklabels(x_labels, rotation=45)
+        ax.set_xticklabels(x_labels, rotation=45, fontsize=14)
+        ax.tick_params(axis='y', labelsize=14)
         ax.grid(True, alpha=0.3)
         ax.set_ylim(0, 100)
 
@@ -251,7 +252,8 @@ def plot_results(all_results):
     
     fig.legend(sorted_handles, sorted_labels, 
               loc='center right', 
-              bbox_to_anchor=(1.15, 0.5))
+              bbox_to_anchor=(1.15, 0.5),
+              fontsize=14)
     
     plt.tight_layout(rect=[0, 0, 0.92, 0.95])
     

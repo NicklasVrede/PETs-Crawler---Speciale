@@ -88,7 +88,7 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
         # Place the group label in the middle of the group
         label_position = (group_start + group_end) / 2
         plt.text(label_position, y_max * 1, group_name,
-                ha='center', va='bottom', fontsize=12,
+                ha='center', va='bottom', fontsize=14,
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2))
         
         current_position += len(group_profiles_in_data)
@@ -103,7 +103,7 @@ for group_name, group_profiles in PROFILE_GROUPS.items():
             plt.axvline(x=current_position - 0.5, color='black', linestyle=':', alpha=0.7)
 
 # Customize the plot
-plt.ylabel('Number of Fingerprinting Calls', fontsize=14, labelpad=10)
+plt.ylabel('Number of Fingerprinting Calls', fontsize=16, labelpad=10)
 plt.xlabel('', fontsize=14, labelpad=10)
 plt.grid(axis='y', linestyle='--', alpha=0.3)
 
@@ -114,7 +114,8 @@ ax.legend(handles, legend_labels, bbox_to_anchor=(0.02, 0.95), loc='upper left')
 
 # Use display names for x-tick labels
 plt.xticks(x, [DISPLAY_NAMES.get(profile, profile) for profile in all_profiles],
-           rotation=45, ha='right', fontsize=10)
+           rotation=45, ha='right', fontsize=14)
+plt.yticks(fontsize=14)
 
 # Adjust layout
 plt.subplots_adjust(bottom=0.25, top=0.85)
