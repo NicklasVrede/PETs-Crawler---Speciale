@@ -8,7 +8,12 @@ analysis_output/
 # Python
 json_explorer.py
 format_data.py
-
+json_skeleton.py
+debug_log.txt
+format_data.py
+extract_screenshots.py
+print_extensions_paths.py
+project_explorer.py
 
 __pycache__/
 *.py[cod]
