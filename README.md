@@ -77,49 +77,16 @@ The research provides insights into:
 - Cookie consent banner behavior patterns
 - Third-party tracking prevalence and methods
 
-## Usage
-
-### Prerequisites
-- Python 3.8+
-- Playwright browsers installed
-- Chrome/Chromium browser profiles with extensions
-
-### Setup
-1. Clone the repository
-2. Install dependencies: `pip install -r requirements.txt`
-3. Install Playwright browsers: `playwright install`
-4. Configure browser profiles in `config.json`
-
-### Running Analysis
-```bash
-# Single domain crawl
-python src/crawl.py
-
-# Parallel crawling
-python src/crawl_parallel.py
-
-# Protocol analysis
-python src/protocol_analysis.py
-```
 
 ## Data Privacy
 
 This project is designed for academic research purposes. All data collection follows ethical guidelines and is used solely for privacy research analysis.
 
-## Thesis Report
-
-The complete research findings and methodology are documented in the attached thesis report: `Specialerapport Nicklas Enøe Vrede.pdf`
-
-## License
-
-This project is part of a master's thesis at the University of Southern Denmark (SDU). Please respect academic usage guidelines.
-
 ## Author
 
 **Nicklas Enøe Vrede**  
 Master's Thesis Project  
-University of Southern Denmark (SDU)  
-Computer Science Program
+University of Southern Denmark (SDU)
 
 ## System Architecture
 

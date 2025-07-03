@@ -72,9 +72,11 @@ extensions/
 
 #png files
 *.png
+!docs/*.png
 
 #jpg files
 *.jpg
+!docs/*.jpg
 
 #python cache
 *.pyc
