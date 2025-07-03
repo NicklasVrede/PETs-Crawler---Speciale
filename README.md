@@ -34,31 +34,6 @@ This research project investigates the impact of different browser extensions an
 - **Cookie Managers**: Consent-O-Matic, I Don't Care About Cookies, Cookie Cutter
 - **Consent Automation**: Super Agent, Accept All Cookies
 
-## Project Structure
-
-```
-├── src/
-│   ├── crawler/           # Web crawling implementation
-│   ├── analyzers/         # Data analysis tools
-│   ├── managers/          # Data management utilities
-│   ├── utils/             # Helper functions
-│   ├── crawl.py           # Single domain crawler
-│   ├── crawl_parallel.py  # Parallel crawling system
-│   └── protocol_analysis.py # Network protocol analysis
-├── data/                  # Collected data (gitignored)
-├── analysis_output/       # Analysis results
-├── config.json           # Browser profiles configuration
-└── Specialerapport Nicklas Enøe Vrede.pdf # Thesis report
-```
-
-## Technical Stack
-
-- **Python 3.x**: Core implementation language
-- **Playwright**: Browser automation and web crawling
-- **Pandas**: Data analysis and manipulation
-- **Matplotlib/Seaborn**: Data visualization
-- **Asyncio**: Asynchronous processing for parallel crawling
-- **JSON/CSV**: Data storage and export formats
 
 ## Research Methodology
 
